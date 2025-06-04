@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/cosmos/omoknuni_python/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
