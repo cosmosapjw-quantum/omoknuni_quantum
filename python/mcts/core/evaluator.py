@@ -7,6 +7,7 @@ a mock implementation for testing without a trained model.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict, List
+import numpy
 import numpy as np
 import time
 from collections import OrderedDict
@@ -21,7 +22,7 @@ except ImportError:
 
 # Import GPU kernels if available
 try:
-    from .optimized_cuda_kernels import OptimizedCUDAKernels
+    from ..gpu.cuda_kernels import OptimizedCUDAKernels
     HAS_GPU_KERNELS = True
     CUDA_AVAILABLE = torch.cuda.is_available() if HAS_TORCH else False
 except ImportError:
@@ -167,8 +168,15 @@ class MockEvaluator(Evaluator):
             self.cache_misses += 1
             
         # Generate mock policy
+        # Convert torch tensor to numpy if needed
+        if HAS_TORCH and torch.is_tensor(state):
+            state_np = state.cpu().numpy()
+        else:
+            state_np = state
+            
         # Use position-dependent but deterministic base values
-        base_logits = np.sum(state, axis=(0, 1)) % 7 - 3.5
+        # Ensure we're using numpy's sum, not torch's
+        base_logits = np.array(state_np).sum(axis=(0, 1)) % 7 - 3.5
         
         # Reshape to action space
         if len(base_logits) < self.action_size:
@@ -197,13 +205,19 @@ class MockEvaluator(Evaluator):
         
         # Generate mock value
         # Use center control and material balance as heuristic
-        center_control = np.sum(state[:, 7:12, 7:12]) / (5 * 5 * state.shape[0])
+        # Make sure we're working with numpy arrays
+        if HAS_TORCH and torch.is_tensor(state):
+            state_arr = state.cpu().numpy()
+        else:
+            state_arr = np.array(state)
+            
+        center_control = np.sum(state_arr[:, 7:12, 7:12]) / (5 * 5 * state_arr.shape[0])
         
         # Avoid division by zero for material balance
-        total_material = np.sum(state)
+        total_material = np.sum(state_arr)
         if total_material > 0:
-            material_balance = (np.sum(state[:state.shape[0]//2]) - 
-                              np.sum(state[state.shape[0]//2:])) / total_material
+            material_balance = (np.sum(state_arr[:state_arr.shape[0]//2]) - 
+                              np.sum(state_arr[state_arr.shape[0]//2:])) / total_material
         else:
             material_balance = 0.0
         

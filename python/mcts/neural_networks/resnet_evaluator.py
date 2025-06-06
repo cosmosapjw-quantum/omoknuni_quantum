@@ -106,16 +106,16 @@ class ResNetEvaluator(Evaluator):
     
     def evaluate_batch(
         self,
-        states: np.ndarray,
-        legal_masks: Optional[np.ndarray] = None,
+        states: Union[np.ndarray, torch.Tensor],
+        legal_masks: Optional[Union[np.ndarray, torch.Tensor]] = None,
         temperature: float = 1.0
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Evaluate a batch of positions
         
         Args:
-            states: Batch of states (batch, channels, height, width)
-            legal_masks: Batch of legal masks (batch, num_actions)
+            states: Batch of states (batch, channels, height, width) - numpy array or torch tensor
+            legal_masks: Batch of legal masks (batch, num_actions) - numpy array or torch tensor
             temperature: Temperature for policy
             
         Returns:
@@ -125,7 +125,11 @@ class ResNetEvaluator(Evaluator):
         batch_size = states.shape[0]
         
         # Convert to tensors
-        states_tensor = torch.from_numpy(states).float().to(self.device)
+        if isinstance(states, np.ndarray):
+            states_tensor = torch.from_numpy(states).float().to(self.device)
+        else:
+            # Already a tensor - ensure it's on the right device
+            states_tensor = states.float().to(self.device)
         
         # Ensure correct shape
         if len(states_tensor.shape) == 3:
@@ -147,7 +151,11 @@ class ResNetEvaluator(Evaluator):
         
         # Apply legal move masking
         if legal_masks is not None:
-            legal_masks_tensor = torch.from_numpy(legal_masks).bool().to(self.device)
+            if isinstance(legal_masks, np.ndarray):
+                legal_masks_tensor = torch.from_numpy(legal_masks).bool().to(self.device)
+            else:
+                # Already a tensor
+                legal_masks_tensor = legal_masks.bool().to(self.device)
             # Set illegal moves to very negative value
             policy_logits = policy_logits.masked_fill(~legal_masks_tensor, -1e9)
         

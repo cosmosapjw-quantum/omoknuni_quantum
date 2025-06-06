@@ -5,8 +5,9 @@ from .tree_arena import TreeArena, MemoryConfig
 from .game_interface import GameInterface, GameType
 from .evaluator import Evaluator, MockEvaluator, EvaluatorConfig
 from .batch_game_ops import BatchGameOps, BatchGameOpsConfig, TensorGameState
-from .high_performance_mcts import HighPerformanceMCTS, HighPerformanceMCTSConfig
-# Note: legacy MCTS, WaveEngine and ConcurrentMCTS have been replaced by HighPerformanceMCTS
+from .mcts import MCTS, MCTSConfig
+from .wave_mcts import WaveMCTS, WaveMCTSConfig
+from .cached_game_interface import CachedGameInterface, CacheConfig
 
 __all__ = [
     "Node",
@@ -20,6 +21,10 @@ __all__ = [
     "BatchGameOps",
     "BatchGameOpsConfig",
     "TensorGameState",
-    "HighPerformanceMCTS",
-    "HighPerformanceMCTSConfig",
+    "MCTS",
+    "MCTSConfig",
+    "WaveMCTS", 
+    "WaveMCTSConfig",
+    "CachedGameInterface",
+    "CacheConfig",
 ]

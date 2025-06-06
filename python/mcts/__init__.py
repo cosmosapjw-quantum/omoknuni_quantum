@@ -14,7 +14,9 @@ from .core import (
     GameInterface, GameType,
     Evaluator, MockEvaluator, EvaluatorConfig,
     BatchGameOps, BatchGameOpsConfig, TensorGameState,
-    HighPerformanceMCTS, HighPerformanceMCTSConfig,
+    MCTS, MCTSConfig,
+    WaveMCTS, WaveMCTSConfig,
+    CachedGameInterface, CacheConfig,
 )
 
 # Neural network components
@@ -36,10 +38,9 @@ from .neural_networks import (
 # GPU acceleration components
 from .gpu import (
     CSRTree, CSRTreeConfig,
-    OptimizedWaveEngine, OptimizedWaveConfig,
     GPUOptimizer, AsyncEvaluator, StateMemoryPool,
-    get_csr_kernels, CSRGPUKernels,
-    OptimizedCUDAKernels, GPUTreeKernels
+    get_csr_kernels, CSRGPUKernels, CSRBatchOperations,
+    CUDAKernels, OptimizedCUDAKernels, GPUTreeKernels
 )
 
 # Quantum-inspired components (optional)
@@ -47,12 +48,12 @@ try:
     from .quantum import (
         InterferenceEngine,
         PhaseKickedPolicy, PhaseConfig,
-        PathIntegralMCTS, PathIntegralConfig
+        PathIntegral, PathIntegralConfig
     )
     __all_quantum = [
         "InterferenceEngine",
         "PhaseKickedPolicy", "PhaseConfig",
-        "PathIntegralMCTS", "PathIntegralConfig"
+        "PathIntegral", "PathIntegralConfig"
     ]
 except ImportError:
     __all_quantum = []
@@ -67,9 +68,7 @@ from .utils import (
     evaluate_position
 )
 
-# Legacy compatibility aliases
-MCTS = HighPerformanceMCTS  # For backward compatibility
-MCTSConfig = HighPerformanceMCTSConfig  # For backward compatibility
+# No legacy aliases needed - MCTS is now the main class
 
 __all__ = [
     # Core
@@ -77,8 +76,9 @@ __all__ = [
     "GameInterface", "GameType",
     "Evaluator", "MockEvaluator", "EvaluatorConfig",
     "BatchGameOps", "BatchGameOpsConfig", "TensorGameState",
-    "HighPerformanceMCTS", "HighPerformanceMCTSConfig",
     "MCTS", "MCTSConfig",
+    "WaveMCTS", "WaveMCTSConfig",
+    "CachedGameInterface", "CacheConfig",
     
     # Neural Networks
     "ModelRegistry", "ModelLoader", "BaseGameModel", "ModelMetadata",
@@ -92,10 +92,9 @@ __all__ = [
     
     # GPU
     "CSRTree", "CSRTreeConfig",
-    "OptimizedWaveEngine", "OptimizedWaveConfig",
     "GPUOptimizer", "AsyncEvaluator", "StateMemoryPool",
-    "get_csr_kernels", "CSRGPUKernels",
-    "OptimizedCUDAKernels", "GPUTreeKernels",
+    "get_csr_kernels", "CSRGPUKernels", "CSRBatchOperations",
+    "CUDAKernels", "OptimizedCUDAKernels", "GPUTreeKernels",
     
     # Utils
     "ConfigManager",

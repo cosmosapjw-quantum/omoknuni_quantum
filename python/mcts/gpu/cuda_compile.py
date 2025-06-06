@@ -79,8 +79,12 @@ else:
         # Set for RTX 3060 Ti (compute capability 8.6)
         os.environ['TORCH_CUDA_ARCH_LIST'] = '8.6'
 
-    # Read CUDA source
-    cuda_source_path = os.path.join(os.path.dirname(__file__), 'custom_cuda_kernels.cu')
+    # Read CUDA source - use minimal version for now to debug compilation
+    cuda_source_path = os.path.join(os.path.dirname(__file__), 'custom_cuda_kernels_minimal.cu')
+    if not os.path.exists(cuda_source_path):
+        # Fall back to full version if minimal doesn't exist
+        cuda_source_path = os.path.join(os.path.dirname(__file__), 'custom_cuda_kernels.cu')
+    
     with open(cuda_source_path, 'r') as f:
         cuda_source = f.read()
 
@@ -114,55 +118,106 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 }
 """
 
-    # Compile flags for optimization
+    # Compile flags for optimization - only compile for current architecture
+    capability = torch.cuda.get_device_capability()
+    arch_flag = f'compute_{capability[0]}{capability[1]}'
+    code_flag = f'sm_{capability[0]}{capability[1]}'
+    
     extra_cuda_cflags = [
         '-O3',
         '-use_fast_math',
-        '-gencode', 'arch=compute_70,code=sm_70',  # V100
-        '-gencode', 'arch=compute_75,code=sm_75',  # RTX 20XX
-        '-gencode', 'arch=compute_80,code=sm_80',  # A100
-        '-gencode', 'arch=compute_86,code=sm_86',  # RTX 30XX
+        '-gencode', f'arch={arch_flag},code={code_flag}',  # Only current GPU
     ]
 
-    # Try to compile
+    # Try to load pre-compiled module first
     try:
-        # Set compilation timeout to prevent hanging
-        import signal
-        
-        def timeout_handler(signum, frame):
-            raise TimeoutError("CUDA compilation timed out")
-        
-        # Set a 30 second timeout
-        if hasattr(signal, 'SIGALRM'):
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)
-        
-        # Load and compile the CUDA extension
-        mcts_cuda = load_inline(
-            name='mcts_cuda',
-            cpp_sources=[cpp_source],
-            cuda_sources=[cuda_source],
-            extra_cuda_cflags=extra_cuda_cflags,
-            verbose=True,  # Enable verbose to see what's happening
-            with_cuda=True,
-            build_directory='/tmp/torch_extensions'  # Use explicit build dir
-        )
-        
-        # Cancel timeout if compilation succeeded
-        if hasattr(signal, 'SIGALRM'):
-            signal.alarm(0)
-        
-        logger.info("Successfully compiled custom CUDA kernels")
-        
-        # Make kernels available
-        batched_ucb_selection = mcts_cuda.batched_ucb_selection
-        parallel_backup = mcts_cuda.parallel_backup
-        
-        CUDA_KERNELS_AVAILABLE = True
+        # Check if pre-compiled module exists
+        module_path = os.path.join(os.path.dirname(__file__), 'mcts_cuda_kernels.cpython-312-x86_64-linux-gnu.so')
+        if os.path.exists(module_path):
+            # Load pre-compiled module
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("mcts_cuda_kernels", module_path)
+            mcts_cuda = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mcts_cuda)
+            
+            logger.info("Successfully loaded pre-compiled CUDA kernels")
+            
+            # Make kernels available
+            batched_ucb_selection = mcts_cuda.batched_ucb_selection
+            parallel_backup = mcts_cuda.parallel_backup
+            
+            # Additional kernels from full version (if available)
+            if hasattr(mcts_cuda, 'batched_add_children'):
+                batched_add_children = mcts_cuda.batched_add_children
+            if hasattr(mcts_cuda, 'quantum_interference'):
+                quantum_interference = mcts_cuda.quantum_interference
+            if hasattr(mcts_cuda, 'evaluate_gomoku_positions'):
+                evaluate_gomoku_positions = mcts_cuda.evaluate_gomoku_positions
+            
+            CUDA_KERNELS_AVAILABLE = True
+        else:
+            # Try JIT compilation as fallback
+            logger.info("Pre-compiled module not found, attempting JIT compilation...")
+            
+            # Set compilation timeout to prevent hanging
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("CUDA compilation timed out")
+            
+            # Set a 30 second timeout
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+            
+            # Create build directory
+            import tempfile
+            build_dir = tempfile.mkdtemp(prefix='mcts_cuda_')
+            
+            # Load and compile the CUDA extension
+            mcts_cuda = load_inline(
+                name='mcts_cuda',
+                cpp_sources=[cpp_source],
+                cuda_sources=[cuda_source],
+                extra_cuda_cflags=extra_cuda_cflags,
+                verbose=False,  # Disable verbose to reduce output
+                with_cuda=True,
+                build_directory=build_dir
+            )
+            
+            # Cancel timeout if compilation succeeded
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)
+            
+            logger.info("Successfully compiled custom CUDA kernels")
+            
+            # Make kernels available
+            batched_ucb_selection = mcts_cuda.batched_ucb_selection
+            parallel_backup = mcts_cuda.parallel_backup
+            
+            # Additional kernels from full version (if available)
+            if hasattr(mcts_cuda, 'batched_add_children'):
+                batched_add_children = mcts_cuda.batched_add_children
+            if hasattr(mcts_cuda, 'quantum_interference'):
+                quantum_interference = mcts_cuda.quantum_interference
+            if hasattr(mcts_cuda, 'evaluate_gomoku_positions'):
+                evaluate_gomoku_positions = mcts_cuda.evaluate_gomoku_positions
+            
+            CUDA_KERNELS_AVAILABLE = True
         
     except Exception as e:
-        logger.warning(f"Failed to compile custom CUDA kernels: {e}")
+        logger.warning(f"Failed to load/compile custom CUDA kernels: {e}")
         logger.warning("Falling back to PyTorch implementations")
         
         # Use the fallback implementations defined above
         CUDA_KERNELS_AVAILABLE = False
+        
+        # Define fallback stubs for additional kernels
+        def batched_add_children(*args, **kwargs):
+            raise NotImplementedError("CUDA kernel not available")
+        
+        def quantum_interference(*args, **kwargs):
+            raise NotImplementedError("CUDA kernel not available")
+        
+        def evaluate_gomoku_positions(*args, **kwargs):
+            raise NotImplementedError("CUDA kernel not available")

@@ -1,10 +1,9 @@
 """GPU acceleration components"""
 
 from .csr_tree import CSRTree, CSRTreeConfig
-from .optimized_wave_engine import OptimizedWaveEngine, OptimizedWaveConfig
 from .gpu_optimizer import GPUOptimizer, AsyncEvaluator, StateMemoryPool
-from .csr_gpu_kernels import get_csr_kernels, CSRGPUKernels
-from .optimized_cuda_kernels import OptimizedCUDAKernels
+from .csr_gpu_kernels import get_csr_kernels, CSRGPUKernels, CSRBatchOperations, get_csr_batch_operations
+from .cuda_kernels import OptimizedCUDAKernels, CUDAKernels
 from .gpu_tree_kernels import GPUTreeKernels
 
 # Optional GPU attack/defense module
@@ -18,14 +17,15 @@ except ImportError:
 __all__ = [
     "CSRTree",
     "CSRTreeConfig",
-    "OptimizedWaveEngine",
-    "OptimizedWaveConfig",
     "GPUOptimizer",
     "AsyncEvaluator",
     "StateMemoryPool",
     "get_csr_kernels",
     "CSRGPUKernels",
+    "CSRBatchOperations",
+    "get_csr_batch_operations",
     "OptimizedCUDAKernels",
+    "CUDAKernels",
     "GPUTreeKernels",
 ]
 

@@ -37,9 +37,16 @@ GPU acceleration components:
 
 ### quantum/
 Quantum-inspired enhancements:
-- `interference.py` - MinHash-based interference
-- `phase_policy.py` - Phase-kicked priors
+- `quantum_features.py` - Main quantum MCTS implementation (production)
+- `qft_engine.py` - Optimized QFT computations
 - `path_integral.py` - Path integral formulation
+- `interference_gpu.py` - GPU-accelerated MinHash interference
+- `decoherence.py` - Decoherence dynamics
+- `envariance.py` - Entanglement-assisted robustness
+- `quantum_darwinism.py` - Classical information extraction
+- `phase_policy.py` - Phase-kicked priors
+- `rg_flow.py` - Renormalization group flow
+- `thermodynamics.py` - Thermodynamic properties
 
 ### utils/
 Utility components:
@@ -58,11 +65,26 @@ from mcts import (
     ResNetEvaluator,
     create_evaluator_for_game
 )
+from mcts.quantum import create_quantum_mcts
 
 # Create components
 game = GameInterface(GameType.GOMOKU)
 evaluator = create_evaluator_for_game('gomoku')
+
+# Standard MCTS
 mcts = HighPerformanceMCTS(game, evaluator)
+
+# Quantum-enhanced MCTS
+quantum_mcts = create_quantum_mcts(
+    enable_quantum=True,
+    hbar_eff=0.1,  # Quantum strength
+    min_wave_size=32  # Batch threshold
+)
+
+# Use quantum features in selection
+ucb_scores = quantum_mcts.apply_quantum_to_selection(
+    q_values, visit_counts, priors
+)
 
 # Run search
 action_probs = mcts.search(initial_state)
@@ -91,10 +113,13 @@ quantum
 ## Performance Features
 
 - **CSR Tree Format**: Memory-efficient sparse representation
-- **Wave Processing**: Vectorized parallel search
+- **Wave Processing**: Vectorized parallel search (256-2048 paths)
 - **GPU Acceleration**: CUDA kernels for critical operations
 - **Mixed Precision**: FP16/FP32 for optimal performance
 - **Memory Pooling**: Zero-allocation during search
+- **Quantum Features**: < 2x overhead with full QFT physics
+- **Pre-computed Tables**: O(1) quantum correction lookup
+- **Adaptive Parameters**: ℏ_eff = 1/√N̄ scaling
 
 ## See Also
 

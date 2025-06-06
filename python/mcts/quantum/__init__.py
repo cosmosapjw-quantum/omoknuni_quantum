@@ -2,12 +2,12 @@
 
 from .interference import InterferenceEngine
 from .phase_policy import PhaseKickedPolicy, PhaseConfig
-from .path_integral import PathIntegralMCTS, PathIntegralConfig
+from .path_integral import PathIntegral, PathIntegralConfig
 
 __all__ = [
     "InterferenceEngine",
     "PhaseKickedPolicy",
     "PhaseConfig",
-    "PathIntegralMCTS",
+    "PathIntegral",
     "PathIntegralConfig",
 ]

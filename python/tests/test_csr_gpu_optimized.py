@@ -6,7 +6,7 @@ import numpy as np
 from unittest.mock import MagicMock
 
 from mcts.gpu.csr_tree import CSRTree, CSRTreeConfig
-from mcts.gpu.csr_gpu_kernels_optimized import CSRBatchOperations, OptimizedCSRKernels
+from mcts.gpu.csr_gpu_kernels import CSRBatchOperations, OptimizedCSRKernels
 
 
 class TestOptimizedCSRKernels:
