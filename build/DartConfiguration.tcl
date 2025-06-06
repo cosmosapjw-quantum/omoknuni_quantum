@@ -4,8 +4,8 @@
 
 
 # Configuration directories and files
-SourceDirectory: /home/cosmos/omoknuni_python
-BuildDirectory: /home/cosmos/omoknuni_python/build
+SourceDirectory: /home/cosmos/omoknuni_quantum
+BuildDirectory: /home/cosmos/omoknuni_quantum/build
 
 # Where to place the cost data store
 CostDataFile: 
@@ -27,7 +27,7 @@ SubmitInactivityTimeout:
 NightlyStartTime: 00:00:00 EDT
 
 # Commands for the build/test/submit cycle
-ConfigureCommand: "/usr/bin/cmake" "/home/cosmos/omoknuni_python"
+ConfigureCommand: "/usr/bin/cmake" "/home/cosmos/omoknuni_quantum"
 MakeCommand: /usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}"
 DefaultCTestConfigurationType: Release
 
@@ -45,7 +45,7 @@ SVNOptions:
 SVNUpdateOptions: 
 
 # Git options
-GITCommand: 
+GITCommand: /usr/bin/git
 GITInitSubmodules: 
 GITUpdateOptions: 
 GITUpdateCustom: 
@@ -58,9 +58,9 @@ P4UpdateOptions:
 P4UpdateCustom: 
 
 # Generic update command
-UpdateCommand: 
+UpdateCommand: /usr/bin/git
 UpdateOptions: 
-UpdateType: 
+UpdateType: git
 
 # Compiler info
 Compiler: /usr/bin/c++

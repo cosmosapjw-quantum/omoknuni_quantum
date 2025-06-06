@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -142,9 +142,9 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/cosmos/omoknuni_python/build/CMakeFiles /home/cosmos/omoknuni_python/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/cosmos/omoknuni_quantum/build/CMakeFiles /home/cosmos/omoknuni_quantum/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/cosmos/omoknuni_python/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/cosmos/omoknuni_quantum/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -627,19 +627,6 @@ attack_defense_tests/fast:
 .PHONY : attack_defense_tests/fast
 
 #=============================================================================
-# Target rules for targets named gpu_attack_defense_test
-
-# Build rule for target.
-gpu_attack_defense_test: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 gpu_attack_defense_test
-.PHONY : gpu_attack_defense_test
-
-# fast build rule for target.
-gpu_attack_defense_test/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/gpu_attack_defense_test.dir/build.make CMakeFiles/gpu_attack_defense_test.dir/build
-.PHONY : gpu_attack_defense_test/fast
-
-#=============================================================================
 # Target rules for targets named all_tests
 
 # Build rule for target.
@@ -892,30 +879,6 @@ src/python/bindings.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero_py.dir/build.make CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.s
 .PHONY : src/python/bindings.cpp.s
 
-src/utils/attack_defense_gpu_manager.o: src/utils/attack_defense_gpu_manager.cpp.o
-.PHONY : src/utils/attack_defense_gpu_manager.o
-
-# target to build an object file
-src/utils/attack_defense_gpu_manager.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.o
-.PHONY : src/utils/attack_defense_gpu_manager.cpp.o
-
-src/utils/attack_defense_gpu_manager.i: src/utils/attack_defense_gpu_manager.cpp.i
-.PHONY : src/utils/attack_defense_gpu_manager.i
-
-# target to preprocess a source file
-src/utils/attack_defense_gpu_manager.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.i
-.PHONY : src/utils/attack_defense_gpu_manager.cpp.i
-
-src/utils/attack_defense_gpu_manager.s: src/utils/attack_defense_gpu_manager.cpp.s
-.PHONY : src/utils/attack_defense_gpu_manager.s
-
-# target to generate assembly for a file
-src/utils/attack_defense_gpu_manager.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.s
-.PHONY : src/utils/attack_defense_gpu_manager.cpp.s
-
 src/utils/attack_defense_module.o: src/utils/attack_defense_module.cpp.o
 .PHONY : src/utils/attack_defense_module.o
 
@@ -939,78 +902,6 @@ src/utils/attack_defense_module.s: src/utils/attack_defense_module.cpp.s
 src/utils/attack_defense_module.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.s
 .PHONY : src/utils/attack_defense_module.cpp.s
-
-src/utils/gpu_attack_defense_chess.o: src/utils/gpu_attack_defense_chess.cpp.o
-.PHONY : src/utils/gpu_attack_defense_chess.o
-
-# target to build an object file
-src/utils/gpu_attack_defense_chess.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.o
-.PHONY : src/utils/gpu_attack_defense_chess.cpp.o
-
-src/utils/gpu_attack_defense_chess.i: src/utils/gpu_attack_defense_chess.cpp.i
-.PHONY : src/utils/gpu_attack_defense_chess.i
-
-# target to preprocess a source file
-src/utils/gpu_attack_defense_chess.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.i
-.PHONY : src/utils/gpu_attack_defense_chess.cpp.i
-
-src/utils/gpu_attack_defense_chess.s: src/utils/gpu_attack_defense_chess.cpp.s
-.PHONY : src/utils/gpu_attack_defense_chess.s
-
-# target to generate assembly for a file
-src/utils/gpu_attack_defense_chess.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.s
-.PHONY : src/utils/gpu_attack_defense_chess.cpp.s
-
-src/utils/gpu_attack_defense_go.o: src/utils/gpu_attack_defense_go.cpp.o
-.PHONY : src/utils/gpu_attack_defense_go.o
-
-# target to build an object file
-src/utils/gpu_attack_defense_go.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.o
-.PHONY : src/utils/gpu_attack_defense_go.cpp.o
-
-src/utils/gpu_attack_defense_go.i: src/utils/gpu_attack_defense_go.cpp.i
-.PHONY : src/utils/gpu_attack_defense_go.i
-
-# target to preprocess a source file
-src/utils/gpu_attack_defense_go.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.i
-.PHONY : src/utils/gpu_attack_defense_go.cpp.i
-
-src/utils/gpu_attack_defense_go.s: src/utils/gpu_attack_defense_go.cpp.s
-.PHONY : src/utils/gpu_attack_defense_go.s
-
-# target to generate assembly for a file
-src/utils/gpu_attack_defense_go.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.s
-.PHONY : src/utils/gpu_attack_defense_go.cpp.s
-
-src/utils/gpu_attack_defense_gomoku.o: src/utils/gpu_attack_defense_gomoku.cpp.o
-.PHONY : src/utils/gpu_attack_defense_gomoku.o
-
-# target to build an object file
-src/utils/gpu_attack_defense_gomoku.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.o
-.PHONY : src/utils/gpu_attack_defense_gomoku.cpp.o
-
-src/utils/gpu_attack_defense_gomoku.i: src/utils/gpu_attack_defense_gomoku.cpp.i
-.PHONY : src/utils/gpu_attack_defense_gomoku.i
-
-# target to preprocess a source file
-src/utils/gpu_attack_defense_gomoku.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.i
-.PHONY : src/utils/gpu_attack_defense_gomoku.cpp.i
-
-src/utils/gpu_attack_defense_gomoku.s: src/utils/gpu_attack_defense_gomoku.cpp.s
-.PHONY : src/utils/gpu_attack_defense_gomoku.s
-
-# target to generate assembly for a file
-src/utils/gpu_attack_defense_gomoku.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/alphazero.dir/build.make CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.s
-.PHONY : src/utils/gpu_attack_defense_gomoku.cpp.s
 
 src/utils/hash_specializations.o: src/utils/hash_specializations.cpp.o
 .PHONY : src/utils/hash_specializations.o
@@ -1267,36 +1158,6 @@ tests/games/gomoku/gomoku_test.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/all_tests.dir/build.make CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.s
 .PHONY : tests/games/gomoku/gomoku_test.cpp.s
 
-tests/utils/attack_defense_benchmark.o: tests/utils/attack_defense_benchmark.cpp.o
-.PHONY : tests/utils/attack_defense_benchmark.o
-
-# target to build an object file
-tests/utils/attack_defense_benchmark.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/attack_defense_tests.dir/build.make CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/gpu_attack_defense_test.dir/build.make CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/all_tests.dir/build.make CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o
-.PHONY : tests/utils/attack_defense_benchmark.cpp.o
-
-tests/utils/attack_defense_benchmark.i: tests/utils/attack_defense_benchmark.cpp.i
-.PHONY : tests/utils/attack_defense_benchmark.i
-
-# target to preprocess a source file
-tests/utils/attack_defense_benchmark.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/attack_defense_tests.dir/build.make CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/gpu_attack_defense_test.dir/build.make CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/all_tests.dir/build.make CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.i
-.PHONY : tests/utils/attack_defense_benchmark.cpp.i
-
-tests/utils/attack_defense_benchmark.s: tests/utils/attack_defense_benchmark.cpp.s
-.PHONY : tests/utils/attack_defense_benchmark.s
-
-# target to generate assembly for a file
-tests/utils/attack_defense_benchmark.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/attack_defense_tests.dir/build.make CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/gpu_attack_defense_test.dir/build.make CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/all_tests.dir/build.make CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.s
-.PHONY : tests/utils/attack_defense_benchmark.cpp.s
-
 tests/utils/attack_defense_test.o: tests/utils/attack_defense_test.cpp.o
 .PHONY : tests/utils/attack_defense_test.o
 
@@ -1400,7 +1261,6 @@ help:
 	@echo "... core_tests"
 	@echo "... go_tests"
 	@echo "... gomoku_tests"
-	@echo "... gpu_attack_defense_test"
 	@echo "... src/core/game_export.o"
 	@echo "... src/core/game_export.i"
 	@echo "... src/core/game_export.s"
@@ -1431,21 +1291,9 @@ help:
 	@echo "... src/python/bindings.o"
 	@echo "... src/python/bindings.i"
 	@echo "... src/python/bindings.s"
-	@echo "... src/utils/attack_defense_gpu_manager.o"
-	@echo "... src/utils/attack_defense_gpu_manager.i"
-	@echo "... src/utils/attack_defense_gpu_manager.s"
 	@echo "... src/utils/attack_defense_module.o"
 	@echo "... src/utils/attack_defense_module.i"
 	@echo "... src/utils/attack_defense_module.s"
-	@echo "... src/utils/gpu_attack_defense_chess.o"
-	@echo "... src/utils/gpu_attack_defense_chess.i"
-	@echo "... src/utils/gpu_attack_defense_chess.s"
-	@echo "... src/utils/gpu_attack_defense_go.o"
-	@echo "... src/utils/gpu_attack_defense_go.i"
-	@echo "... src/utils/gpu_attack_defense_go.s"
-	@echo "... src/utils/gpu_attack_defense_gomoku.o"
-	@echo "... src/utils/gpu_attack_defense_gomoku.i"
-	@echo "... src/utils/gpu_attack_defense_gomoku.s"
 	@echo "... src/utils/hash_specializations.o"
 	@echo "... src/utils/hash_specializations.i"
 	@echo "... src/utils/hash_specializations.s"
@@ -1476,9 +1324,6 @@ help:
 	@echo "... tests/games/gomoku/gomoku_test.o"
 	@echo "... tests/games/gomoku/gomoku_test.i"
 	@echo "... tests/games/gomoku/gomoku_test.s"
-	@echo "... tests/utils/attack_defense_benchmark.o"
-	@echo "... tests/utils/attack_defense_benchmark.i"
-	@echo "... tests/utils/attack_defense_benchmark.s"
 	@echo "... tests/utils/attack_defense_test.o"
 	@echo "... tests/utils/attack_defense_test.i"
 	@echo "... tests/utils/attack_defense_test.s"

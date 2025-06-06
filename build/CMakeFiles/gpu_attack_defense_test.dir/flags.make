@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH
 
-CXX_INCLUDES = -I/home/cosmos/omoknuni_python/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include
+CXX_INCLUDES = -I/home/cosmos/omoknuni_quantum/include -isystem /home/cosmos/venv/lib/python3.12/site-packages/torch/include -isystem /home/cosmos/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/libtorch/include -isystem /usr/local/cuda-12.8/include
 
 CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17 -Wall -Wextra -O3 -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1
 

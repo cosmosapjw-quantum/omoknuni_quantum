@@ -1,7 +1,5 @@
 file(REMOVE_RECURSE
   "CMakeFiles/attack_defense_tests.dir/link.d"
-  "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
-  "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o.d"
   "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o"
   "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
   "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"

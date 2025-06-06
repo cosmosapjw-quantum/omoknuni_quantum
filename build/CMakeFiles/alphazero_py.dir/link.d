@@ -4,20 +4,6 @@ lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: \
   CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o \
   lib/Release/libalphazero.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libfmt.so \
-  /opt/libtorch/lib/libtorch.so \
-  /opt/libtorch/lib/libtorch_cpu.so \
-  /opt/libtorch/lib/libtorch_cuda.so \
-  /opt/libtorch/lib/libc10_cuda.so \
-  /opt/libtorch/lib/libc10.so \
-  /usr/local/cuda-12.8/lib64/libcudart.so \
-  /opt/libtorch/lib/libtorch.so \
-  /opt/libtorch/lib/libc10.so \
-  /opt/libtorch/lib/libkineto.a \
-  /usr/local/cuda-12.8/lib64/libnvrtc.so \
-  /usr/local/cuda-12.8/lib64/libnvToolsExt.so \
-  /opt/libtorch/lib/libc10_cuda.so \
-  /usr/local/cuda-12.8/lib64/libcudart.so \
-  /usr/lib/x86_64-linux-gnu/libcudnn.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libm.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libm.so \
@@ -52,34 +38,6 @@ CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o:
 lib/Release/libalphazero.so:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libfmt.so:
-
-/opt/libtorch/lib/libtorch.so:
-
-/opt/libtorch/lib/libtorch_cpu.so:
-
-/opt/libtorch/lib/libtorch_cuda.so:
-
-/opt/libtorch/lib/libc10_cuda.so:
-
-/opt/libtorch/lib/libc10.so:
-
-/usr/local/cuda-12.8/lib64/libcudart.so:
-
-/opt/libtorch/lib/libtorch.so:
-
-/opt/libtorch/lib/libc10.so:
-
-/opt/libtorch/lib/libkineto.a:
-
-/usr/local/cuda-12.8/lib64/libnvrtc.so:
-
-/usr/local/cuda-12.8/lib64/libnvToolsExt.so:
-
-/opt/libtorch/lib/libc10_cuda.so:
-
-/usr/local/cuda-12.8/lib64/libcudart.so:
-
-/usr/lib/x86_64-linux-gnu/libcudnn.so:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so:
 

@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/attack_defense_tests.dir/depend.make
@@ -73,79 +73,52 @@ CMakeFiles/attack_defense_tests.dir/codegen:
 .PHONY : CMakeFiles/attack_defense_tests.dir/codegen
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o: CMakeFiles/attack_defense_tests.dir/flags.make
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o: /home/cosmos/omoknuni_python/tests/utils/attack_defense_test.cpp
+CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o: /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp
 CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o: CMakeFiles/attack_defense_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o -MF CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o.d -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o -c /home/cosmos/omoknuni_python/tests/utils/attack_defense_test.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o -MF CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o.d -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/utils/attack_defense_test.cpp > CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp > CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.i
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/utils/attack_defense_test.cpp -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.s
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o: CMakeFiles/attack_defense_tests.dir/flags.make
-CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o: /home/cosmos/omoknuni_python/tests/utils/gomoku_attack_defense_test.cpp
+CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o: /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp
 CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o: CMakeFiles/attack_defense_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -MF CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d -o CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -c /home/cosmos/omoknuni_python/tests/utils/gomoku_attack_defense_test.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -MF CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d -o CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/utils/gomoku_attack_defense_test.cpp > CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp > CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.i
 
 CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/utils/gomoku_attack_defense_test.cpp -o CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.s
-
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o: CMakeFiles/attack_defense_tests.dir/flags.make
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o: /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o: CMakeFiles/attack_defense_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o -MF CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o.d -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp
-
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp > CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.i
-
-CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp -o CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.s
 
 # Object files for target attack_defense_tests
 attack_defense_tests_OBJECTS = \
 "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o" \
-"CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o" \
-"CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
+"CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"
 
 # External object files for target attack_defense_tests
 attack_defense_tests_EXTERNAL_OBJECTS =
 
 bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o
 bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o
-bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o
 bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/build.make
 bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/compiler_depend.ts
 bin/Release/attack_defense_tests: lib/Release/libalphazero.so
 bin/Release/attack_defense_tests: /usr/lib/x86_64-linux-gnu/libgtest_main.a
 bin/Release/attack_defense_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
 bin/Release/attack_defense_tests: /usr/lib/x86_64-linux-gnu/libgmock.a
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libtorch.so
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libc10.so
-bin/Release/attack_defense_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libc10.so
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libkineto.a
-bin/Release/attack_defense_tests: /usr/local/cuda-12.8/lib64/libnvrtc.so
-bin/Release/attack_defense_tests: /usr/local/cuda-12.8/lib64/libnvToolsExt.so
-bin/Release/attack_defense_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/attack_defense_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/attack_defense_tests: /usr/lib/x86_64-linux-gnu/libcudnn.so
 bin/Release/attack_defense_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
 bin/Release/attack_defense_tests: CMakeFiles/attack_defense_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable bin/Release/attack_defense_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable bin/Release/attack_defense_tests"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/attack_defense_tests.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -157,6 +130,6 @@ CMakeFiles/attack_defense_tests.dir/clean:
 .PHONY : CMakeFiles/attack_defense_tests.dir/clean
 
 CMakeFiles/attack_defense_tests.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/attack_defense_tests.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/attack_defense_tests.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/attack_defense_tests.dir/depend
 

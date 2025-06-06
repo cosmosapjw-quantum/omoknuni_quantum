@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_rules.cpp.o: \
- /home/cosmos/omoknuni_python/src/games/gomoku/gomoku_rules.cpp \
+ /home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_rules.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_python/include/games/gomoku/gomoku_rules.h \
+ /home/cosmos/omoknuni_quantum/include/games/gomoku/gomoku_rules.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -150,14 +150,14 @@ CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_rules.cpp.o: \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/map \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
- /home/cosmos/omoknuni_python/include/utils/hash_specializations.h \
+ /home/cosmos/omoknuni_quantum/include/utils/hash_specializations.h \
  /usr/include/c++/13/cstdint \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h /usr/include/stdint.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-least.h \
  /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h \
- /home/cosmos/omoknuni_python/include/core/export_macros.h \
+ /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
  /usr/include/c++/13/stdexcept /usr/include/c++/13/exception \
  /usr/include/c++/13/bits/exception_ptr.h \
  /usr/include/c++/13/bits/cxxabi_init_exception.h \

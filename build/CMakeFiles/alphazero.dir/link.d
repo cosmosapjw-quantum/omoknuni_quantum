@@ -14,25 +14,7 @@ lib/Release/libalphazero.so: \
   CMakeFiles/alphazero.dir/src/utils/hash_specializations.cpp.o \
   CMakeFiles/alphazero.dir/src/utils/logger.cpp.o \
   CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o \
-  CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.o \
-  CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.o \
-  CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.o \
-  CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.o \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libfmt.so \
-  /opt/libtorch/lib/libtorch.so \
-  /opt/libtorch/lib/libc10.so \
-  /opt/libtorch/lib/libkineto.a \
-  /usr/local/cuda-12.8/lib64/libnvrtc.so \
-  /opt/libtorch/lib/libc10_cuda.so \
-  /usr/local/cuda-12.8/lib64/libcudart.so \
-  /usr/lib/x86_64-linux-gnu/libcudnn.so \
-  /opt/libtorch/lib/libtorch_cpu.so \
-  /opt/libtorch/lib/libtorch_cuda.so \
-  /opt/libtorch/lib/libc10_cuda.so \
-  /opt/libtorch/lib/libc10.so \
-  /usr/local/cuda-12.8/lib64/libcudart.so \
-  /opt/libtorch/lib/libtorch.so \
-  /usr/local/cuda-12.8/lib64/libnvToolsExt.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libm.so \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libm.so \
@@ -88,43 +70,7 @@ CMakeFiles/alphazero.dir/src/utils/logger.cpp.o:
 
 CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o:
 
-CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.o:
-
-CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.o:
-
-CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.o:
-
-CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.o:
-
 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libfmt.so:
-
-/opt/libtorch/lib/libtorch.so:
-
-/opt/libtorch/lib/libc10.so:
-
-/opt/libtorch/lib/libkineto.a:
-
-/usr/local/cuda-12.8/lib64/libnvrtc.so:
-
-/opt/libtorch/lib/libc10_cuda.so:
-
-/usr/local/cuda-12.8/lib64/libcudart.so:
-
-/usr/lib/x86_64-linux-gnu/libcudnn.so:
-
-/opt/libtorch/lib/libtorch_cpu.so:
-
-/opt/libtorch/lib/libtorch_cuda.so:
-
-/opt/libtorch/lib/libc10_cuda.so:
-
-/opt/libtorch/lib/libc10.so:
-
-/usr/local/cuda-12.8/lib64/libcudart.so:
-
-/opt/libtorch/lib/libtorch.so:
-
-/usr/local/cuda-12.8/lib64/libnvToolsExt.so:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so:
 

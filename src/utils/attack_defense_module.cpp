@@ -1,5 +1,7 @@
 #include "utils/attack_defense_module.h"
+#ifdef WITH_TORCH
 #include "utils/gpu_attack_defense_module.h"
+#endif
 #include <iostream>
 #include <algorithm>
 #include <cmath>

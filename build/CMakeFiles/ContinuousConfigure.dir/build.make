@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Utility rule file for ContinuousConfigure.
 
@@ -85,6 +85,6 @@ CMakeFiles/ContinuousConfigure.dir/clean:
 .PHONY : CMakeFiles/ContinuousConfigure.dir/clean
 
 CMakeFiles/ContinuousConfigure.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/ContinuousConfigure.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/ContinuousConfigure.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/ContinuousConfigure.dir/depend
 

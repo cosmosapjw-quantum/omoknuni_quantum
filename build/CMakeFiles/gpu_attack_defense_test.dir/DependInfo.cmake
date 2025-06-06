@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp" "CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o" "gcc" "CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp" "CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o" "gcc" "CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o.d"
   "" "bin/Release/gpu_attack_defense_test" "gcc" "CMakeFiles/gpu_attack_defense_test.dir/link.d"
   )
 

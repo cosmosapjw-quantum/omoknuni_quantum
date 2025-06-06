@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_python/tests/games/chess/chess_test.cpp" "CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o" "gcc" "CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp" "CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o" "gcc" "CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o.d"
   "" "bin/Release/chess_tests" "gcc" "CMakeFiles/chess_tests.dir/link.d"
   )
 

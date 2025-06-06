@@ -36,7 +36,22 @@
       "Bash(./bin/Release/go_tests:*)",
       "Bash(valgrind:*)",
       "Bash(git checkout:*)",
-      "Bash(./bin/Release/attack_defense_tests:*)"
+      "Bash(./bin/Release/attack_defense_tests:*)",
+      "Bash(python -m pytest tests/test_node.py -v)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/test_tree_arena.py -v -k \"not gpu\")",
+      "Bash(python -m pytest tests/test_tree_arena.py::TestTreeArena::test_lru_eviction -v)",
+      "Bash(python -m pytest tests/test_tree_arena.py::TestTreeArena::test_lru_eviction -v -s)",
+      "Bash(python -m pytest tests/test_node.py::TestNode::test_node_select_child_tie_breaking -v)",
+      "Bash(python -m pytest tests/test_mcts.py::TestMCTS::test_progressive_widening -xvs)",
+      "Bash(python test_pw_debug.py:*)",
+      "Bash(python:*)",
+      "Bash(pytest:*)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python test_mcts_hang.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python benchmark_qft_mcts.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 CUDA_LAUNCH_BLOCKING=1 python benchmark_qft_mcts.py)",
+      "Bash(~/venv/bin/python test_path_integral_dtype.py)"
     ],
     "deny": []
   },

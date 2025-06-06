@@ -1,0 +1,81 @@
+Successfully loaded C++ game implementations from alphazero_py module
+INFO:__main__:Starting QFT-MCTS benchmarks...
+INFO:__main__:
+Benchmarking gomoku...
+INFO:__main__:  Testing classical MCTS...
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:mcts.gpu.csr_gpu_kernels_optimized:Using custom CUDA kernels for maximum performance
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:__main__:    100 sims: 14415.1 sims/sec
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:__main__:    500 sims: 71896.2 sims/sec
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:__main__:    Move confidence: 0.004
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+INFO:mcts.gpu.csr_tree:Initialized optimized CSR GPU kernels
+INFO:mcts.gpu.optimized_wave_engine:CUDA graph optimization available (applied selectively)
+INFO:mcts.quantum.interference:Using GPU-accelerated MinHash interference
+INFO:mcts.quantum.phase_policy:Using GPU-accelerated quantum phase kicks
+INFO:mcts.quantum.path_integral:Using GPU-accelerated path integral formulation
+INFO:mcts.gpu.optimized_cuda_kernels:Using optimized Triton kernels for GPU acceleration
+INFO:mcts.gpu.optimized_cuda_kernels:Triton kernels compiled successfully
+ERROR:__main__:Benchmark failed: 'DummyEvaluator' object has no attribute 'evaluate_batch'
+Traceback (most recent call last):
+  File "/home/cosmos/omoknuni_quantum/python/benchmark_qft_mcts.py", line 723, in <module>
+    main()
+  File "/home/cosmos/omoknuni_quantum/python/benchmark_qft_mcts.py", line 713, in main
+    benchmark.run_benchmarks()
+  File "/home/cosmos/omoknuni_quantum/python/benchmark_qft_mcts.py", line 437, in run_benchmarks
+    scalability_result = self.measure_scalability(mcts_type, game)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmos/omoknuni_quantum/python/benchmark_qft_mcts.py", line 337, in measure_scalability
+    policy = mcts.search(game)
+             ^^^^^^^^^^^^^^^^^
+  File "/home/cosmos/omoknuni_quantum/python/mcts/core/high_performance_mcts.py", line 195, in search
+    self.wave_engine.run_wave(root_state, self.config.wave_size)
+  File "/home/cosmos/omoknuni_quantum/python/mcts/gpu/optimized_wave_engine.py", line 259, in run_wave
+    expanded_indices, expanded_states = self._batch_expand_leaves(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmos/omoknuni_quantum/python/mcts/gpu/optimized_wave_engine.py", line 895, in _batch_expand_leaves
+    policy_logits, _ = self.evaluator.evaluate_batch(batch_tensor)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DummyEvaluator' object has no attribute 'evaluate_batch'

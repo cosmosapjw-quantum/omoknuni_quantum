@@ -12,8 +12,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o.d"
   "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
   "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
-  "CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
-  "CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o.d"
   "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o"
   "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
   "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"

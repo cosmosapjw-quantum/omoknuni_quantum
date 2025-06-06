@@ -1,0 +1,90 @@
+{
+  "throughput": {
+    "gomoku": {
+      "classical": {
+        "100": {
+          "simulations_per_second": 967.4478599835032,
+          "avg_time_per_search": 0.10336474360665307,
+          "total_simulations": 500
+        },
+        "500": {
+          "simulations_per_second": 4630.715858458568,
+          "avg_time_per_search": 0.10797466639778577,
+          "total_simulations": 2500
+        },
+        "1000": {
+          "simulations_per_second": 8804.120329391304,
+          "avg_time_per_search": 0.11358318180427887,
+          "total_simulations": 5000
+        }
+      },
+      "quantum": {
+        "100": {
+          "simulations_per_second": 485.6589364763193,
+          "avg_time_per_search": 0.20590581679716707,
+          "total_simulations": 500
+        },
+        "500": {
+          "simulations_per_second": 2402.529717747691,
+          "avg_time_per_search": 0.20811397099751047,
+          "total_simulations": 2500
+        },
+        "1000": {
+          "simulations_per_second": 5004.7307466904385,
+          "avg_time_per_search": 0.19981094900285826,
+          "total_simulations": 5000
+        }
+      }
+    }
+  },
+  "quality": {
+    "gomoku": {
+      "classical": {
+        "avg_move_entropy": 5.416097640991211,
+        "avg_move_confidence": 0.004444444552063942,
+        "moves_evaluated": 50
+      },
+      "quantum": {
+        "avg_move_entropy": 5.416097640991211,
+        "avg_move_confidence": 0.004444444552063942,
+        "moves_evaluated": 50
+      }
+    }
+  },
+  "scalability": {
+    "gomoku": {
+      "classical": {
+        "simulation_counts": [
+          100,
+          200
+        ],
+        "search_times": [
+          0.010355888021877035,
+          0.19010424299631268
+        ],
+        "throughputs": [
+          9656.34234251547,
+          1052.0543721050942
+        ]
+      },
+      "quantum": {
+        "simulation_counts": [
+          100,
+          200
+        ],
+        "search_times": [
+          0.011588124994887039,
+          0.010918189014773816
+        ],
+        "throughputs": [
+          8629.52376196515,
+          18318.056202303553
+        ]
+      }
+    }
+  },
+  "efficiency": {
+    "gomoku": {}
+  },
+  "convergence": {}
+}

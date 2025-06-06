@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o: \
- /home/cosmos/omoknuni_python/src/games/chess/chess_rules.cpp \
+ /home/cosmos/omoknuni_quantum/src/games/chess/chess_rules.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_python/include/games/chess/chess_rules.h \
+ /home/cosmos/omoknuni_quantum/include/games/chess/chess_rules.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -114,8 +114,8 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/wchar.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-least.h \
- /home/cosmos/omoknuni_python/include/games/chess/chess_types.h \
- /home/cosmos/omoknuni_python/include/games/chess/chess_state.h \
+ /home/cosmos/omoknuni_quantum/include/games/chess/chess_types.h \
+ /home/cosmos/omoknuni_quantum/include/games/chess/chess_state.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/stringfwd.h \
  /usr/include/c++/13/bits/char_traits.h \
  /usr/include/c++/13/bits/postypes.h /usr/include/c++/13/cwchar \
@@ -181,10 +181,10 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o: \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/map \
  /usr/include/c++/13/bits/stl_tree.h /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h /usr/include/c++/13/atomic \
- /home/cosmos/omoknuni_python/include/core/igamestate.h \
+ /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
  /usr/include/c++/13/stdexcept \
- /home/cosmos/omoknuni_python/include/core/export_macros.h \
- /home/cosmos/omoknuni_python/include/core/illegal_move_exception.h \
+ /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
@@ -203,7 +203,7 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o: \
  /usr/include/c++/13/bits/ostream.tcc \
  /usr/include/c++/13/bits/istream.tcc \
  /usr/include/c++/13/bits/sstream.tcc \
- /home/cosmos/omoknuni_python/include/utils/zobrist_hash.h \
+ /home/cosmos/omoknuni_quantum/include/utils/zobrist_hash.h \
  /usr/include/c++/13/random /usr/include/c++/13/cmath /usr/include/math.h \
  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \

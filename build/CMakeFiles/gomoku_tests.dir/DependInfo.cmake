@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp" "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o" "gcc" "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp" "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o" "gcc" "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
   "" "bin/Release/gomoku_tests" "gcc" "CMakeFiles/gomoku_tests.dir/link.d"
   )
 

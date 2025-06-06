@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/alphazero_py.dir/depend.make
@@ -73,18 +73,18 @@ CMakeFiles/alphazero_py.dir/codegen:
 .PHONY : CMakeFiles/alphazero_py.dir/codegen
 
 CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: CMakeFiles/alphazero_py.dir/flags.make
-CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: /home/cosmos/omoknuni_python/src/python/bindings.cpp
+CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: /home/cosmos/omoknuni_quantum/src/python/bindings.cpp
 CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: CMakeFiles/alphazero_py.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o -MF CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o.d -o CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o -c /home/cosmos/omoknuni_python/src/python/bindings.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o -MF CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o.d -o CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o -c /home/cosmos/omoknuni_quantum/src/python/bindings.cpp
 
 CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/src/python/bindings.cpp > CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/src/python/bindings.cpp > CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.i
 
 CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/src/python/bindings.cpp -o CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/src/python/bindings.cpp -o CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.s
 
 # Object files for target alphazero_py
 alphazero_py_OBJECTS = \
@@ -97,21 +97,10 @@ lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: CMakeFiles/alphazero_p
 lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: CMakeFiles/alphazero_py.dir/build.make
 lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: CMakeFiles/alphazero_py.dir/compiler_depend.ts
 lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: lib/Release/libalphazero.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libtorch.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libc10_cuda.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libc10.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-12.8/lib64/libcudart.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libc10.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libkineto.a
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-12.8/lib64/libnvrtc.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-12.8/lib64/libnvToolsExt.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /opt/libtorch/lib/libc10_cuda.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /usr/local/cuda-12.8/lib64/libcudart.so
-lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: /usr/lib/x86_64-linux-gnu/libcudnn.so
 lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so: CMakeFiles/alphazero_py.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX shared module lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX shared module lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/alphazero_py.dir/link.txt --verbose=$(VERBOSE)
-	/usr/bin/strip /home/cosmos/omoknuni_python/build/lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so
+	/usr/bin/strip /home/cosmos/omoknuni_quantum/build/lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so
 
 # Rule to build all files generated by this target.
 CMakeFiles/alphazero_py.dir/build: lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so
@@ -122,6 +111,6 @@ CMakeFiles/alphazero_py.dir/clean:
 .PHONY : CMakeFiles/alphazero_py.dir/clean
 
 CMakeFiles/alphazero_py.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/alphazero_py.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/alphazero_py.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/alphazero_py.dir/depend
 

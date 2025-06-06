@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/gomoku_tests.dir/depend.make
@@ -73,18 +73,18 @@ CMakeFiles/gomoku_tests.dir/codegen:
 .PHONY : CMakeFiles/gomoku_tests.dir/codegen
 
 CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o: CMakeFiles/gomoku_tests.dir/flags.make
-CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o: /home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp
+CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o: /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp
 CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o: CMakeFiles/gomoku_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -MF CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d -o CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -c /home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -MF CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d -o CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp
 
 CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp > CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp > CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.i
 
 CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp -o CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp -o CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.s
 
 # Object files for target gomoku_tests
 gomoku_tests_OBJECTS = \
@@ -100,20 +100,9 @@ bin/Release/gomoku_tests: lib/Release/libalphazero.so
 bin/Release/gomoku_tests: /usr/lib/x86_64-linux-gnu/libgtest_main.a
 bin/Release/gomoku_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
 bin/Release/gomoku_tests: /usr/lib/x86_64-linux-gnu/libgmock.a
-bin/Release/gomoku_tests: /opt/libtorch/lib/libtorch.so
-bin/Release/gomoku_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/gomoku_tests: /opt/libtorch/lib/libc10.so
-bin/Release/gomoku_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/gomoku_tests: /opt/libtorch/lib/libc10.so
-bin/Release/gomoku_tests: /opt/libtorch/lib/libkineto.a
-bin/Release/gomoku_tests: /usr/local/cuda-12.8/lib64/libnvrtc.so
-bin/Release/gomoku_tests: /usr/local/cuda-12.8/lib64/libnvToolsExt.so
-bin/Release/gomoku_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/gomoku_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/gomoku_tests: /usr/lib/x86_64-linux-gnu/libcudnn.so
 bin/Release/gomoku_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
 bin/Release/gomoku_tests: CMakeFiles/gomoku_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bin/Release/gomoku_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bin/Release/gomoku_tests"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/gomoku_tests.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -125,6 +114,6 @@ CMakeFiles/gomoku_tests.dir/clean:
 .PHONY : CMakeFiles/gomoku_tests.dir/clean
 
 CMakeFiles/gomoku_tests.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/gomoku_tests.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/gomoku_tests.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/gomoku_tests.dir/depend
 

@@ -8,15 +8,14 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_python/tests/all_tests_main.cpp" "CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/core/game_export_test.cpp" "CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/core/igamestate_test.cpp" "CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/games/chess/chess_test.cpp" "CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/games/go/go_test.cpp" "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/games/gomoku/gomoku_test.cpp" "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/utils/attack_defense_test.cpp" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
-  "/home/cosmos/omoknuni_python/tests/utils/gomoku_attack_defense_test.cpp" "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/all_tests_main.cpp" "CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp" "CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp" "CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp" "CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp" "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp" "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp" "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o" "gcc" "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d"
   "" "bin/Release/all_tests" "gcc" "CMakeFiles/all_tests.dir/link.d"
   )
 

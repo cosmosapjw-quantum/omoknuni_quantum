@@ -1,10 +1,10 @@
 CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: \
- /home/cosmos/omoknuni_python/src/python/bindings.cpp \
+ /home/cosmos/omoknuni_quantum/src/python/bindings.cpp \
  /usr/include/stdc-predef.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/pybind11.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/class.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/attr.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/common.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/pybind11.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/class.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/attr.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h \
  /usr/include/python3.12/Python.h /usr/include/python3.12/patchlevel.h \
  /usr/include/python3.12/pyconfig.h \
  /usr/include/x86_64-linux-gnu/python3.12/pyconfig.h \
@@ -333,11 +333,11 @@ CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc /usr/include/c++/13/version \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/cast.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/descr.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/type_caster_base.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/pytypes.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/buffer_info.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/cast.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/descr.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/type_caster_base.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/pytypes.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/buffer_info.h \
  /usr/include/c++/13/iterator /usr/include/c++/13/bits/stream_iterator.h \
  /usr/include/c++/13/bits/streambuf_iterator.h \
  /usr/include/c++/13/streambuf /usr/include/c++/13/bits/ios_base.h \
@@ -347,21 +347,35 @@ CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: \
  /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
  /usr/include/c++/13/bits/streambuf.tcc /usr/include/c++/13/utility \
  /usr/include/c++/13/bits/stl_relops.h /usr/include/c++/13/optional \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/internals.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/typeid.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/cpp_conduit.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/internals.h \
+ /usr/include/c++/13/mutex /usr/include/c++/13/bits/chrono.h \
+ /usr/include/c++/13/ratio /usr/include/c++/13/cstdint \
+ /usr/include/c++/13/ctime /usr/include/c++/13/bits/parse_numbers.h \
+ /usr/include/c++/13/bits/std_mutex.h \
+ /usr/include/c++/13/bits/unique_lock.h /usr/include/c++/13/thread \
+ /usr/include/c++/13/bits/std_thread.h \
+ /usr/include/c++/13/bits/this_thread_sleep.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/typeid.h \
  /usr/include/c++/13/cxxabi.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/cxxabi_tweaks.h \
- /usr/include/c++/13/cstdint /usr/include/c++/13/array \
- /usr/include/c++/13/compare /usr/include/c++/13/functional \
- /usr/include/c++/13/bits/std_function.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/value_and_holder.h \
+ /usr/include/c++/13/array /usr/include/c++/13/compare \
+ /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/options.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/detail/init.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/gil.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/stl.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/options.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/exception_translation.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/detail/init.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/gil.h \
+ /usr/include/c++/13/cassert \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/gil_safe_call_once.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/typing.h \
+ /usr/include/c++/13/algorithm \
+ /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/stl.h \
  /usr/include/c++/13/deque /usr/include/c++/13/bits/stl_deque.h \
  /usr/include/c++/13/bits/deque.tcc /usr/include/c++/13/list \
  /usr/include/c++/13/bits/stl_list.h /usr/include/c++/13/bits/list.tcc \
@@ -378,8 +392,6 @@ CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: \
  /usr/include/c++/13/bits/ostream.tcc /usr/include/c++/13/set \
  /usr/include/c++/13/bits/stl_set.h \
  /usr/include/c++/13/bits/stl_multiset.h /usr/include/c++/13/valarray \
- /usr/include/c++/13/algorithm \
- /usr/include/c++/13/pstl/glue_algorithm_defs.h \
  /usr/include/c++/13/bits/valarray_array.h \
  /usr/include/c++/13/bits/valarray_array.tcc \
  /usr/include/c++/13/bits/valarray_before.h \
@@ -389,36 +401,34 @@ CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o: \
  /usr/include/c++/13/bits/gslice_array.h \
  /usr/include/c++/13/bits/mask_array.h \
  /usr/include/c++/13/bits/indirect_array.h /usr/include/c++/13/variant \
- /usr/include/c++/13/bits/parse_numbers.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/numpy.h \
- /usr/lib/python3/dist-packages/pybind11/include/pybind11/complex.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/numpy.h \
+ /home/cosmos/venv/lib/python3.12/site-packages/pybind11/include/pybind11/complex.h \
  /usr/include/c++/13/complex /usr/include/c++/13/sstream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
  /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/numeric \
  /usr/include/c++/13/bits/stl_numeric.h \
  /usr/include/c++/13/pstl/glue_numeric_defs.h \
- /home/cosmos/omoknuni_python/include/core/igamestate.h \
- /home/cosmos/omoknuni_python/include/core/export_macros.h \
- /home/cosmos/omoknuni_python/include/core/illegal_move_exception.h \
- /home/cosmos/omoknuni_python/include/core/game_export.h \
- /home/cosmos/omoknuni_python/include/games/chess/chess_state.h \
+ /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
+ /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
+ /home/cosmos/omoknuni_quantum/include/core/game_export.h \
+ /home/cosmos/omoknuni_quantum/include/games/chess/chess_state.h \
  /usr/include/c++/13/atomic \
- /home/cosmos/omoknuni_python/include/utils/zobrist_hash.h \
+ /home/cosmos/omoknuni_quantum/include/utils/zobrist_hash.h \
  /usr/include/c++/13/random /usr/include/c++/13/bits/random.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h \
  /usr/include/c++/13/bits/random.tcc \
- /home/cosmos/omoknuni_python/include/games/chess/chess_types.h \
- /home/cosmos/omoknuni_python/include/games/go/go_state.h \
- /home/cosmos/omoknuni_python/include/games/go/go_rules.h \
- /home/cosmos/omoknuni_python/include/games/gomoku/gomoku_state.h \
+ /home/cosmos/omoknuni_quantum/include/games/chess/chess_types.h \
+ /home/cosmos/omoknuni_quantum/include/games/go/go_state.h \
+ /home/cosmos/omoknuni_quantum/include/games/go/go_rules.h \
+ /home/cosmos/omoknuni_quantum/include/games/gomoku/gomoku_state.h \
  /usr/include/c++/13/iomanip /usr/include/c++/13/locale \
- /usr/include/c++/13/bits/locale_facets_nonio.h /usr/include/c++/13/ctime \
+ /usr/include/c++/13/bits/locale_facets_nonio.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h \
  /usr/include/libintl.h /usr/include/c++/13/bits/codecvt.h \
  /usr/include/c++/13/bits/locale_facets_nonio.tcc \
  /usr/include/c++/13/bits/locale_conv.h \
- /usr/include/c++/13/bits/quoted_string.h /usr/include/c++/13/mutex \
- /usr/include/c++/13/bits/chrono.h /usr/include/c++/13/ratio \
- /usr/include/c++/13/bits/std_mutex.h \
- /usr/include/c++/13/bits/unique_lock.h
+ /usr/include/c++/13/bits/quoted_string.h \
+ /home/cosmos/omoknuni_quantum/include/utils/attack_defense_module.h \
+ /home/cosmos/omoknuni_quantum/include/utils/hash_specializations.h

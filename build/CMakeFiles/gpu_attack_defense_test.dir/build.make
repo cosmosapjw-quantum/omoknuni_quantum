@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/gpu_attack_defense_test.dir/depend.make
@@ -73,18 +73,18 @@ CMakeFiles/gpu_attack_defense_test.dir/codegen:
 .PHONY : CMakeFiles/gpu_attack_defense_test.dir/codegen
 
 CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o: CMakeFiles/gpu_attack_defense_test.dir/flags.make
-CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o: /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp
+CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o: /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp
 CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o: CMakeFiles/gpu_attack_defense_test.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o -MF CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o.d -o CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o -MF CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o.d -o CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp
 
 CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp > CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp > CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.i
 
 CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/utils/attack_defense_benchmark.cpp -o CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp -o CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.s
 
 # Object files for target gpu_attack_defense_test
 gpu_attack_defense_test_OBJECTS = \
@@ -113,7 +113,7 @@ bin/Release/gpu_attack_defense_test: /usr/local/cuda-12.8/lib64/libcudart.so
 bin/Release/gpu_attack_defense_test: /usr/lib/x86_64-linux-gnu/libcudnn.so
 bin/Release/gpu_attack_defense_test: /usr/lib/x86_64-linux-gnu/libgtest.a
 bin/Release/gpu_attack_defense_test: CMakeFiles/gpu_attack_defense_test.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bin/Release/gpu_attack_defense_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bin/Release/gpu_attack_defense_test"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/gpu_attack_defense_test.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -125,6 +125,6 @@ CMakeFiles/gpu_attack_defense_test.dir/clean:
 .PHONY : CMakeFiles/gpu_attack_defense_test.dir/clean
 
 CMakeFiles/gpu_attack_defense_test.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/gpu_attack_defense_test.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/gpu_attack_defense_test.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/gpu_attack_defense_test.dir/depend
 

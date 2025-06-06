@@ -72,8 +72,27 @@ if(WITH_TORCH)
     # Set CUDA architectures
     set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86" CACHE STRING "CUDA architectures")
     
-    # Find PyTorch
-    set(Torch_DIR "/opt/libtorch/share/cmake/Torch" CACHE PATH "Directory containing TorchConfig.cmake")
+    # Find PyTorch from Python environment
+    if(Python_FOUND)
+        execute_process(
+            COMMAND "${Python_EXECUTABLE}" -c "import torch; import os; print(os.path.join(os.path.dirname(os.path.dirname(torch.__file__)), 'torch', 'share', 'cmake', 'Torch'))"
+            OUTPUT_VARIABLE TORCH_CMAKE_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE TORCH_CMAKE_RESULT
+            ERROR_QUIET
+        )
+        
+        if(TORCH_CMAKE_RESULT EQUAL 0 AND EXISTS "${TORCH_CMAKE_PATH}")
+            set(Torch_DIR "${TORCH_CMAKE_PATH}" CACHE PATH "Directory containing TorchConfig.cmake" FORCE)
+            message(STATUS "Found PyTorch CMake directory via Python: ${Torch_DIR}")
+        endif()
+    endif()
+    
+    # Fallback to manual path if Python detection fails
+    if(NOT Torch_DIR OR NOT EXISTS "${Torch_DIR}")
+        set(Torch_DIR "/opt/libtorch/share/cmake/Torch" CACHE PATH "Directory containing TorchConfig.cmake")
+    endif()
+    
     find_package(Torch REQUIRED)
     message(STATUS "Found PyTorch: ${Torch_DIR}")
     

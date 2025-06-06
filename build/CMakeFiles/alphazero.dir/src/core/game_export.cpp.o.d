@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/core/game_export.cpp.o: \
- /home/cosmos/omoknuni_python/src/core/game_export.cpp \
+ /home/cosmos/omoknuni_quantum/src/core/game_export.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_python/include/core/game_export.h \
+ /home/cosmos/omoknuni_quantum/include/core/game_export.h \
  /usr/include/c++/13/memory /usr/include/c++/13/bits/memoryfwd.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -175,11 +175,11 @@ CMakeFiles/alphazero.dir/src/core/game_export.cpp.o: \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
- /home/cosmos/omoknuni_python/include/core/igamestate.h \
+ /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
  /usr/include/c++/13/optional /usr/include/c++/13/cstdint \
  /usr/include/c++/13/stdexcept \
- /home/cosmos/omoknuni_python/include/core/export_macros.h \
- /home/cosmos/omoknuni_python/include/core/illegal_move_exception.h \
+ /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \

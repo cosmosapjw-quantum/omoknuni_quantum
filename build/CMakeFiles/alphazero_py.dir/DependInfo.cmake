@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_python/src/python/bindings.cpp" "CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o" "gcc" "CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o.d"
+  "/home/cosmos/omoknuni_quantum/src/python/bindings.cpp" "CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o" "gcc" "CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o.d"
   "" "lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so" "gcc" "CMakeFiles/alphazero_py.dir/link.d"
   )
 

@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_python
+CMAKE_SOURCE_DIR = /home/cosmos/omoknuni_quantum
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/cosmos/omoknuni_python/build
+CMAKE_BINARY_DIR = /home/cosmos/omoknuni_quantum/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/core_tests.dir/depend.make
@@ -73,46 +73,46 @@ CMakeFiles/core_tests.dir/codegen:
 .PHONY : CMakeFiles/core_tests.dir/codegen
 
 CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o: CMakeFiles/core_tests.dir/flags.make
-CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o: /home/cosmos/omoknuni_python/tests/core_tests_main.cpp
+CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o: /home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp
 CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o: CMakeFiles/core_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o -MF CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o -c /home/cosmos/omoknuni_python/tests/core_tests_main.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o -MF CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp
 
 CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/core_tests_main.cpp > CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp > CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.i
 
 CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/core_tests_main.cpp -o CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp -o CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.s
 
 CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o: CMakeFiles/core_tests.dir/flags.make
-CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o: /home/cosmos/omoknuni_python/tests/core/igamestate_test.cpp
+CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o: /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp
 CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o: CMakeFiles/core_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o -MF CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o -c /home/cosmos/omoknuni_python/tests/core/igamestate_test.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o -MF CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp
 
 CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/core/igamestate_test.cpp > CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp > CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.i
 
 CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/core/igamestate_test.cpp -o CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp -o CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.s
 
 CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o: CMakeFiles/core_tests.dir/flags.make
-CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o: /home/cosmos/omoknuni_python/tests/core/game_export_test.cpp
+CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o: /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp
 CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o: CMakeFiles/core_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o -MF CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o -c /home/cosmos/omoknuni_python/tests/core/game_export_test.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o -MF CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o.d -o CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp
 
 CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_python/tests/core/game_export_test.cpp > CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp > CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.i
 
 CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_python/tests/core/game_export_test.cpp -o CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp -o CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.s
 
 # Object files for target core_tests
 core_tests_OBJECTS = \
@@ -131,19 +131,8 @@ bin/Release/core_tests: CMakeFiles/core_tests.dir/compiler_depend.ts
 bin/Release/core_tests: lib/Release/libalphazero.so
 bin/Release/core_tests: /usr/lib/x86_64-linux-gnu/libgmock.a
 bin/Release/core_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
-bin/Release/core_tests: /opt/libtorch/lib/libtorch.so
-bin/Release/core_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/core_tests: /opt/libtorch/lib/libc10.so
-bin/Release/core_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/core_tests: /opt/libtorch/lib/libc10.so
-bin/Release/core_tests: /opt/libtorch/lib/libkineto.a
-bin/Release/core_tests: /usr/local/cuda-12.8/lib64/libnvrtc.so
-bin/Release/core_tests: /usr/local/cuda-12.8/lib64/libnvToolsExt.so
-bin/Release/core_tests: /opt/libtorch/lib/libc10_cuda.so
-bin/Release/core_tests: /usr/local/cuda-12.8/lib64/libcudart.so
-bin/Release/core_tests: /usr/lib/x86_64-linux-gnu/libcudnn.so
 bin/Release/core_tests: CMakeFiles/core_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_python/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable bin/Release/core_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/cosmos/omoknuni_quantum/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable bin/Release/core_tests"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/core_tests.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -155,6 +144,6 @@ CMakeFiles/core_tests.dir/clean:
 .PHONY : CMakeFiles/core_tests.dir/clean
 
 CMakeFiles/core_tests.dir/depend:
-	cd /home/cosmos/omoknuni_python/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build /home/cosmos/omoknuni_python/build/CMakeFiles/core_tests.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/cosmos/omoknuni_quantum/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build /home/cosmos/omoknuni_quantum/build/CMakeFiles/core_tests.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/core_tests.dir/depend
 

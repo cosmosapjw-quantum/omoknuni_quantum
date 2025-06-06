@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/utils/logger.cpp.o: \
- /home/cosmos/omoknuni_python/src/utils/logger.cpp \
+ /home/cosmos/omoknuni_quantum/src/utils/logger.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_python/include/utils/logger.h \
+ /home/cosmos/omoknuni_quantum/include/utils/logger.h \
  /usr/include/spdlog/spdlog.h /usr/include/spdlog/common.h \
  /usr/include/spdlog/tweakme.h /usr/include/spdlog/details/null_mutex.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
@@ -312,7 +312,7 @@ CMakeFiles/alphazero.dir/src/utils/logger.cpp.o: \
  /usr/include/spdlog/details/thread_pool.h \
  /usr/include/spdlog/details/mpmc_blocking_q.h \
  /usr/include/spdlog/details/thread_pool-inl.h \
- /home/cosmos/omoknuni_python/include/core/export_macros.h \
+ /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
  /usr/include/c++/13/filesystem /usr/include/c++/13/bits/fs_fwd.h \
  /usr/include/c++/13/bits/fs_path.h /usr/include/c++/13/codecvt \
  /usr/include/c++/13/bits/fs_dir.h /usr/include/c++/13/bits/fs_ops.h \
