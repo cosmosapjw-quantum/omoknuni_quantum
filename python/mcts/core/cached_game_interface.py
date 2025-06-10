@@ -43,20 +43,31 @@ class StateHasher:
         np.random.seed(42)  # Reproducible
         
         if self.game_type == GameType.GOMOKU:
-            # 15x15 board, 2 players
+            # 15x15 board, 3 states (empty=0, black=1, white=2)
             self.zobrist_table = np.random.randint(
                 0, 2**63, size=(15, 15, 3), dtype=np.int64
             )
+            # Additional hash for current player turn
+            self.zobrist_turn = np.random.randint(0, 2**63, dtype=np.int64)
+            
         elif self.game_type == GameType.GO:
-            # 19x19 board, 2 players + ko
+            # 19x19 board, 3 states (empty=0, black=1, white=2)
             self.zobrist_table = np.random.randint(
                 0, 2**63, size=(19, 19, 3), dtype=np.int64
             )
+            # Additional hashes for ko position
+            self.zobrist_ko = np.random.randint(0, 2**63, size=(19, 19), dtype=np.int64)
+            self.zobrist_turn = np.random.randint(0, 2**63, dtype=np.int64)
+            
         elif self.game_type == GameType.CHESS:
-            # 8x8 board, 6 piece types * 2 colors
+            # 8x8 board, 6 piece types * 2 colors + empty = 13
             self.zobrist_table = np.random.randint(
-                0, 2**63, size=(8, 8, 13), dtype=np.int64  # 12 pieces + empty
+                0, 2**63, size=(8, 8, 13), dtype=np.int64
             )
+            # Additional hashes for castling rights (4 bits), en passant (8 files)
+            self.zobrist_castling = np.random.randint(0, 2**63, size=(16,), dtype=np.int64)
+            self.zobrist_en_passant = np.random.randint(0, 2**63, size=(8,), dtype=np.int64)
+            self.zobrist_turn = np.random.randint(0, 2**63, dtype=np.int64)
             
     def hash_state(self, state: Any) -> int:
         """Compute fast hash of game state"""
@@ -71,34 +82,102 @@ class StateHasher:
                 
     def _zobrist_hash(self, state: Any) -> int:
         """Compute Zobrist hash of board state"""
-        board = state.board
         h = 0
         
         if self.game_type == GameType.GOMOKU:
+            board = state.board
+            # Hash board positions
             for i in range(15):
                 for j in range(15):
                     piece = board[i, j]
+                    # piece: 0=empty, 1=player1, 2=player2
+                    h ^= int(self.zobrist_table[i, j, piece])
+            
+            # Hash current player
+            if hasattr(state, 'current_player'):
+                if state.current_player == 2:
+                    h ^= int(self.zobrist_turn)
+                    
+        elif self.game_type == GameType.GO:
+            board = state.board if hasattr(state, 'board') else state.get_board()
+            board_size = board.shape[0]
+            
+            # Hash board positions
+            for i in range(board_size):
+                for j in range(board_size):
+                    piece = board[i, j]
+                    # piece: 0=empty, 1=black, 2=white
+                    h ^= int(self.zobrist_table[i, j, piece])
+            
+            # Hash ko position if exists
+            if hasattr(state, 'ko_point') and state.ko_point is not None:
+                ko_i, ko_j = state.ko_point
+                h ^= int(self.zobrist_ko[ko_i, ko_j])
+            
+            # Hash current player
+            if hasattr(state, 'current_player'):
+                if state.current_player == 2:
+                    h ^= int(self.zobrist_turn)
+                    
+        elif self.game_type == GameType.CHESS:
+            board = state.board if hasattr(state, 'board') else state.get_board_array()
+            
+            # Hash board positions
+            for i in range(8):
+                for j in range(8):
+                    piece = board[i, j]
                     if piece != 0:
-                        h ^= int(self.zobrist_table[i, j, piece])
-                        
-        # Add current player to hash
-        if hasattr(state, 'current_player'):
-            h ^= int(state.current_player * 0x1234567890ABCDEF)
+                        # Map piece to Zobrist index
+                        # piece values: 1-6 (white), -1 to -6 (black)
+                        if piece > 0:
+                            piece_idx = piece  # White pieces: 1-6
+                        else:
+                            piece_idx = 6 + abs(piece)  # Black pieces: 7-12
+                        h ^= int(self.zobrist_table[i, j, piece_idx])
+            
+            # Hash castling rights (4 bits: K, Q, k, q)
+            if hasattr(state, 'castling_rights'):
+                castling_bits = 0
+                if 'K' in state.castling_rights: castling_bits |= 1
+                if 'Q' in state.castling_rights: castling_bits |= 2
+                if 'k' in state.castling_rights: castling_bits |= 4
+                if 'q' in state.castling_rights: castling_bits |= 8
+                h ^= int(self.zobrist_castling[castling_bits])
+            
+            # Hash en passant square
+            if hasattr(state, 'en_passant_target') and state.en_passant_target is not None:
+                file_idx = ord(state.en_passant_target[0]) - ord('a')
+                h ^= int(self.zobrist_en_passant[file_idx])
+            
+            # Hash current player
+            if hasattr(state, 'current_player'):
+                if state.current_player == -1:  # Black to move
+                    h ^= int(self.zobrist_turn)
             
         return h
 
 class LRUCache:
-    """Simple LRU cache implementation"""
+    """Enhanced LRU cache with collision detection"""
     
     def __init__(self, max_size: int):
         self.max_size = max_size
         self.cache = OrderedDict()
         self.hits = 0
         self.misses = 0
+        self.collisions = 0
+        # Store actual state data for collision detection
+        self.state_verification = {}
         
-    def get(self, key: Any) -> Optional[Any]:
-        """Get item from cache"""
+    def get(self, key: Any, state_data: Optional[bytes] = None) -> Optional[Any]:
+        """Get item from cache with collision detection"""
         if key in self.cache:
+            # Verify no collision if state data provided
+            if state_data is not None and key in self.state_verification:
+                if self.state_verification[key] != state_data:
+                    self.collisions += 1
+                    logger.warning(f"Hash collision detected for key {key}")
+                    return None
+            
             self.hits += 1
             # Move to end (most recently used)
             self.cache.move_to_end(key)
@@ -107,21 +186,28 @@ class LRUCache:
             self.misses += 1
             return None
             
-    def put(self, key: Any, value: Any):
-        """Put item in cache"""
+    def put(self, key: Any, value: Any, state_data: Optional[bytes] = None):
+        """Put item in cache with collision detection"""
         if key in self.cache:
             self.cache.move_to_end(key)
         else:
             self.cache[key] = value
+            if state_data is not None:
+                self.state_verification[key] = state_data
+            
             if len(self.cache) > self.max_size:
                 # Remove least recently used
-                self.cache.popitem(last=False)
+                removed_key, _ = self.cache.popitem(last=False)
+                if removed_key in self.state_verification:
+                    del self.state_verification[removed_key]
                 
     def clear(self):
         """Clear cache"""
         self.cache.clear()
+        self.state_verification.clear()
         self.hits = 0
         self.misses = 0
+        self.collisions = 0
         
     @property
     def hit_rate(self) -> float:
@@ -151,41 +237,73 @@ class CachedGameInterface:
             'hash_calls': 0
         }
         
-    def get_legal_moves(self, state: Any) -> List[int]:
+    def get_legal_moves(self, state: Any, shuffle: bool = True) -> List[int]:
         """Get legal moves with caching"""
         self.stats['legal_moves_calls'] += 1
         
-        # Get state hash
+        # Get state hash and verification data
         state_hash = self._get_state_hash(state)
+        state_bytes = self._get_state_bytes(state)
         
-        # Check cache
-        cached_moves = self.legal_moves_cache.get(state_hash)
+        # Check cache with collision detection
+        cached_moves = self.legal_moves_cache.get(state_hash, state_bytes)
         if cached_moves is not None:
-            return cached_moves
+            if shuffle and len(cached_moves) > 1:
+                # Return a shuffled copy of cached moves
+                import random
+                shuffled = list(cached_moves)
+                random.shuffle(shuffled)
+                return shuffled
+            return list(cached_moves)  # Return copy to avoid mutation
             
-        # Compute and cache
-        moves = self.base.get_legal_moves(state)
-        self.legal_moves_cache.put(state_hash, moves)
+        # Compute (without shuffling for cache)
+        moves = self.base.get_legal_moves(state, shuffle=False)
+        self.legal_moves_cache.put(state_hash, moves, state_bytes)
         
+        # Now shuffle if requested
+        if shuffle and len(moves) > 1:
+            import random
+            shuffled = list(moves)
+            random.shuffle(shuffled)
+            return shuffled
+            
         return moves
         
     def state_to_numpy(self, state: Any) -> np.ndarray:
         """Convert state to numpy features with caching"""
         self.stats['features_calls'] += 1
         
-        # Get state hash
+        # Get state hash and verification data
         state_hash = self._get_state_hash(state)
+        state_bytes = self._get_state_bytes(state)
         
-        # Check cache
-        cached_features = self.features_cache.get(state_hash)
+        # Check cache with collision detection
+        cached_features = self.features_cache.get(state_hash, state_bytes)
         if cached_features is not None:
             return cached_features
             
         # Compute and cache
         features = self.base.state_to_numpy(state)
-        self.features_cache.put(state_hash, features)
+        self.features_cache.put(state_hash, features, state_bytes)
         
         return features
+    
+    def clone_state(self, state: Any) -> Any:
+        """Clone a game state - delegates to base interface"""
+        return self.base.clone_state(state)
+    
+    def apply_move(self, state: Any, move: int) -> Any:
+        """Apply a move to a state - delegates to base interface"""
+        return self.base.apply_move(state, move)
+    
+    def get_action_size(self) -> int:
+        """Get action size from base interface"""
+        return self.base.max_moves
+    
+    @property
+    def max_moves(self) -> int:
+        """Get max moves from base interface"""
+        return self.base.max_moves
         
     def _get_state_hash(self, state: Any) -> int:
         """Get cached state hash"""
@@ -205,7 +323,20 @@ class CachedGameInterface:
         
         return state_hash
         
-    def batch_get_legal_moves(self, states: List[Any]) -> List[List[int]]:
+    def _get_state_bytes(self, state: Any) -> bytes:
+        """Get compact byte representation of state for collision detection"""
+        if hasattr(state, 'board'):
+            # For board games, use board array
+            board_bytes = state.board.tobytes()
+            player_byte = bytes([state.current_player]) if hasattr(state, 'current_player') else b''
+            return board_bytes + player_byte
+        elif hasattr(state, 'tobytes'):
+            return state.tobytes()
+        else:
+            # Fallback to string representation
+            return str(state).encode('utf-8')
+        
+    def batch_get_legal_moves(self, states: List[Any], shuffle: bool = True) -> List[List[int]]:
         """Get legal moves for multiple states efficiently"""
         results = []
         uncached_indices = []
@@ -217,7 +348,14 @@ class CachedGameInterface:
             cached_moves = self.legal_moves_cache.get(state_hash)
             
             if cached_moves is not None:
-                results.append(cached_moves)
+                # Shuffle cached moves if requested
+                if shuffle and len(cached_moves) > 1:
+                    import random
+                    shuffled = list(cached_moves)
+                    random.shuffle(shuffled)
+                    results.append(shuffled)
+                else:
+                    results.append(list(cached_moves))
             else:
                 results.append(None)
                 uncached_indices.append(i)
@@ -227,15 +365,53 @@ class CachedGameInterface:
         if uncached_states:
             # Could parallelize this with ThreadPoolExecutor
             for i, state in zip(uncached_indices, uncached_states):
-                moves = self.base.get_legal_moves(state)
-                results[i] = moves
+                moves = self.base.get_legal_moves(state, shuffle=False)
                 
-                # Cache the result
+                # Cache the unshuffled version
                 state_hash = self._get_state_hash(state)
                 self.legal_moves_cache.put(state_hash, moves)
                 
+                # Shuffle if requested
+                if shuffle and len(moves) > 1:
+                    import random
+                    shuffled = list(moves)
+                    random.shuffle(shuffled)
+                    results[i] = shuffled
+                else:
+                    results[i] = moves
+                
         return results
         
+    def batch_get_legal_moves_tensor(self, board_tensors: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get legal moves for multiple boards as tensors (for GPU processing)
+        
+        Args:
+            board_tensors: (batch_size, 15, 15) tensor of board states
+            
+        Returns:
+            legal_masks: (batch_size, 225) boolean tensor of legal moves
+            num_legal: (batch_size,) count of legal moves per board
+        """
+        batch_size = board_tensors.shape[0]
+        flat_boards = board_tensors.view(batch_size, -1)
+        
+        # For Gomoku, legal moves are empty squares (value == 0)
+        legal_masks = (flat_boards == 0)
+        num_legal = legal_masks.sum(dim=1)
+        
+        return legal_masks, num_legal
+    
+    def get_board_size(self) -> int:
+        """Get the board size for the game"""
+        if self.base.game_type == GameType.GOMOKU:
+            return 15 * 15  # 225
+        elif self.base.game_type == GameType.GO:
+            return 19 * 19  # 361
+        elif self.base.game_type == GameType.CHESS:
+            return 8 * 8  # 64
+        else:
+            return self.base.max_moves
+    
     def batch_state_to_numpy(self, states: List[Any]) -> torch.Tensor:
         """Convert multiple states to features efficiently"""
         # Try to use custom CUDA kernel if available
@@ -294,17 +470,20 @@ class CachedGameInterface:
             'legal_moves': {
                 'calls': self.stats['legal_moves_calls'],
                 'hit_rate': self.legal_moves_cache.hit_rate,
-                'size': len(self.legal_moves_cache.cache)
+                'size': len(self.legal_moves_cache.cache),
+                'collisions': self.legal_moves_cache.collisions
             },
             'features': {
                 'calls': self.stats['features_calls'],
                 'hit_rate': self.features_cache.hit_rate,
-                'size': len(self.features_cache.cache)
+                'size': len(self.features_cache.cache),
+                'collisions': self.features_cache.collisions
             },
             'state_hash': {
                 'calls': self.stats['hash_calls'],
                 'hit_rate': self.state_hash_cache.hit_rate,
-                'size': len(self.state_hash_cache.cache)
+                'size': len(self.state_hash_cache.cache),
+                'collisions': self.state_hash_cache.collisions
             }
         }
         
@@ -313,4 +492,4 @@ class CachedGameInterface:
         self.legal_moves_cache.clear()
         self.features_cache.clear()
         self.state_hash_cache.clear()
-        logger.info("Cleared all game interface caches")
+        logger.debug("Cleared all game interface caches")

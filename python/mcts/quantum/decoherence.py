@@ -504,7 +504,7 @@ class DecoherenceEngine:
             'decoherence_rate': 0.0
         }
         
-        logger.info(f"DecoherenceEngine initialized on {device}")
+        logger.debug(f"DecoherenceEngine initialized on {device}")
     
     def initialize_quantum_state(
         self, 

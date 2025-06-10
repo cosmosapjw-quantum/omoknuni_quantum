@@ -1,0 +1,146 @@
+# Optimized Gomoku Configuration for RTX 3060 Ti (8GB VRAM) on Ryzen 9 5900X
+# This configuration prevents VRAM OOM and system freezes
+
+experiment_name: gomoku_classical_optimized
+seed: 42
+log_level: INFO
+num_iterations: 300
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false
+  gomoku_use_omok: false
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  # Core MCTS parameters
+  num_simulations: 800
+  c_puct: 1.0
+  dirichlet_alpha: 0.15
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  temperature_final: 0.1
+  
+  # Performance optimization - RTX 3060 Ti with 8GB VRAM
+  # CRITICAL: Reduced wave sizes to prevent VRAM OOM
+  wave_min_size: 512      # Reduced from 2048
+  wave_max_size: 1024     # Reduced from 3072
+  wave_adaptive_sizing: false  # Keep false for consistent performance
+  batch_size: 128         # Reduced from 384 to fit in VRAM
+  
+  # Virtual loss for leaf parallelization
+  virtual_loss: 3.0  # Positive value (will be negated internally)
+  
+  # Memory settings - Conservative for 8GB VRAM
+  memory_pool_size_mb: 1024   # Reduced from 4096 to 1GB
+  max_tree_nodes: 200000      # Reduced from 1000000
+  tree_reuse: true
+  tree_reuse_fraction: 0.5
+  
+  # GPU optimization - RTX 3060 Ti
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Quantum features - disabled for classical
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device settings
+  device: cuda
+  wave_num_pipelines: 3  # Number of wave pipelines for parallel processing
+
+network:
+  # Network architecture for Gomoku
+  model_type: resnet
+  input_channels: 20
+  num_res_blocks: 10
+  num_filters: 128
+  value_head_hidden_size: 256
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.997
+  l2_regularization: 0.0001
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Training parameters optimized for 8GB VRAM
+  batch_size: 256  # Reduced from 768 to prevent OOM
+  learning_rate: 0.01
+  learning_rate_schedule: step
+  lr_decay_steps: 50
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.00001
+  
+  # Optimizer
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 4  # Increased to compensate for smaller batch
+  max_grad_norm: 5.0
+  
+  # Training loop
+  num_epochs: 10
+  checkpoint_interval: 50
+  validation_interval: 10
+  
+  # Self-play - Reduced parallel workers to prevent memory issues
+  num_games_per_iteration: 100  # Reduced from 200
+  num_workers: 4   # Reduced from 12 to prevent GPU memory contention
+  max_moves_per_game: 225  # 15x15 board
+  resign_threshold: -0.95
+  
+  # Data handling
+  window_size: 200000  # Reduced from 500000
+  augment_data: true
+  mixed_precision: true
+  dataloader_workers: 4  # Reduced from 8
+  pin_memory: true
+  
+  # Paths
+  save_dir: checkpoints
+  tensorboard_dir: runs
+  data_dir: self_play_data
+
+arena:
+  # Evaluation settings
+  num_games: 40  # Reduced from 120
+  num_workers: 2  # Reduced from 12 to prevent GPU contention
+  games_per_worker: 20
+  win_threshold: 0.55
+  
+  # Game settings for evaluation
+  temperature: 0.1
+  mcts_simulations: 400
+  c_puct: 1.0
+  max_moves: 225
+  randomize_start_player: true
+  
+  # ELO tracking
+  elo_k_factor: 32.0
+  elo_initial_rating: 1500.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Random policy checks
+  eval_vs_random_interval: 10
+  eval_vs_random_games: 20
+  min_win_rate_vs_random: 0.95
+  
+  # Logging
+  save_game_records: false
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json

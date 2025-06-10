@@ -66,6 +66,10 @@ class MCTSConfig:
     cpu_threads: int = 4  # CPU worker threads
     gpu_batch_threshold: int = 32  # Min batch for GPU
     
+    # Virtual Loss for Leaf Parallelization
+    enable_virtual_loss: bool = True  # Use virtual loss for path diversity
+    virtual_loss_value: float = -1.0  # Penalty value (negative for deterrent)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
@@ -101,7 +105,9 @@ class MCTSConfig:
             'ensemble_size': self.ensemble_size,
             'enable_hybrid_mode': self.enable_hybrid_mode,
             'cpu_threads': self.cpu_threads,
-            'gpu_batch_threshold': self.gpu_batch_threshold
+            'gpu_batch_threshold': self.gpu_batch_threshold,
+            'enable_virtual_loss': self.enable_virtual_loss,
+            'virtual_loss_value': self.virtual_loss_value
         }
     
     @classmethod

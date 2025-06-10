@@ -391,7 +391,7 @@ class RedundancyAnalyzer:
         # We measure deviation from this scaling
         
         # Expected scaling for objective information
-        expected_scaling = 1.0 / torch.sqrt(torch.arange(1, len(redundancies) + 1, device=self.device))
+        expected_scaling = 1.0 / torch.sqrt(torch.arange(1, len(redundancies) + 1, device=redundancies.device))
         expected_scaling = expected_scaling / expected_scaling[0]  # Normalize
         
         # Actual scaling
@@ -443,7 +443,7 @@ class QuantumDarwinismEngine:
             'redundancy_computation_time': 0.0
         }
         
-        logger.info("QuantumDarwinismEngine initialized")
+        logger.debug("QuantumDarwinismEngine initialized")
     
     def analyze_move_objectivity(
         self,
@@ -500,9 +500,9 @@ class QuantumDarwinismEngine:
         self.stats['redundancy_computation_time'] += redundancy_time - fragment_time
         
         # Determine if move is objective
-        is_objective = (
+        is_objective = bool(
             objectivity > self.config.objectivity_threshold and
-            redundancy_spectrum['average_redundancy'] < self.config.min_redundancy_ratio
+            redundancy_spectrum['average_redundancy'].item() < self.config.min_redundancy_ratio
         )
         
         # Update statistics

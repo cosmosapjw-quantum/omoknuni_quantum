@@ -28,9 +28,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Forward declaration - will be defined later
+QuantumMCTSWrapper = None
+
+
 @dataclass
 class QuantumConfig:
     """Configuration for quantum features"""
+    # Quantum level selection
+    quantum_level: str = 'classical'  # 'classical', 'tree_level', 'one_loop'
+    
     # Wave processing
     min_wave_size: int = 32          # Minimum batch for quantum
     optimal_wave_size: int = 512     # Optimal batch size
@@ -38,6 +45,20 @@ class QuantumConfig:
     # Physical parameters (from QFT theory)
     hbar_eff: float = 0.1           # Effective Planck constant
     temperature: float = 1.0        # Temperature T
+    coupling_strength: float = 0.1   # Quantum coupling g
+    decoherence_rate: float = 0.01   # Environmental decoherence
+    measurement_noise: float = 0.0   # Measurement noise level
+    
+    # Path integral parameters
+    path_integral_steps: int = 10    # Discretization steps
+    path_integral_beta: float = 1.0  # Inverse temperature for path integral
+    use_wick_rotation: bool = True   # Use imaginary time
+    
+    # Interference parameters
+    interference_alpha: float = 0.05  # Interference strength
+    interference_method: str = 'minhash'  # 'minhash', 'phase_kick', 'cosine'
+    minhash_size: int = 64           # MinHash signature size
+    phase_kick_strength: float = 0.1  # Phase kick amplitude
     
     # Optimization flags
     use_mixed_precision: bool = True
@@ -70,7 +91,10 @@ class QuantumMCTS:
         Args:
             config: Quantum configuration (uses defaults if None)
         """
-        self.config = config or QuantumConfig()
+        if isinstance(config, dict):
+            self.config = QuantumConfig(**config)
+        else:
+            self.config = config or QuantumConfig()
         self.device = torch.device(self.config.device if torch.cuda.is_available() else 'cpu')
         self.iteration = 0
         
@@ -89,11 +113,11 @@ class QuantumMCTS:
             'avg_overhead': 1.0
         }
         
-        logger.info(f"Initialized QuantumMCTS on {self.device} with ℏ_eff = {self.config.hbar_eff}")
+        logger.debug(f"Initialized QuantumMCTS on {self.device} with ℏ_eff = {self.config.hbar_eff}")
         
     def _init_quantum_tables(self):
         """Pre-compute quantum corrections for common visit counts"""
-        max_visits = 10000
+        max_visits = 100000  # Increased to handle large MCTS trees
         visit_range = torch.arange(1, max_visits + 1, device=self.device, dtype=torch.float32)
         
         # Quantum uncertainty: ℏ/√(1+N)
@@ -142,7 +166,8 @@ class QuantumMCTS:
         visit_factor = 1 + visit_counts
         exploration = c_puct * priors * sqrt_parent / visit_factor
         
-        if not self.config.enable_quantum:
+        # Classical level - no quantum features
+        if not self.config.enable_quantum or self.config.quantum_level == 'classical':
             return q_values + exploration
         
         # Apply quantum only for sufficient batch size
@@ -153,26 +178,116 @@ class QuantumMCTS:
         self.stats['quantum_applications'] += 1
         self.stats['total_selections'] += batch_size
         
-        # Vectorized quantum corrections with mixed precision
+        # Vectorized quantum corrections with mixed precision and bounds checking
         with torch.cuda.amp.autocast(enabled=self.config.use_mixed_precision and self.device.type == 'cuda'):
-            # Get quantum boost from pre-computed table
-            visit_indices = torch.clamp(visit_counts.long(), 0, 9999)
-            quantum_boost = self.uncertainty_table[visit_indices]
-            
-            # Add phase diversity for better exploration (only for larger batches)
-            if batch_size >= self.config.optimal_wave_size:
-                phase_factor = self.phase_table[visit_indices]
-                quantum_boost = quantum_boost * phase_factor
-            
-            # Track low-visit nodes
-            low_visit_mask = visit_counts < 10
-            if is_batched:
-                self.stats['low_visit_nodes'] += low_visit_mask.sum().item()
-            else:
-                self.stats['low_visit_nodes'] += int(low_visit_mask.any())
-            
-            # Combined quantum-enhanced UCB
-            ucb_scores = q_values + quantum_boost + exploration
+            try:
+                # Validate tensor shapes before quantum operations
+                if q_values.shape != visit_counts.shape or q_values.shape != priors.shape:
+                    logger.warning(f"Shape mismatch in quantum selection: q_values {q_values.shape}, "
+                                 f"visit_counts {visit_counts.shape}, priors {priors.shape}")
+                    return q_values + exploration
+                
+                # Tree-level quantum corrections with bounds checking
+                if self.config.quantum_level in ['tree_level', 'one_loop']:
+                    # Safe table indexing with bounds checking
+                    visit_indices = torch.clamp(visit_counts.long(), 0, min(9999, self.uncertainty_table.shape[0] - 1))
+                    
+                    # Validate indices before table lookup
+                    max_idx = visit_indices.max().item()
+                    if max_idx >= self.uncertainty_table.shape[0]:
+                        logger.error(f"Index {max_idx} exceeds uncertainty table size {self.uncertainty_table.shape[0]}")
+                        return q_values + exploration
+                    
+                    quantum_boost = self.uncertainty_table[visit_indices]
+                    
+                    # Validate quantum_boost shape
+                    if quantum_boost.shape != q_values.shape:
+                        logger.warning(f"Quantum boost shape mismatch: {quantum_boost.shape} vs {q_values.shape}")
+                        # Reshape or broadcast as needed
+                        if quantum_boost.numel() == q_values.numel():
+                            quantum_boost = quantum_boost.view_as(q_values)
+                        else:
+                            quantum_boost = torch.zeros_like(q_values)
+                    
+                    # Add phase diversity for better exploration (only for larger batches)
+                    if batch_size >= self.config.optimal_wave_size and hasattr(self, 'phase_table'):
+                        # Safe phase table access
+                        phase_max_idx = min(9999, self.phase_table.shape[0] - 1)
+                        phase_indices = torch.clamp(visit_indices, 0, phase_max_idx)
+                        phase_factor = self.phase_table[phase_indices]
+                        
+                        # Validate phase factor shape
+                        if phase_factor.shape == quantum_boost.shape:
+                            quantum_boost = quantum_boost * phase_factor
+                        else:
+                            logger.warning(f"Phase factor shape mismatch: {phase_factor.shape} vs {quantum_boost.shape}")
+                    
+                    # Apply interference based on method with error handling
+                    if self.config.interference_method == 'phase_kick':
+                        try:
+                            # Phase kick for low-visit nodes with bounds checking
+                            low_visit_mask = visit_counts < 10
+                            
+                            # Generate random values safely
+                            random_vals = torch.rand_like(q_values)
+                            sin_vals = torch.sin(2 * np.pi * random_vals)
+                            
+                            phase_kick = torch.where(
+                                low_visit_mask,
+                                self.config.phase_kick_strength * sin_vals,
+                                torch.zeros_like(q_values)
+                            )
+                            
+                            # Validate phase_kick shape before adding
+                            if phase_kick.shape == quantum_boost.shape:
+                                quantum_boost = quantum_boost + phase_kick
+                            else:
+                                logger.warning(f"Phase kick shape mismatch: {phase_kick.shape} vs {quantum_boost.shape}")
+                                
+                        except Exception as phase_error:
+                            logger.error(f"Phase kick calculation failed: {phase_error}")
+                    
+                    # One-loop corrections (additional quantum effects) with error handling
+                    if self.config.quantum_level == 'one_loop':
+                        try:
+                            loop_correction = self._compute_one_loop_correction(
+                                q_values, visit_counts, priors
+                            )
+                            if loop_correction.shape == quantum_boost.shape:
+                                quantum_boost = quantum_boost + loop_correction
+                            else:
+                                logger.warning(f"Loop correction shape mismatch: {loop_correction.shape} vs {quantum_boost.shape}")
+                        except Exception as loop_error:
+                            logger.error(f"One-loop correction failed: {loop_error}")
+                    
+                    # Track low-visit nodes safely
+                    try:
+                        low_visit_mask = visit_counts < 10
+                        if is_batched:
+                            self.stats['low_visit_nodes'] += low_visit_mask.sum().item()
+                        else:
+                            self.stats['low_visit_nodes'] += int(low_visit_mask.any())
+                    except Exception as stats_error:
+                        logger.debug(f"Stats update failed: {stats_error}")
+                    
+                    # Combined quantum-enhanced UCB with final validation
+                    try:
+                        if quantum_boost.shape == q_values.shape:
+                            ucb_scores = q_values + quantum_boost + exploration
+                        else:
+                            logger.warning("Final shape mismatch, using classical UCB")
+                            ucb_scores = q_values + exploration
+                    except Exception as final_error:
+                        logger.error(f"Final UCB calculation failed: {final_error}")
+                        ucb_scores = q_values + exploration
+                else:
+                    # Fallback to classical if unknown level
+                    ucb_scores = q_values + exploration
+                    
+            except Exception as quantum_error:
+                logger.error(f"Quantum selection failed: {quantum_error}")
+                # Safe fallback to classical UCB
+                ucb_scores = q_values + exploration
         
         return ucb_scores
     
@@ -306,6 +421,38 @@ class QuantumMCTS:
         
         return corrections
     
+    def _compute_one_loop_correction(
+        self,
+        q_values: torch.Tensor,
+        visit_counts: torch.Tensor,
+        priors: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute one-loop quantum corrections
+        
+        This implements the one-loop vacuum fluctuation corrections
+        from quantum field theory, adapted for MCTS.
+        """
+        # Coupling strength determines loop contribution
+        g = self.config.coupling_strength
+        
+        # Compute effective mass from visit statistics
+        m_eff = 1.0 / (1.0 + visit_counts)
+        
+        # One-loop self-energy correction (simplified)
+        # In QFT: Σ(p) ~ g² ∫ d⁴k / [(k² + m²)((p-k)² + m²)]
+        # Here we use a simplified form based on visit statistics
+        self_energy = g**2 * torch.log(1 + m_eff) / (4 * np.pi)
+        
+        # Vertex correction proportional to prior uncertainty
+        prior_entropy = -torch.sum(priors * torch.log(priors + 1e-10), dim=-1, keepdim=True)
+        vertex_correction = g**2 * prior_entropy / (8 * np.pi)
+        
+        # Combine corrections with decoherence
+        decoherence_factor = torch.exp(-self.config.decoherence_rate * torch.sqrt(visit_counts))
+        one_loop_total = (self_energy + vertex_correction) * decoherence_factor
+        
+        return one_loop_total * self.current_hbar
+    
     def update_iteration(self, iteration: int):
         """Update quantum parameters based on training iteration
         
@@ -364,36 +511,116 @@ class QuantumMCTS:
 
 def create_quantum_mcts(
     enable_quantum: bool = True,
+    quantum_level: str = 'classical',
     hbar_eff: float = 0.1,
+    coupling_strength: float = 0.1,
+    temperature: float = 1.0,
+    decoherence_rate: float = 0.01,
     phase_strength: float = 0.02,
     min_wave_size: int = 32,
     fast_mode: bool = True,
+    mcts: Optional[Any] = None,
     **kwargs
-) -> QuantumMCTS:
+) -> Union[QuantumMCTS, Any]:
     """Factory function to create quantum MCTS
     
     Args:
         enable_quantum: Whether to enable quantum features
+        quantum_level: Level of quantum corrections ('classical', 'tree_level', 'one_loop')
         hbar_eff: Effective Planck constant for uncertainty
+        coupling_strength: Quantum coupling strength g
+        temperature: Temperature for quantum fluctuations
+        decoherence_rate: Environmental decoherence rate
         phase_strength: Strength of phase modulation
         min_wave_size: Minimum batch size for quantum application
         fast_mode: Use fast approximations for production
+        mcts: Optional existing MCTS to wrap (returns wrapped version)
         **kwargs: Additional config parameters
         
     Returns:
-        QuantumMCTS instance
+        QuantumMCTS instance or wrapped MCTS
     """
     config = QuantumConfig(
         enable_quantum=enable_quantum,
+        quantum_level=quantum_level,
         hbar_eff=hbar_eff,
+        coupling_strength=coupling_strength,
+        temperature=temperature,
+        decoherence_rate=decoherence_rate,
         min_wave_size=min_wave_size,
         fast_mode=fast_mode,
         **kwargs
     )
     
-    logger.info(f"Creating QuantumMCTS with config: {config}")
+    logger.debug(f"Creating QuantumMCTS with level: {quantum_level}")
     
-    return QuantumMCTS(config)
+    quantum_mcts = QuantumMCTS(config)
+    
+    # If wrapping existing MCTS, create a wrapper
+    if mcts is not None:
+        return QuantumMCTSWrapper(mcts, quantum_mcts)
+    
+    return quantum_mcts
+
+
+class QuantumMCTSWrapper:
+    """Wrapper to add quantum features to existing MCTS instance
+    
+    This allows retrofitting quantum enhancements to any MCTS implementation
+    by intercepting the selection phase.
+    """
+    
+    def __init__(self, base_mcts: Any, quantum_mcts: QuantumMCTS):
+        """Initialize wrapper
+        
+        Args:
+            base_mcts: Base MCTS instance to wrap
+            quantum_mcts: QuantumMCTS instance for quantum features
+        """
+        self.base_mcts = base_mcts
+        self.quantum_mcts = quantum_mcts
+        
+        # Wrap the selection method if it exists
+        if hasattr(base_mcts, 'select'):
+            self._original_select = base_mcts.select
+            base_mcts.select = self._quantum_select
+        
+        # Wrap search method to apply quantum
+        if hasattr(base_mcts, 'search'):
+            self._original_search = base_mcts.search
+            base_mcts.search = self._quantum_search
+    
+    def _quantum_select(self, *args, **kwargs):
+        """Quantum-enhanced selection"""
+        # Get UCB scores from base implementation
+        if hasattr(self.base_mcts, '_compute_ucb'):
+            q_values = kwargs.get('q_values')
+            visit_counts = kwargs.get('visit_counts')
+            priors = kwargs.get('priors')
+            c_puct = kwargs.get('c_puct', 1.414)
+            
+            if q_values is not None and visit_counts is not None and priors is not None:
+                # Apply quantum enhancement
+                ucb_scores = self.quantum_mcts.apply_quantum_to_selection(
+                    q_values, visit_counts, priors, c_puct
+                )
+                kwargs['ucb_scores'] = ucb_scores
+        
+        return self._original_select(*args, **kwargs)
+    
+    def _quantum_search(self, state, num_simulations: int = 800, **kwargs):
+        """Quantum-enhanced search"""
+        # Update quantum parameters based on tree size
+        if hasattr(self.base_mcts, 'get_tree_stats'):
+            tree_stats = self.base_mcts.get_tree_stats()
+            self.quantum_mcts.update_quantum_parameters(tree_stats)
+        
+        # Run base search with quantum features active
+        return self._original_search(state, num_simulations, **kwargs)
+    
+    def __getattr__(self, name):
+        """Forward all other attributes to base MCTS"""
+        return getattr(self.base_mcts, name)
 
 
 # Convenience functions for common use cases

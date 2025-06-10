@@ -38,6 +38,8 @@ class MCTSConfig:
     num_simulations: int = 10000
     c_puct: float = 1.414
     temperature: float = 1.0
+    dirichlet_alpha: float = 0.3
+    dirichlet_epsilon: float = 0.25
     
     # Wave parallelization
     min_wave_size: int = 1024
@@ -66,6 +68,10 @@ class MCTSConfig:
     # Tree configuration
     max_tree_nodes: int = 500000
     tree_batch_size: int = 1024
+    
+    # Virtual loss for leaf parallelization
+    enable_virtual_loss: bool = True
+    virtual_loss_value: float = -1.0
     
     # Game type
     game_type: GameType = GameType.GOMOKU
@@ -123,14 +129,22 @@ class MCTS:
             max_wave_size=config.max_wave_size,
             adaptive_wave_sizing=config.adaptive_wave_sizing,
             target_sims_per_second=config.target_sims_per_second,
+            c_puct=config.c_puct,
+            dirichlet_alpha=config.dirichlet_alpha,
+            dirichlet_epsilon=config.dirichlet_epsilon,
+            temperature=config.temperature,
             use_memory_pools=True,
             use_cuda_graphs=config.use_cuda_graphs,
             use_tensor_cores=config.use_tensor_cores,
+            use_mixed_precision=config.use_mixed_precision,
             device=config.device,
             tree_config=CSRTreeConfig(
                 max_nodes=config.max_tree_nodes,
                 batch_size=config.tree_batch_size,
-                device=config.device
+                device=config.device,
+                enable_virtual_loss=config.enable_virtual_loss,
+                virtual_loss_value=config.virtual_loss_value
+                # Let CSRTreeConfig use its default dtypes (float32)
             ),
             cache_config=CacheConfig(
                 max_legal_moves_cache=config.cache_legal_moves,
@@ -155,8 +169,6 @@ class MCTS:
         # Load custom CUDA kernels if available
         self._load_cuda_kernels()
         
-        logger.info(f"OptimizedMCTS initialized on {config.device}")
-        logger.info(f"Target performance: {config.target_sims_per_second:,} sims/sec")
         
     def _load_cuda_kernels(self):
         """Load custom CUDA kernels if available"""
@@ -170,7 +182,7 @@ class MCTS:
             if os.path.exists(cuda_ops_path):
                 try:
                     torch.ops.load_library(cuda_ops_path)
-                    logger.info("Loaded custom CUDA kernels")
+                    pass  # Loaded successfully
                 except Exception as e:
                     logger.warning(f"Failed to load CUDA kernels: {e}")
                     
@@ -216,10 +228,6 @@ class MCTS:
         )
         self.stats['last_search_sims_per_second'] = sims_per_sec
         
-        logger.info(
-            f"Search completed: {num_simulations} sims in {elapsed:.3f}s "
-            f"({sims_per_sec:,.0f} sims/sec)"
-        )
         
         return policy
         
@@ -227,7 +235,7 @@ class MCTS:
         self,
         state: Any,
         temperature: float = 1.0
-    ) -> Tuple[List[int], List[float]]:
+    ) -> np.ndarray:
         """Get action probabilities for a state
         
         Args:
@@ -235,7 +243,7 @@ class MCTS:
             temperature: Temperature for exploration
             
         Returns:
-            Tuple of (actions, probabilities)
+            Policy distribution over all actions as numpy array
         """
         # Temporarily set temperature
         old_temp = self.config.temperature
@@ -247,15 +255,155 @@ class MCTS:
         # Restore temperature
         self.config.temperature = old_temp
         
-        # Extract non-zero actions and probabilities
+        return policy
+        
+
+    def _validate_move_selection(self, state: Any, action: int, legal_moves: List[int], 
+                                 policy: np.ndarray, source: str = "") -> bool:
+        """Validate that a selected move is legal
+        
+        Args:
+            state: Current game state
+            action: Selected action
+            legal_moves: List of legal moves
+            policy: Current policy distribution
+            source: Where this validation is called from
+            
+        Returns:
+            True if move is valid
+        """
+        if action not in legal_moves:
+            logger.error(f"ILLEGAL MOVE SELECTED at {source}!")
+            logger.error(f"  Action: {action}")
+            logger.error(f"  Legal moves: {sorted(legal_moves)[:20]}... (total: {len(legal_moves)})")
+            logger.error(f"  Policy value for action: {policy[action] if action < len(policy) else 'OUT OF BOUNDS'}")
+            
+            # Additional debugging
+            state_info = self.cached_game.to_string(state)
+            logger.error(f"  Current state:\n{state_info}")
+            
+            # Check if this is a position issue
+            if hasattr(self.cached_game, 'game_type') and self.cached_game.game_type == GameType.GOMOKU:
+                row = action // 15
+                col = action % 15
+                logger.error(f"  Position: row={row}, col={col}")
+                
+                # Check if position is already occupied
+                try:
+                    is_legal = self.cached_game.is_legal_move(state, action)
+                    logger.error(f"  is_legal_move({action}) = {is_legal}")
+                except Exception as e:
+                    logger.error(f"  Error checking is_legal_move: {e}")
+            
+            return False
+        return True
+
+    def get_valid_actions_and_probabilities(
+        self,
+        state: Any,
+        temperature: float = 1.0
+    ) -> Tuple[List[int], List[float]]:
+        """Get valid actions and their probabilities for a state
+        
+        Args:
+            state: Game state
+            temperature: Temperature for exploration
+            
+        Returns:
+            Tuple of (actions, probabilities) containing only valid moves
+        """
+        # Get full policy
+        policy = self.get_action_probabilities(state, temperature)
+        
+        # Get legal moves from game interface
+        legal_moves = self.cached_game.get_legal_moves(state)
+        
+        # Extract only legal actions and their probabilities
         actions = []
         probs = []
-        for action, prob in enumerate(policy):
-            if prob > 0:
-                actions.append(action)
-                probs.append(prob)
-                
+        
+        
+        # First pass: collect all legal moves with their probabilities
+        for action in legal_moves:
+            prob = float(policy[action])  # Ensure float type
+            actions.append(action)
+            probs.append(prob)
+        
+        # Calculate total probability mass
+        total_prob = sum(probs)
+        
+        # Check if we have any non-zero probabilities
+        has_nonzero = any(p > 0 for p in probs)
+        
+        # Debug logging for the zero probability issue (only in debug mode)
+        if not has_nonzero and logger.level <= logging.DEBUG:
+            logger.debug(f"All probabilities are zero or negative - using uniform distribution")
+            logger.debug(f"Policy shape: {policy.shape}, Policy sum: {policy.sum():.8f}")
+            logger.debug(f"Policy min/max: {policy.min():.8f} / {policy.max():.8f}")
+        
+        if has_nonzero and total_prob > 0:
+            # Normalize probabilities
+            probs = [p / total_prob for p in probs]
+            
+            # Filter to only non-zero probabilities if requested
+            # But keep all legal moves to avoid empty result
+            filtered_actions = []
+            filtered_probs = []
+            for action, prob in zip(actions, probs):
+                if prob > 1e-10:  # Small threshold to avoid numerical issues
+                    filtered_actions.append(action)
+                    filtered_probs.append(prob)
+            
+            if filtered_actions:
+                actions = filtered_actions
+                probs = filtered_probs
+                # Re-normalize after filtering
+                total = sum(probs)
+                if abs(total - 1.0) > 1e-6:
+                    probs = [p / total for p in probs]
+        else:
+            # No legal moves have probability, use uniform distribution
+            logger.debug(f"No legal moves have probability > 0, using uniform distribution over {len(legal_moves)} legal moves")
+            probs = [1.0 / len(legal_moves)] * len(legal_moves)
+        
+        # Final validation
+        prob_sum = sum(probs)
+        if abs(prob_sum - 1.0) > 1e-6:
+            logger.warning(f"Probabilities sum to {prob_sum:.6f}, normalizing...")
+            probs = [p / prob_sum for p in probs]
+            
+        
+        # Validate all returned actions are legal
+        for action in actions:
+            if not self._validate_move_selection(state, action, legal_moves, policy, 
+                                                  "get_valid_actions_and_probabilities"):
+                logger.error(f"Removing illegal action {action} from valid actions")
+                # Remove this action
+                idx = actions.index(action)
+                actions.pop(idx)
+                probs.pop(idx)
+        
+        # Re-normalize if we removed any actions
+        if actions and len(probs) > 0:
+            total = sum(probs)
+            if total > 0:
+                probs = [p / total for p in probs]
+            else:
+                probs = [1.0 / len(actions)] * len(actions)
+        
         return actions, probs
+    
+    def update_root(self, action: int):
+        """Update the tree root after a move is played (for tree reuse)
+        
+        Args:
+            action: The action that was taken
+        """
+        self.wave_mcts.update_root(action)
+        
+        # CRITICAL: Clear caches after move to prevent stale legal moves
+        if hasattr(self.cached_game, 'clear_caches'):
+            self.cached_game.clear_caches()
         
     def get_best_action(self, state: Any) -> int:
         """Get best action for a state
@@ -310,16 +458,19 @@ class MCTS:
             # Get GPU properties
             props = torch.cuda.get_device_properties(0)
             
-            # Adjust wave size based on GPU memory
-            if props.total_memory > 10 * 1024**3:  # >10GB
-                self.config.max_wave_size = 2048
-                self.config.min_wave_size = 1024
-            elif props.total_memory > 6 * 1024**3:  # >6GB
-                self.config.max_wave_size = 1024
-                self.config.min_wave_size = 512
-            else:
-                self.config.max_wave_size = 512
-                self.config.min_wave_size = 256
+            # Only adjust wave size if not explicitly set or if adaptive_wave_sizing is True
+            if self.config.adaptive_wave_sizing:
+                # Adjust wave size based on GPU memory
+                if props.total_memory > 10 * 1024**3:  # >10GB
+                    self.config.max_wave_size = 2048
+                    self.config.min_wave_size = 1024
+                elif props.total_memory > 6 * 1024**3:  # >6GB
+                    self.config.max_wave_size = 1024
+                    self.config.min_wave_size = 512
+                else:
+                    self.config.max_wave_size = 512
+                    self.config.min_wave_size = 256
+            # else: keep the explicitly configured wave sizes
                 
             # Enable features based on compute capability
             if props.major >= 7:  # Volta or newer
@@ -333,17 +484,23 @@ class MCTS:
             self.wave_mcts.config.max_wave_size = self.config.max_wave_size
             self.wave_mcts.config.min_wave_size = self.config.min_wave_size
             
-            logger.info(f"Optimized for {props.name}:")
-            logger.info(f"  Wave size: {self.config.min_wave_size}-{self.config.max_wave_size}")
-            logger.info(f"  Mixed precision: {self.config.use_mixed_precision}")
-            logger.info(f"  Tensor cores: {self.config.use_tensor_cores}")
+            logger.debug(f"Optimized for {props.name}:")
+            logger.debug(f"  Wave size: {self.config.min_wave_size}-{self.config.max_wave_size}")
+            logger.debug(f"  Mixed precision: {self.config.use_mixed_precision}")
+            logger.debug(f"  Tensor cores: {self.config.use_tensor_cores}")
             
     def clear_caches(self):
         """Clear all caches"""
         self.cached_game.clear_caches()
         # Reset memory pool frame instead of clearing
         self.memory_pool.reset_frame()
-        logger.info("Cleared all caches")
+        logger.debug("Cleared all caches")
+        
+    def reset_tree(self):
+        """Reset the search tree for a new game or position"""
+        if hasattr(self.wave_mcts, 'reset_tree'):
+            self.wave_mcts.reset_tree()
+        logger.debug("Reset search tree")
         
     def run_benchmark(self, state: Any, duration: float = 10.0) -> Dict[str, Any]:
         """Run performance benchmark
@@ -411,3 +568,33 @@ class MCTS:
         logger.info(f"  Min: {results['min_simulations_per_second']:,.0f} sims/sec")
         
         return results
+    
+    def shutdown(self):
+        """Shutdown MCTS and clean up resources"""
+        logger.info("Shutting down MCTS...")
+        
+        # Shutdown evaluator pool if it has shutdown method
+        if hasattr(self.evaluator_pool, 'shutdown'):
+            self.evaluator_pool.shutdown()
+        
+        # Clear GPU memory
+        if self.device.type == 'cuda':
+            torch.cuda.empty_cache()
+            
+        logger.debug("MCTS shutdown complete")
+    
+    def __del__(self):
+        """Cleanup when object is garbage collected"""
+        try:
+            self.shutdown()
+        except Exception as e:
+            logger.warning(f"Error during MCTS cleanup: {e}")
+    
+    def __enter__(self):
+        """Context manager support"""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager cleanup"""
+        self.shutdown()
+        return False

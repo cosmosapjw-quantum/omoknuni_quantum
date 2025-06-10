@@ -469,7 +469,7 @@ class EnvarianceEngine:
             'sample_efficiency_gain': 1.0
         }
         
-        logger.info(f"EnvarianceEngine initialized with ε={config.epsilon}")
+        logger.debug(f"EnvarianceEngine initialized with ε={config.epsilon}")
     
     def register_evaluator_ensemble(self, evaluators: List[Callable]):
         """

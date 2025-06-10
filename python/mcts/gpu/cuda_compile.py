@@ -18,7 +18,7 @@ if not torch.cuda.is_available() or DISABLE_CUDA_COMPILE:
     if DISABLE_CUDA_COMPILE:
         logger.info("CUDA compilation disabled by environment variable")
     else:
-        logger.info("CUDA is not available. Using fallback implementations.")
+        logger.debug("CUDA is not available. Using fallback implementations.")
     
     # Fallback implementations
     def batched_ucb_selection(q_values, visit_counts, parent_visits, priors, row_ptr, col_indices, c_puct):
@@ -140,7 +140,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             mcts_cuda = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mcts_cuda)
             
-            logger.info("Successfully loaded pre-compiled CUDA kernels")
+            logger.debug("Successfully loaded pre-compiled CUDA kernels")
             
             # Make kernels available
             batched_ucb_selection = mcts_cuda.batched_ucb_selection
@@ -157,7 +157,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             CUDA_KERNELS_AVAILABLE = True
         else:
             # Try JIT compilation as fallback
-            logger.info("Pre-compiled module not found, attempting JIT compilation...")
+            logger.debug("Pre-compiled module not found, attempting JIT compilation...")
             
             # Set compilation timeout to prevent hanging
             import signal
@@ -189,7 +189,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             if hasattr(signal, 'SIGALRM'):
                 signal.alarm(0)
             
-            logger.info("Successfully compiled custom CUDA kernels")
+            logger.debug("Successfully compiled custom CUDA kernels")
             
             # Make kernels available
             batched_ucb_selection = mcts_cuda.batched_ucb_selection

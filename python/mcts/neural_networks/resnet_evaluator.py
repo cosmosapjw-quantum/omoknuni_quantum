@@ -52,7 +52,8 @@ class ResNetEvaluator(Evaluator):
             action_size = metadata.num_actions
         else:
             # Create new model for game
-            self.model = create_resnet_for_game(game_type)
+            # Override input channels to use enhanced representation (20 channels)
+            self.model = create_resnet_for_game(game_type, input_channels=20)
             action_size = self.model.metadata.num_actions
         
         # Move model to device
@@ -74,7 +75,7 @@ class ResNetEvaluator(Evaluator):
         if self.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
         
-        logger.info(f"ResNetEvaluator initialized on {device}")
+        logger.debug(f"ResNetEvaluator initialized on {device}")
         logger.info(f"Model parameters: {self.model.count_parameters():,}")
     
     def evaluate(

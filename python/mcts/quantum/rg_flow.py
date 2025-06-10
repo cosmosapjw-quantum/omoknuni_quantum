@@ -424,7 +424,7 @@ class RGFlowOptimizer:
             'parameter_improvements': []
         }
         
-        logger.info("RGFlowOptimizer initialized")
+        logger.debug("RGFlowOptimizer initialized")
     
     def find_optimal_parameters(
         self,

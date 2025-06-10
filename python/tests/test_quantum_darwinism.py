@@ -181,19 +181,28 @@ class TestRedundancyAnalyzer:
     def test_objectivity_measure(self, analyzer, device):
         """Test objectivity measure computation"""
         # Create spectrum with good redundancy (objective)
-        good_redundancies = torch.tensor([0.1, 0.15, 0.2, 0.25, 0.3], device=device)
+        # For objective information, redundancies should follow ~1/sqrt(n) scaling
+        # Starting with low redundancy that gradually increases
+        good_redundancies = torch.tensor([0.2, 0.141, 0.115, 0.1, 0.089], device=device)  # ~1/sqrt(n) scaling
         good_spectrum = {
             'redundancies': good_redundancies,
             'info_thresholds': torch.linspace(0.1, 0.9, 5, device=device),
-            'average_redundancy': good_redundancies.mean()
+            'average_redundancy': good_redundancies.mean(),
+            'fragment_sizes': torch.tensor([10, 15, 20, 25, 30], device=device),
+            'mutual_informations': torch.tensor([0.8, 0.75, 0.7, 0.65, 0.6], device=device),
+            'max_mutual_information': torch.tensor(0.8, device=device)
         }
         
         # Create spectrum with poor redundancy (non-objective)
+        # High redundancy means information is not well-distributed
         poor_redundancies = torch.tensor([0.8, 0.85, 0.9, 0.92, 0.95], device=device)
         poor_spectrum = {
             'redundancies': poor_redundancies,
             'info_thresholds': torch.linspace(0.1, 0.9, 5, device=device),
-            'average_redundancy': poor_redundancies.mean()
+            'average_redundancy': poor_redundancies.mean(),
+            'fragment_sizes': torch.tensor([10, 15, 20, 25, 30], device=device),
+            'mutual_informations': torch.tensor([0.3, 0.25, 0.2, 0.15, 0.1], device=device),
+            'max_mutual_information': torch.tensor(0.3, device=device)
         }
         
         objectivity_good = analyzer.compute_objectivity_measure(good_spectrum)

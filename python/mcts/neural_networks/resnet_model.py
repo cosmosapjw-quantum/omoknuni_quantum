@@ -7,6 +7,7 @@ with policy and value heads for game evaluation.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from typing import Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -16,7 +17,7 @@ from .nn_framework import BaseGameModel, ModelMetadata
 @dataclass
 class ResNetConfig:
     """Configuration for ResNet model"""
-    num_blocks: int = 20
+    num_blocks: int = 10  # Reduced from 20 to prevent extreme activations in untrained networks
     num_filters: int = 256
     value_head_hidden_size: int = 256
     use_batch_norm: bool = True
@@ -139,6 +140,8 @@ class PolicyHead(nn.Module):
         
         # Fully connected layer
         self.fc = nn.Linear(32 * board_size, num_actions)
+        # Mark this as policy FC for special initialization
+        self.fc._is_policy_fc = True
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.conv(x)
@@ -289,9 +292,13 @@ class ResNetModel(BaseGameModel):
         return policy_logits, value
     
     def _initialize_weights(self):
-        """Initialize network weights"""
+        """Initialize network weights using standard He initialization
+        
+        Following standard ResNet practices without custom scaling.
+        """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
+                # Standard He initialization for conv layers
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -299,6 +306,7 @@ class ResNetModel(BaseGameModel):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
+                # Standard initialization for linear layers
                 nn.init.kaiming_normal_(m.weight)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -318,7 +326,7 @@ class ResNetModel(BaseGameModel):
 
 def create_resnet_for_game(
     game_type: str,
-    num_blocks: int = 20,
+    num_blocks: int = 10,  # Reduced from 20 to prevent extreme activations
     num_filters: int = 256,
     **kwargs
 ) -> ResNetModel:
@@ -359,10 +367,16 @@ def create_resnet_for_game(
     if game_type not in game_configs:
         raise ValueError(f"Unknown game type: {game_type}")
     
+    # Override game configs with any provided kwargs (e.g., input_channels)
+    game_config = game_configs[game_type].copy()
+    for key in ['input_channels', 'board_height', 'board_width', 'num_actions']:
+        if key in kwargs:
+            game_config[key] = kwargs.pop(key)
+    
     # Create metadata
     metadata = ModelMetadata(
         architecture='resnet',
-        **game_configs[game_type],
+        **game_config,
         model_params={
             'num_blocks': num_blocks,
             'num_filters': num_filters,

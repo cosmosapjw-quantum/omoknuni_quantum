@@ -79,7 +79,7 @@ class QuantumLookupTables:
         # Initialize lookup tables
         self._initialize_tables()
         
-        logger.info(f"Initialized quantum lookup tables with {self.table_size} entries")
+        logger.debug(f"Initialized quantum lookup tables with {self.table_size} entries")
     
     def _initialize_tables(self):
         """Pre-compute common quantum corrections"""
@@ -192,9 +192,9 @@ class EffectiveActionEngine:
             'fast_mode_uses': 0
         }
         
-        logger.info(f"EffectiveActionEngine initialized on {device} "
-                   f"(mixed_precision={config.use_mixed_precision}, "
-                   f"quantum_tables={config.use_quantum_tables})")
+        logger.debug(f"EffectiveActionEngine initialized on {device} "
+                    f"(mixed_precision={config.use_mixed_precision}, "
+                    f"quantum_tables={config.use_quantum_tables})")
         
     def compute_effective_action(
         self, 
@@ -667,7 +667,7 @@ class QFTEngine:
             'classical_limit_ratio': 0.0
         }
         
-        logger.info(f"QFTEngine initialized with ℏ_eff = {config.hbar_eff}")
+        logger.debug(f"QFTEngine initialized with ℏ_eff = {config.hbar_eff}")
     
     def compute_path_weights(
         self, 

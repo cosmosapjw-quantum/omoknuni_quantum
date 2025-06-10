@@ -3,7 +3,7 @@
 from .node import Node
 from .tree_arena import TreeArena, MemoryConfig
 from .game_interface import GameInterface, GameType
-from .evaluator import Evaluator, MockEvaluator, EvaluatorConfig
+from .evaluator import Evaluator, MockEvaluator, EvaluatorConfig, AlphaZeroEvaluator
 from .batch_game_ops import BatchGameOps, BatchGameOpsConfig, TensorGameState
 from .mcts import MCTS, MCTSConfig
 from .wave_mcts import WaveMCTS, WaveMCTSConfig
@@ -18,6 +18,7 @@ __all__ = [
     "Evaluator",
     "MockEvaluator",
     "EvaluatorConfig",
+    "AlphaZeroEvaluator",
     "BatchGameOps",
     "BatchGameOpsConfig",
     "TensorGameState",

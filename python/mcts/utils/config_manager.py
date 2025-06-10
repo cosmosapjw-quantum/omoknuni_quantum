@@ -109,7 +109,7 @@ class ConfigManager:
                 f"compute capability {major}.{minor}, CUDA {info.cuda_version}"
             )
         else:
-            logger.info("No GPU detected or PyTorch not available")
+            logger.debug("No GPU detected or PyTorch not available")
             
         logger.info(
             f"System: {info.cpu_count} CPUs @ {info.cpu_freq_mhz:.0f}MHz, "

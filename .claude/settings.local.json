@@ -51,7 +51,14 @@
       "Bash(DISABLE_CUDA_COMPILE=1 python test_mcts_hang.py)",
       "Bash(DISABLE_CUDA_COMPILE=1 python benchmark_qft_mcts.py)",
       "Bash(DISABLE_CUDA_COMPILE=1 CUDA_LAUNCH_BLOCKING=1 python benchmark_qft_mcts.py)",
-      "Bash(~/venv/bin/python test_path_integral_dtype.py)"
+      "Bash(~/venv/bin/python test_path_integral_dtype.py)",
+      "Bash(~/venv/bin/python:*)",
+      "Bash(./train.py --config configs/gomoku_one_loop.yaml --iterations 1 --games-per-iter 1 --workers 1)",
+      "Bash(PYTHONPATH=/home/cosmos/omoknuni_quantum/python:$PYTHONPATH python python/mcts/neural_networks/unified_training_pipeline.py --config ./configs/gomoku_one_loop.yaml --iterations 1)",
+      "Bash(PYTHONPATH=/home/cosmos/omoknuni_quantum/python:$PYTHONPATH python test_illegal_move_debug.py)",
+      "Bash(for file in configs/chess_classical.yaml configs/go_19x19_quantum.yaml configs/gomoku_classical.yaml configs/gomoku_one_loop.yaml configs/minimal_test.yaml)",
+      "Bash(do)",
+      "Bash(done)"
     ],
     "deny": []
   },

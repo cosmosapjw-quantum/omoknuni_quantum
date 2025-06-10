@@ -532,7 +532,7 @@ class ThermodynamicMonitor:
         self.efficiency_warnings = []
         self.bound_violations = []
         
-        logger.info("ThermodynamicMonitor initialized")
+        logger.debug("ThermodynamicMonitor initialized")
     
     def monitor_step(
         self,

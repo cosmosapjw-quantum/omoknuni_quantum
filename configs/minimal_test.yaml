@@ -1,0 +1,89 @@
+# Minimal Test Configuration
+# For quick testing and debugging - not for actual training
+
+experiment_name: test_run
+seed: 42
+log_level: DEBUG
+num_iterations: 5
+
+game:
+  game_type: gomoku
+  board_size: 9  # Smaller board for testing
+
+mcts:
+  # Minimal settings for speed
+  num_simulations: 100
+  c_puct: 1.0
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  
+  # Small batches for testing
+  wave_min_size: 64
+  wave_max_size: 128
+  wave_adaptive_sizing: false
+  batch_size: 64
+  
+  # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
+  virtual_loss: 0.0
+  
+  # Minimal memory
+  memory_pool_size_mb: 512
+  max_tree_nodes: 10000
+  tree_reuse: false
+  
+  # Test quantum features
+  quantum_level: tree_level
+  enable_quantum: true
+  quantum_coupling: 0.1
+  
+  # Device - still use all threads for testing
+  device: cuda
+  use_mixed_precision: false  # Disable for debugging
+  wave_num_pipelines: 3
+
+network:
+  # Tiny network for testing
+  model_type: resnet
+  input_channels: 20
+  num_res_blocks: 2
+  num_filters: 32
+  value_head_hidden_size: 64
+
+training:
+  # Minimal training
+  batch_size: 64
+  learning_rate: 0.01
+  num_epochs: 2
+  checkpoint_interval: 2
+  validation_interval: 1
+  
+  # Few self-play games - use 4 workers for faster testing
+  num_games_per_iteration: 12
+  num_workers: 4
+  max_moves_per_game: 81
+  
+  # Small buffer
+  window_size: 1000
+  augment_data: false
+  mixed_precision: false
+  dataloader_workers: 2
+  pin_memory: true
+
+arena:
+  # Quick evaluation - parallel for speed
+  num_games: 12
+  num_workers: 4
+  games_per_worker: 3
+  win_threshold: 0.5
+  
+  # Fast games
+  temperature: 0.1
+  mcts_simulations: 50
+  
+  # Skip random evaluation
+  eval_vs_random_interval: 100
+  min_win_rate_vs_random: 0.5
+  
+  # Minimal logging
+  save_game_records: false
+  save_arena_logs: false

@@ -31,8 +31,6 @@ from .neural_networks import (
     ResNetModel, ResNetConfig, create_resnet_for_game,
     ResNetEvaluator, create_evaluator_for_game,
     create_chess_evaluator, create_go_evaluator, create_gomoku_evaluator,
-    # Training
-    TrainingPipeline, TrainingConfig, create_training_pipeline
 )
 
 # GPU acceleration components
@@ -88,7 +86,9 @@ __all__ = [
     "ResNetModel", "ResNetConfig", "create_resnet_for_game",
     "ResNetEvaluator", "create_evaluator_for_game",
     "create_chess_evaluator", "create_go_evaluator", "create_gomoku_evaluator",
-    "TrainingPipeline", "TrainingConfig", "create_training_pipeline",
+    "UnifiedTrainingPipeline", "GameExample",
+    "SelfPlayManager", "SelfPlayConfig",
+    "ArenaManager", "ArenaConfig", "ELOTracker",
     
     # GPU
     "CSRTree", "CSRTreeConfig",

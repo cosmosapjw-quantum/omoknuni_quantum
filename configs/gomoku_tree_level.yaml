@@ -1,0 +1,154 @@
+# Gomoku Tree-Level Quantum Configuration
+# AlphaZero with tree-level quantum corrections for enhanced exploration
+
+experiment_name: gomoku_tree_level_quantum
+seed: 42
+log_level: INFO
+num_iterations: 300
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false
+  gomoku_use_omok: false
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  # Core MCTS parameters
+  num_simulations: 800
+  c_puct: 1.0
+  dirichlet_alpha: 0.15
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  temperature_final: 0.1
+  
+  # Performance optimization - RTX 3060 Ti
+  wave_min_size: 2048
+  wave_max_size: 3072
+  wave_adaptive_sizing: false
+  batch_size: 384
+  virtual_loss: 3.0
+  
+  # Memory settings - 8GB VRAM + 64GB RAM
+  memory_pool_size_mb: 4096
+  max_tree_nodes: 1000000
+  tree_reuse: true
+  tree_reuse_fraction: 0.5
+  
+  # GPU optimization
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Tree-level quantum features
+  quantum_level: tree_level
+  enable_quantum: true
+  
+  # Quantum physics parameters
+  quantum_coupling: 0.1
+  quantum_temperature: 1.0
+  decoherence_rate: 0.0  # No decoherence at tree level
+  measurement_noise: 0.0
+  
+  # Interference settings
+  interference_alpha: 0.05
+  interference_method: minhash
+  minhash_size: 64
+  phase_kick_strength: 0.1
+  
+  # Device - Ryzen 9 5900X
+  device: cuda
+  wave_num_pipelines: 3
+
+network:
+  # Network architecture
+  model_type: resnet
+  input_channels: 20
+  num_res_blocks: 10
+  num_filters: 128
+  value_head_hidden_size: 256
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.997
+  l2_regularization: 0.0001
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Basic training parameters
+  batch_size: 768  # RTX 3060 Ti optimal
+  learning_rate: 0.01
+  learning_rate_schedule: step
+  lr_decay_steps: 50
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.00001
+  
+  # Optimizer
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 1
+  max_grad_norm: 5.0
+  
+  # Training loop
+  num_epochs: 10
+  checkpoint_interval: 50
+  validation_interval: 10
+  
+  # Self-play with quantum - 12 cores
+  num_games_per_iteration: 200
+  num_workers: 12
+  max_moves_per_game: 225
+  resign_threshold: -0.95
+  
+  # Data handling - 64GB RAM
+  window_size: 500000
+  augment_data: true
+  mixed_precision: true
+  dataloader_workers: 8
+  pin_memory: true
+  
+  # Paths
+  save_dir: checkpoints
+  tensorboard_dir: runs
+  data_dir: self_play_data
+
+arena:
+  # Evaluation settings - 12 cores
+  num_games: 120
+  num_workers: 12
+  games_per_worker: 10
+  win_threshold: 0.55
+  
+  # Game settings - classical for fair evaluation
+  temperature: 0.1
+  mcts_simulations: 400
+  c_puct: 1.0
+  max_moves: 225
+  
+  # ELO tracking
+  elo_k_factor: 32.0
+  elo_initial_rating: 1500.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Random policy checks
+  eval_vs_random_interval: 10
+  eval_vs_random_games: 20
+  min_win_rate_vs_random: 0.95
+  
+  # Logging
+  save_game_records: false
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json

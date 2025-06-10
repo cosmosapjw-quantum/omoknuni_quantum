@@ -1,0 +1,147 @@
+# Chess Classical Configuration
+# Professional chess training with established AlphaZero approach
+
+experiment_name: chess_alphazero_classical
+seed: 42
+log_level: INFO
+num_iterations: 800
+
+game:
+  game_type: chess
+  chess_960: false
+  chess_starting_fen: null
+
+mcts:
+  # Core MCTS parameters for chess
+  num_simulations: 800
+  c_puct: 1.0
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 15  # Earlier transition in chess
+  temperature_final: 0.1
+  
+  # Performance optimization - RTX 3060 Ti
+  wave_min_size: 2048
+  wave_max_size: 3072
+  wave_adaptive_sizing: false
+  batch_size: 384
+  
+  # Virtual loss for leaf parallelization
+  virtual_loss: 3.0
+  
+  # Memory settings - 8GB VRAM + 64GB RAM
+  memory_pool_size_mb: 4096
+  max_tree_nodes: 1000000
+  tree_reuse: true
+  tree_reuse_fraction: 0.5
+  
+  # GPU optimization
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Classical MCTS for chess (proven approach)
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device - Ryzen 9 5900X
+  device: cuda
+  wave_num_pipelines: 3
+
+network:
+  # Standard chess network architecture
+  model_type: resnet
+  input_channels: 20
+  num_res_blocks: 20
+  num_filters: 256
+  value_head_hidden_size: 256
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.997
+  l2_regularization: 0.0001
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Training parameters
+  batch_size: 768  # RTX 3060 Ti optimal
+  learning_rate: 0.01
+  learning_rate_schedule: step
+  lr_decay_steps: 100
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.00001
+  
+  # Optimizer
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 1
+  max_grad_norm: 5.0
+  
+  # Training loop
+  num_epochs: 10
+  checkpoint_interval: 100
+  validation_interval: 20
+  
+  # Self-play settings - 12 cores
+  num_games_per_iteration: 300  # 25 per worker
+  num_workers: 12
+  max_moves_per_game: 500
+  resign_threshold: -0.95
+  resign_check_moves: 10
+  
+  # Data handling - 64GB RAM
+  window_size: 750000  # Much larger
+  augment_data: false  # No augmentation for chess
+  mixed_precision: true
+  dataloader_workers: 8
+  pin_memory: true
+  
+  # Paths
+  save_dir: checkpoints
+  tensorboard_dir: runs
+  data_dir: self_play_data
+
+arena:
+  # Evaluation settings - 12 cores
+  num_games: 120
+  num_workers: 12
+  games_per_worker: 10
+  win_threshold: 0.55
+  
+  # Game settings
+  temperature: 0.1
+  mcts_simulations: 400
+  c_puct: 1.0
+  max_moves: 500
+  
+  # ELO tracking
+  elo_k_factor: 32.0
+  elo_initial_rating: 1500.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Random policy checks
+  eval_vs_random_interval: 25
+  eval_vs_random_games: 10
+  min_win_rate_vs_random: 0.99
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 10
+  
+  # Logging
+  save_game_records: true  # Save chess games
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json

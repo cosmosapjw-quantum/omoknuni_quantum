@@ -1,0 +1,17 @@
+# ninja log v5
+0	23318	1749400283478390923	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/cuda_ops_wrapper_fixed.o	eb163610d67e9363
+0	46807	1749400306968383689	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+15	22142	1749400571418288536	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/cuda_ops_wrapper.o	c999ea78c0ca1573
+20	44334	1749419395491617304	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+16	45204	1749420929521072497	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+353	66732	1749437000315236294	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+48	44342	1749437892804930083	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+15	43442	1749438046884875964	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+17	25076	1749459537387248420	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/cuda_ops_wrapper.o	e63e4ee9189583
+17	47764	1749459560077239222	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b822d40362553735
+21	22274	1749459718267181724	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/cuda_ops_wrapper.o	c999ea78c0ca1573
+21	44880	1749459740877173696	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+16	22130	1749460844396783286	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/cuda_ops_wrapper.o	c999ea78c0ca1573
+17	44780	1749460867046775129	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+17	43704	1749462144446320489	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8
+26	44163	1749471931052853889	/home/cosmos/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/home/cosmos/omoknuni_quantum/python/mcts/gpu/unified_cuda_kernels.o	b47de2ac8a3f19b8

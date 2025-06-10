@@ -29,6 +29,16 @@ except ImportError:
     HAS_GPU_KERNELS = False
     CUDA_AVAILABLE = False
 
+# Import GPU components if available
+try:
+    from ..gpu.gpu_optimizer import create_gpu_accelerated_evaluator, BatchedTensorOperations, GPUMemoryPool
+    HAS_GPU_COMPONENTS = True
+except ImportError:
+    create_gpu_accelerated_evaluator = None
+    BatchedTensorOperations = None
+    GPUMemoryPool = None
+    HAS_GPU_COMPONENTS = False
+
 
 @dataclass
 class EvaluatorConfig:
@@ -317,12 +327,17 @@ class GPUAcceleratedEvaluator(Evaluator):
             raise RuntimeError("CUDA not available")
             
         # Optimize model for GPU inference
-        self.model = create_gpu_accelerated_evaluator(model, config)
+        if create_gpu_accelerated_evaluator and HAS_GPU_COMPONENTS:
+            self.model = create_gpu_accelerated_evaluator(model, config)
+        else:
+            self.model = model
+            self.model.to(config.device)
+            self.model.eval()
         
         # Initialize GPU components
         self.device = torch.device(config.device)
-        self.gpu_ops = BatchedTensorOperations(self.device) if HAS_GPU_KERNELS else None
-        self.memory_pool = GPUMemoryPool(device=self.device) if HAS_GPU_KERNELS else None
+        self.gpu_ops = BatchedTensorOperations(self.device) if BatchedTensorOperations and HAS_GPU_KERNELS else None
+        self.memory_pool = GPUMemoryPool(device=self.device) if GPUMemoryPool and HAS_GPU_KERNELS else None
         
         # Batch processing queue
         self.batch_queue = []
@@ -477,3 +492,153 @@ class BatchedEvaluator(Evaluator):
             self.pending_states.clear()
             self.pending_masks.clear()
             self.pending_futures.clear()
+
+
+class AlphaZeroEvaluator(Evaluator):
+    """Evaluator for AlphaZeroNetwork models that works with MCTS"""
+    
+    def __init__(self, model, config: Optional[EvaluatorConfig] = None,
+                 device: Optional[str] = None, action_size: Optional[int] = None):
+        """Initialize AlphaZero evaluator
+        
+        Args:
+            model: AlphaZeroNetwork model (torch.nn.Module)
+            config: Evaluator configuration
+            device: Device to run on
+            action_size: Size of action space (will try to infer if not provided)
+        """
+        if not HAS_TORCH:
+            raise RuntimeError("PyTorch required for AlphaZeroEvaluator")
+            
+        # Auto-detect device
+        if device is None:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        # Create config if not provided
+        if config is None:
+            config = EvaluatorConfig(device=device)
+        
+        # Get action size from model if not provided
+        if action_size is None:
+            # Try to infer from model's policy head
+            if hasattr(model, 'policy_head') and hasattr(model.policy_head, 'fc'):
+                action_size = model.policy_head.fc.out_features
+            elif hasattr(model, 'config') and hasattr(model.config, 'num_actions'):
+                action_size = model.config.num_actions
+            else:
+                raise ValueError("Cannot infer action_size from model. Please provide it explicitly.")
+        
+        # Initialize base class
+        super().__init__(config, action_size)
+        
+        # Set up model
+        self.model = model
+        self.device = torch.device(device)
+        self.model.to(self.device)
+        self.model.eval()
+        
+        # Performance tracking
+        self.eval_count = 0
+        self.total_time = 0.0
+    
+    def evaluate(self, state: np.ndarray, legal_mask: Optional[np.ndarray] = None,
+                temperature: float = 1.0) -> Tuple[np.ndarray, float]:
+        """Evaluate a single position
+        
+        Args:
+            state: Board state array
+            legal_mask: Boolean mask for legal actions
+            temperature: Temperature for policy
+            
+        Returns:
+            policy: Probability distribution over actions
+            value: Position evaluation [-1, 1]
+        """
+        # Add batch dimension
+        state_batch = np.expand_dims(state, axis=0)
+        legal_mask_batch = np.expand_dims(legal_mask, axis=0) if legal_mask is not None else None
+        
+        # Evaluate batch
+        policies, values = self.evaluate_batch(state_batch, legal_mask_batch, temperature)
+        
+        return policies[0], values[0]
+    
+    def evaluate_batch(self, states: np.ndarray,
+                      legal_masks: Optional[np.ndarray] = None,
+                      temperature: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
+        """Evaluate a batch of positions
+        
+        Args:
+            states: Batch of states (batch, channels, height, width)
+            legal_masks: Optional legal move masks
+            temperature: Temperature for policy
+            
+        Returns:
+            policies: Policy distributions (batch, action_size)
+            values: Position evaluations (batch,)
+        """
+        with torch.no_grad():
+            # Convert to tensor if needed
+            if isinstance(states, np.ndarray):
+                states_tensor = torch.FloatTensor(states).to(self.device)
+            else:
+                states_tensor = states.to(self.device)
+            
+            # Forward pass through model
+            log_policies, values = self.model(states_tensor)
+            
+            # Convert log probabilities to probabilities
+            policies = torch.softmax(log_policies, dim=1)
+            
+            # Apply legal mask if provided
+            if legal_masks is not None:
+                if isinstance(legal_masks, np.ndarray):
+                    masks = torch.FloatTensor(legal_masks).to(self.device)
+                else:
+                    masks = legal_masks.to(self.device)
+                
+                # Mask illegal moves
+                policies = policies * masks
+                
+                # Renormalize
+                policy_sums = policies.sum(dim=1, keepdim=True)
+                policies = policies / (policy_sums + 1e-8)
+            
+            # Apply temperature if needed
+            if temperature != 1.0 and temperature > 0:
+                # Apply temperature to log probabilities for numerical stability
+                log_policies = torch.log(policies + 1e-8) / temperature
+                policies = torch.softmax(log_policies, dim=1)
+            
+            # Convert to numpy
+            policies_np = policies.cpu().numpy()
+            values_np = values.cpu().numpy().squeeze(-1)
+            
+            # Ensure values are in [-1, 1] range
+            values_np = np.tanh(values_np)
+            
+            self.eval_count += len(states)
+            
+            return policies_np, values_np
+    
+    def save_checkpoint(self, path: str):
+        """Save model checkpoint"""
+        torch.save(self.model.state_dict(), path)
+    
+    def load_checkpoint(self, path: str):
+        """Load model checkpoint"""
+        self.model.load_state_dict(torch.load(path, map_location=self.device))
+        self.model.eval()
+    
+    def shutdown(self):
+        """Cleanup resources"""
+        # Clear CUDA cache if using GPU
+        if hasattr(self, 'device') and self.device.type == 'cuda':
+            torch.cuda.empty_cache()
+    
+    def __del__(self):
+        """Cleanup on deletion"""
+        try:
+            self.shutdown()
+        except:
+            pass

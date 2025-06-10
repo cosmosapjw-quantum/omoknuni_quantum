@@ -28,6 +28,12 @@ class SimpleEvaluatorWrapper:
         """
         policies, values = self.evaluator.evaluate_batch(states, legal_masks)
         
+        # Convert to tensors if needed
+        if not isinstance(values, torch.Tensor):
+            values = torch.tensor(values, device=self.device)
+        if not isinstance(policies, torch.Tensor):
+            policies = torch.tensor(policies, device=self.device)
+        
         # Create dummy info dict to match EvaluatorPool interface
         info = {
             'weights': torch.ones(1, device=self.device),
@@ -35,8 +41,35 @@ class SimpleEvaluatorWrapper:
             'confidence': torch.ones(1, device=self.device)
         }
         
+        # Return in correct order: values, policies, info
         return values, policies, info
         
+    def shutdown(self):
+        """Shutdown the evaluator wrapper"""
+        # If the wrapped evaluator has a shutdown method, call it
+        if hasattr(self.evaluator, 'shutdown'):
+            self.evaluator.shutdown()
+        
+        # Clear any CUDA memory if using GPU
+        if self.device.type == 'cuda':
+            torch.cuda.empty_cache()
+    
+    def __del__(self):
+        """Cleanup on deletion"""
+        try:
+            self.shutdown()
+        except:
+            pass
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.shutdown()
+        return False
+    
     def get_statistics(self) -> Dict[str, Any]:
         """Get evaluator statistics"""
         return {

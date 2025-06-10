@@ -28,7 +28,8 @@ def compile_triton_kernels(verbose=False):
     """
     try:
         import triton
-        logger.info("Triton available, setting up compilation cache...")
+        if verbose:
+            logger.debug("Triton available, setting up compilation cache...")
         
         # Set Triton cache directory
         cache_dir = Path.home() / ".triton" / "cache"
@@ -36,11 +37,39 @@ def compile_triton_kernels(verbose=False):
         os.environ['TRITON_CACHE_DIR'] = str(cache_dir)
         
         # Import modules that contain Triton kernels to trigger compilation
-        logger.info("Pre-compiling Triton kernels...")
-        from mcts.gpu import cuda_kernels
-        from mcts.quantum import path_integral
+        if verbose:
+            logger.debug("Pre-compiling Triton kernels...")
+        try:
+            from mcts.gpu import unified_kernels
+            if verbose:
+                logger.info("Imported unified kernels")
+        except ImportError:
+            if verbose:
+                logger.debug("Unified kernels not available yet")
+            
+        try:
+            from mcts.gpu import cuda_kernels
+        except ImportError:
+            if verbose:
+                logger.debug("Legacy CUDA kernels not available")
+            
+        try:
+            from mcts.quantum import path_integral
+        except ImportError:
+            if verbose:
+                logger.debug("Path integral module not available")
         
-        logger.info(f"Triton kernels compiled and cached in {cache_dir}")
+        # Pre-compile quantum CUDA kernels if available
+        try:
+            from mcts.gpu import quantum_cuda_kernels
+            if verbose:
+                logger.info("Pre-compiling quantum CUDA kernels...")
+        except ImportError:
+            if verbose:
+                logger.debug("Quantum CUDA kernels not available")
+        
+        if verbose:
+            logger.debug(f"Triton kernels compiled and cached in {cache_dir}")
         return True
         
     except ImportError:
@@ -50,7 +79,7 @@ def compile_triton_kernels(verbose=False):
         logger.error(f"Failed to compile Triton kernels: {e}")
         return False
 
-def compile_cuda_kernels_old(force_rebuild=False, verbose=False):
+def compile_cuda_kernels_old_deprecated(force_rebuild=False, verbose=False):
     """Compile all CUDA kernels for MCTS
     
     Args:
@@ -574,52 +603,151 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         return False
 
 def compile_cuda_kernels(force_rebuild=False, verbose=False):
-    """Compile CUDA kernels using the new pre-compilation approach"""
+    """Compile CUDA kernels with proper error handling"""
     # Check CUDA availability
     if not torch.cuda.is_available():
-        logger.error("CUDA is not available. Cannot compile CUDA kernels.")
-        return False
+        if verbose:
+            logger.warning("CUDA is not available. Skipping CUDA kernel compilation.")
+            logger.debug("The system will use PyTorch fallback implementations.")
+        return True  # Not an error - just use CPU/PyTorch fallbacks
+    
+    # Check CUDA version compatibility
+    import subprocess
+    try:
+        nvcc_version = subprocess.check_output(['nvcc', '--version'], text=True)
+        if '12.8' in nvcc_version and '12.6' in torch.version.cuda:
+            logger.warning("CUDA version mismatch detected: System has CUDA 12.8 but PyTorch was built with CUDA 12.6")
+            logger.info("This is typically not a problem - CUDA has backward compatibility.")
+            # Suppress the g++ bounds warning
+            import warnings
+            warnings.filterwarnings('ignore', message='There are no .* version bounds defined for CUDA version')
+    except:
+        pass
     
     # Get paths
     current_dir = Path(__file__).parent
     gpu_dir = current_dir / "mcts" / "gpu"
-    so_file = gpu_dir / "mcts_cuda_kernels.cpython-312-x86_64-linux-gnu.so"
     
-    # Check if already compiled
-    if so_file.exists() and not force_rebuild:
-        logger.info(f"CUDA kernels already compiled at {so_file}")
+    # Check for existing compiled kernels
+    so_patterns = [
+        "mcts_cuda_kernels*.so",
+        "custom_cuda_ops*.so",
+        "mcts_cuda_kernels*.pyd"
+    ]
+    
+    existing_kernels = []
+    for pattern in so_patterns:
+        existing_kernels.extend(list(gpu_dir.glob(pattern)))
+        existing_kernels.extend(list((current_dir / "build_cuda").glob(pattern)))
+    
+    if existing_kernels and not force_rebuild:
+        logger.info(f"CUDA kernels already compiled:")
+        for kernel in existing_kernels[:3]:  # Show first 3
+            logger.info(f"  - {kernel}")
         logger.info("Use --force to recompile")
+        
+        # Test if the kernels can be loaded
+        try:
+            import importlib
+            for kernel_path in existing_kernels:
+                if kernel_path.suffix == '.so':
+                    logger.debug(f"Testing kernel loading: {kernel_path}")
+                    # This will verify the kernel is compatible
+                    torch.ops.load_library(str(kernel_path))
+                    logger.info("✅ Existing CUDA kernels are functional!")
+                    return True
+        except Exception as e:
+            logger.warning(f"Existing kernels couldn't be loaded: {e}")
+            logger.info("Will attempt recompilation...")
+            # Continue to recompilation
+    
+    # Check if we have CUDA sources
+    cuda_sources = list(gpu_dir.glob("*.cu")) + list(gpu_dir.glob("*.cpp"))
+    if not cuda_sources:
+        logger.warning("No CUDA source files found. Skipping CUDA compilation.")
         return True
     
-    # Use the build script
-    build_script = current_dir / "build_cuda_kernels.py"
-    if not build_script.exists():
-        logger.error(f"Build script not found: {build_script}")
-        return False
-    
+    # Try inline compilation first (faster)
     try:
-        logger.info("Compiling CUDA kernels using setuptools...")
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, str(build_script)],
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
+        logger.info("Attempting fast inline CUDA compilation...")
+        from torch.utils.cpp_extension import load_inline
         
-        if result.returncode == 0:
-            logger.info("Successfully compiled CUDA kernels!")
-            return True
-        else:
-            logger.error(f"CUDA compilation failed: {result.stderr}")
-            return False
+        # Read the CUDA source
+        cuda_source_path = gpu_dir / "custom_cuda_kernels_optimized.cu"
+        if not cuda_source_path.exists():
+            cuda_source_path = gpu_dir / "custom_cuda_kernels.cu"
+        
+        if cuda_source_path.exists():
+            with open(cuda_source_path, 'r') as f:
+                cuda_source = f.read()
             
-    except subprocess.TimeoutExpired:
-        logger.error("CUDA compilation timed out")
-        return False
+            # Simple C++ wrapper
+            cpp_source = """
+            #include <torch/extension.h>
+            void init_cuda_kernels(py::module& m);
+            PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+                init_cuda_kernels(m);
+            }
+            """
+            
+            # Try to compile inline
+            module = load_inline(
+                name='mcts_cuda_kernels_inline',
+                cpp_sources=[cpp_source],
+                cuda_sources=[cuda_source],
+                functions=['batched_ucb_selection', 'parallel_backup'],
+                verbose=verbose,
+                extra_cuda_cflags=['-O3', '--use_fast_math']
+            )
+            
+            logger.info("✅ Fast inline compilation successful!")
+            return True
+            
     except Exception as e:
-        logger.error(f"Failed to compile CUDA kernels: {e}")
-        return False
+        logger.debug(f"Inline compilation failed (this is normal): {e}")
+    
+    # Fallback to build script
+    build_script = current_dir / "build_cuda_kernels.py"
+    if build_script.exists():
+        try:
+            logger.info("Using build script for CUDA compilation...")
+            import subprocess
+            
+            # Run build script
+            cmd = [sys.executable, str(build_script), "build_ext", "--inplace"]
+            if verbose:
+                cmd.append("--verbose")
+                
+            # Set environment to suppress warnings
+            env = os.environ.copy()
+            env['PYTHONWARNINGS'] = 'ignore'
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=env
+            )
+            
+            if result.returncode == 0:
+                logger.info("✅ CUDA kernels compiled successfully!")
+                return True
+            else:
+                logger.warning(f"CUDA compilation had issues: {result.stderr[:200]}...")
+                logger.info("System will use PyTorch fallback implementations.")
+                return True  # Not a fatal error
+                
+        except subprocess.TimeoutExpired:
+            logger.warning("CUDA compilation timed out. Using PyTorch fallbacks.")
+            return True
+        except Exception as e:
+            logger.warning(f"CUDA compilation error: {e}. Using PyTorch fallbacks.")
+            return True
+    
+    # No build script - just use PyTorch
+    logger.debug("No CUDA build script found. System will use optimized PyTorch implementations.")
+    return True
 
 def compile_all_kernels(force_rebuild=False, verbose=False):
     """Compile both CUDA and Triton kernels

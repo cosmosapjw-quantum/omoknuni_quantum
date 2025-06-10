@@ -6,14 +6,17 @@ from .nn_framework import (
     create_model_from_config, load_model_for_game
 )
 from .nn_model import (
-    AlphaZeroNetwork, ModelConfig, ResidualBlock, PolicyHead, ValueHead
+    AlphaZeroNetwork, ModelConfig, ResidualBlock, PolicyHead, ValueHead,
+    create_model
 )
 from .resnet_model import ResNetModel, ResNetConfig, create_resnet_for_game
 from .resnet_evaluator import (
     ResNetEvaluator, create_evaluator_for_game,
     create_chess_evaluator, create_go_evaluator, create_gomoku_evaluator
 )
-from .training_pipeline import TrainingPipeline, TrainingConfig, create_training_pipeline
+
+# Import unified modules last to avoid circular imports
+# These are imported after the basic modules to prevent circular dependencies
 
 __all__ = [
     # Framework
@@ -32,6 +35,7 @@ __all__ = [
     "ResidualBlock",
     "PolicyHead",
     "ValueHead",
+    "create_model",
     # ResNet
     "ResNetModel",
     "ResNetConfig",
@@ -41,8 +45,30 @@ __all__ = [
     "create_chess_evaluator",
     "create_go_evaluator",
     "create_gomoku_evaluator",
-    # Training
-    "TrainingPipeline",
-    "TrainingConfig",
-    "create_training_pipeline",
+    # Unified training modules
+    "UnifiedTrainingPipeline",
+    "GameExample",
+    "SelfPlayManager",
+    "SelfPlayConfig",
+    "ArenaManager",
+    "ArenaConfig",
+    "ELOTracker",
+    # AlphaZero evaluator
+    "AlphaZeroEvaluator",
 ]
+
+# Import unified modules after __all__ to avoid circular imports
+try:
+    from .unified_training_pipeline import UnifiedTrainingPipeline, GameExample
+    from .self_play_module import SelfPlayManager, SelfPlayConfig
+    from .arena_module import ArenaManager, ArenaConfig, ELOTracker
+except ImportError:
+    # These modules require additional dependencies
+    pass
+    
+# Import AlphaZeroEvaluator from core module
+try:
+    from ..core.evaluator import AlphaZeroEvaluator
+except ImportError:
+    # May not be available in all configurations
+    pass

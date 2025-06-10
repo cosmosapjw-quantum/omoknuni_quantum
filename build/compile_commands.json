@@ -1,0 +1,224 @@
+[
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/core/igamestate.cpp.o -c /home/cosmos/omoknuni_quantum/src/core/igamestate.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/core/igamestate.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/core/igamestate.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/core/game_export.cpp.o -c /home/cosmos/omoknuni_quantum/src/core/game_export.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/core/game_export.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/core/game_export.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/chess/chess_state.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/chess/chess_state.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/chess/chess_rules.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/chess/chess_rules.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/chess/chess960.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/chess/chess960.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/chess/chess960.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/chess/chess960.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/go/go_state.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/go/go_state.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/go/go_state.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/go/go_state.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/go/go_rules.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/go/go_rules.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/go/go_rules.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/go/go_rules.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_state.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_state.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_rules.cpp.o -c /home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_rules.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_rules.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_rules.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/zobrist_hash.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/zobrist_hash.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/zobrist_hash.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/zobrist_hash.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/hash_specializations.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/hash_specializations.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/hash_specializations.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/hash_specializations.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/logger.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/logger.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/logger.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/logger.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/attack_defense_module.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/attack_defense_module.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_gomoku.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_gomoku.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_gomoku.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_chess.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_chess.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_chess.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_go.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/gpu_attack_defense_go.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/gpu_attack_defense_go.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DALPHAZERO_EXPORTS -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_EXPORTS -I/home/cosmos/omoknuni_quantum/include -I/home/cosmos/omoknuni_quantum/src -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.o -c /home/cosmos/omoknuni_quantum/src/utils/attack_defense_gpu_manager.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/utils/attack_defense_gpu_manager.cpp",
+  "output": "CMakeFiles/alphazero.dir/src/utils/attack_defense_gpu_manager.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -Dalphazero_py_EXPORTS -I/home/cosmos/omoknuni_quantum/include -isystem /usr/include/python3.12 -isystem /usr/lib/python3/dist-packages/pybind11/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -fPIC -fvisibility=hidden -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o -c /home/cosmos/omoknuni_quantum/src/python/bindings.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/src/python/bindings.cpp",
+  "output": "CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp",
+  "output": "CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp",
+  "output": "CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp",
+  "output": "CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp",
+  "output": "CMakeFiles/chess_tests.dir/tests/games/chess/chess_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp",
+  "output": "CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp",
+  "output": "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp",
+  "output": "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp",
+  "output": "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "output": "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "output": "CMakeFiles/gpu_attack_defense_test.dir/tests/utils/attack_defense_benchmark.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o -c /home/cosmos/omoknuni_quantum/tests/all_tests_main.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/all_tests_main.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/all_tests_main.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/core/igamestate_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/core/game_export_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/chess/chess_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/games/chess/chess_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/games/go/go_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/games/gomoku/gomoku_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/utils/attack_defense_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o"
+},
+{
+  "directory": "/home/cosmos/omoknuni_quantum/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -DWITH_CUDNN -DWITH_TORCH -I/home/cosmos/omoknuni_quantum/include -isystem /opt/libtorch/include -isystem /opt/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -g -std=gnu++17 -Wall -Wextra -D_GLIBCXX_USE_CXX11_ABI=1 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o -c /home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "file": "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_benchmark.cpp",
+  "output": "CMakeFiles/all_tests.dir/tests/utils/attack_defense_benchmark.cpp.o"
+}
+]

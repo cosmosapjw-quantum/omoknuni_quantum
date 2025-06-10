@@ -33,6 +33,7 @@
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/go_tests.dir
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/gomoku_tests.dir
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/attack_defense_tests.dir
+/home/cosmos/omoknuni_quantum/build/CMakeFiles/gpu_attack_defense_test.dir
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/all_tests.dir
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/test.dir
 /home/cosmos/omoknuni_quantum/build/CMakeFiles/edit_cache.dir

@@ -44,12 +44,8 @@ CMAKE_ADDR2LINE:FILEPATH=/usr/bin/addr2line
 //Path to a program.
 CMAKE_AR:FILEPATH=/usr/bin/ar
 
-//Choose the type of build, options are: None Debug Release RelWithDebInfo
-// MinSizeRel ...
-CMAKE_BUILD_TYPE:STRING=Release
-
-//Enable/Disable color output during build.
-CMAKE_COLOR_MAKEFILE:BOOL=ON
+//No help, variable specified on the command line.
+CMAKE_BUILD_TYPE:STRING=Debug
 
 //CUDA architectures
 CMAKE_CUDA_ARCHITECTURES:STRING=52
@@ -72,8 +68,8 @@ CMAKE_CUDA_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
 //Flags used by the CUDA compiler during RELWITHDEBINFO builds.
 CMAKE_CUDA_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
-//CXX compiler
-CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+//No help, variable specified on the command line.
+CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/g++
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
@@ -98,6 +94,9 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
 //Flags used by the CXX compiler during RELWITHDEBINFO builds.
 CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
+//No help, variable specified on the command line.
+CMAKE_C_COMPILER:FILEPATH=/usr/bin/gcc
+
 //Path to a program.
 CMAKE_DLLTOOL:FILEPATH=CMAKE_DLLTOOL-NOTFOUND
 
@@ -116,8 +115,11 @@ CMAKE_EXE_LINKER_FLAGS_RELEASE:STRING=
 //Flags used by the linker during RELWITHDEBINFO builds.
 CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
-//Enable/Disable output of compile commands during generation.
-CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
+//Enable/Disable output of build database during the build.
+CMAKE_EXPORT_BUILD_DATABASE:BOOL=
+
+//No help, variable specified on the command line.
+CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE
 
 //Value Computed by CMake.
 CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=/home/cosmos/omoknuni_quantum/build/CMakeFiles/pkgRedirects
@@ -176,8 +178,8 @@ CMAKE_INSTALL_SYSCONFDIR:PATH=etc
 //Path to a program.
 CMAKE_LINKER:FILEPATH=/usr/bin/ld
 
-//Path to a program.
-CMAKE_MAKE_PROGRAM:FILEPATH=/usr/bin/gmake
+//Program used to build from build.ninja files.
+CMAKE_MAKE_PROGRAM:FILEPATH=/usr/bin/ninja
 
 //Flags used by the linker during the creation of modules during
 // all build types.
@@ -349,7 +351,7 @@ CUDA_GENERATED_OUTPUT_DIR:PATH=
 CUDA_HOST_COMPILATION_CPP:BOOL=ON
 
 //Host side compiler used by NVCC
-CUDA_HOST_COMPILER:FILEPATH=
+CUDA_HOST_COMPILER:FILEPATH=/usr/bin/gcc
 
 //Path to a program.
 CUDA_NVCC_EXECUTABLE:FILEPATH=/usr/local/cuda-12.8/bin/nvcc
@@ -616,23 +618,20 @@ MKLDNN_DIR:PATH=MKLDNN_DIR-NOTFOUND
 //The directory containing a CMake configuration file for MKL.
 MKL_DIR:PATH=MKL_DIR-NOTFOUND
 
-//No help, variable specified on the command line.
-Python_EXECUTABLE:UNINITIALIZED=/home/cosmos/venv/bin/python
-
 //Name of the computer/site where compile is being run
 SITE:STRING=cosmosapjw
 
 //Path to a library.
 TORCH_LIBRARY:FILEPATH=/opt/libtorch/lib/libtorch.so
 
-//No help, variable specified on the command line.
-Torch_DIR:UNINITIALIZED=/home/cosmos/venv/lib/python3.12/site-packages/torch/share/cmake/Torch
+//Directory containing TorchConfig.cmake
+Torch_DIR:PATH=/opt/libtorch/share/cmake/Torch
 
 //Enable cuDNN support (requires WITH_TORCH)
 WITH_CUDNN:BOOL=ON
 
 //Build with PyTorch GPU support
-WITH_TORCH:BOOL=OFF
+WITH_TORCH:BOOL=ON
 
 //Path to a library.
 c10_LIBRARY:FILEPATH=/opt/libtorch/lib/libc10.so
@@ -647,7 +646,7 @@ nlohmann_json_DIR:PATH=/usr/share/cmake/nlohmann_json
 nvtx3_dir:PATH=nvtx3_dir-NOTFOUND
 
 //pybind11 CMake directory from Python
-pybind11_DIR:PATH=/home/cosmos/venv/lib/python3.12/site-packages/pybind11/share/cmake/pybind11
+pybind11_DIR:PATH=/usr/lib/python3/dist-packages/pybind11/share/cmake/pybind11
 
 
 ########################
@@ -666,8 +665,6 @@ CMAKE_CACHE_MAJOR_VERSION:INTERNAL=4
 CMAKE_CACHE_MINOR_VERSION:INTERNAL=0
 //Patch version of cmake used to create the current loaded cache
 CMAKE_CACHE_PATCH_VERSION:INTERNAL=2
-//ADVANCED property for variable: CMAKE_COLOR_MAKEFILE
-CMAKE_COLOR_MAKEFILE-ADVANCED:INTERNAL=1
 //Path to CMake executable.
 CMAKE_COMMAND:INTERNAL=/usr/bin/cmake
 //Path to cpack program executable.
@@ -718,12 +715,12 @@ CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
 CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO
 CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_EXPORT_COMPILE_COMMANDS
-CMAKE_EXPORT_COMPILE_COMMANDS-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_EXPORT_BUILD_DATABASE
+CMAKE_EXPORT_BUILD_DATABASE-ADVANCED:INTERNAL=1
 //Name of external makefile project generator.
 CMAKE_EXTRA_GENERATOR:INTERNAL=
 //Name of generator.
-CMAKE_GENERATOR:INTERNAL=Unix Makefiles
+CMAKE_GENERATOR:INTERNAL=Ninja
 //Generator instance identifier.
 CMAKE_GENERATOR_INSTANCE:INTERNAL=
 //Name of generator platform.
@@ -1039,11 +1036,11 @@ FIND_PACKAGE_MESSAGE_DETAILS_CUDAToolkit:INTERNAL=[/usr/local/cuda-12.8/include]
 //Details about finding GTest
 FIND_PACKAGE_MESSAGE_DETAILS_GTest:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/GTest/GTestConfig.cmake][ ][v1.14.0()]
 //Details about finding Python
-FIND_PACKAGE_MESSAGE_DETAILS_Python:INTERNAL=[/home/cosmos/venv/bin/python][found components: Interpreter ][v3.12.3()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python:INTERNAL=[/usr/bin/python3.12][found components: Interpreter ][v3.12.3()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //Details about finding Torch
-FIND_PACKAGE_MESSAGE_DETAILS_Torch:INTERNAL=[/opt/libtorch/lib/libtorch.so][/home/cosmos/venv/lib/python3.12/site-packages/torch/include;/home/cosmos/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include][v()]
+FIND_PACKAGE_MESSAGE_DETAILS_Torch:INTERNAL=[/opt/libtorch/lib/libtorch.so][/opt/libtorch/include;/opt/libtorch/include/torch/csrc/api/include][v()]
 //ADVANCED property for variable: GITCOMMAND
 GITCOMMAND-ADVANCED:INTERNAL=1
 //Test HAS_FLTO
@@ -1055,16 +1052,14 @@ MEMORYCHECK_COMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: MEMORYCHECK_SUPPRESSIONS_FILE
 MEMORYCHECK_SUPPRESSIONS_FILE-ADVANCED:INTERNAL=1
 //Python executable during the last CMake run
-PYBIND11_PYTHON_EXECUTABLE_LAST:INTERNAL=/home/cosmos/venv/bin/python
+PYBIND11_PYTHON_EXECUTABLE_LAST:INTERNAL=/usr/bin/python3.12
 //Python debug status
 PYTHON_IS_DEBUG:INTERNAL=0
-PYTHON_MODULE_DEBUG_POSTFIX:INTERNAL=
 PYTHON_MODULE_EXTENSION:INTERNAL=.cpython-312-x86_64-linux-gnu.so
 //ADVANCED property for variable: SITE
 SITE-ADVANCED:INTERNAL=1
 //CMAKE_INSTALL_PREFIX during last run
 _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=/usr/local
-_PYBIND11_CROSSCOMPILING:INTERNAL=OFF
 _Python:INTERNAL=Python
 //Compiler reason failure
 _Python_Compiler_REASON_FAILURE:INTERNAL=
@@ -1072,12 +1067,12 @@ _Python_DEVELOPMENT_EMBED_SIGNATURE:INTERNAL=a8fd6906d9078ad7f0c724cee5c37e33
 _Python_DEVELOPMENT_MODULE_SIGNATURE:INTERNAL=e176b05b75342c1dd2b5202bb344a689
 //Development reason failure
 _Python_Development_REASON_FAILURE:INTERNAL=
-_Python_EXECUTABLE:INTERNAL=/home/cosmos/venv/bin/python
+_Python_EXECUTABLE:INTERNAL=/usr/bin/python3.12
 //Path to a file.
 _Python_INCLUDE_DIR:INTERNAL=/usr/include/python3.12
 //Python Properties
-_Python_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;<none>;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/home/cosmos/venv/lib/python3.12;/home/cosmos/venv/lib/python3.12/site-packages;/home/cosmos/venv/lib/python3.12/site-packages
-_Python_INTERPRETER_SIGNATURE:INTERNAL=381fc8fe0014eaf1f6a82bf90cb99b48
+_Python_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;<none>;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/usr/lib/python3.12;/usr/local/lib/python3.12/dist-packages;/usr/local/lib/python3.12/dist-packages
+_Python_INTERPRETER_SIGNATURE:INTERNAL=0b516266b7ed9a0986c924c82c2c3a08
 //Interpreter reason failure
 _Python_Interpreter_REASON_FAILURE:INTERNAL=
 //Path to a library.
@@ -1087,7 +1082,7 @@ _Python_NumPy_REASON_FAILURE:INTERNAL=
 //Result of TRY_COMPILE
 compile_result:INTERNAL=TRUE
 //Directories where pybind11 and possibly Python headers are located
-pybind11_INCLUDE_DIRS:INTERNAL=/home/cosmos/venv/lib/python3.12/site-packages/pybind11/include;/usr/include/python3.12
+pybind11_INCLUDE_DIRS:INTERNAL=/usr/lib/python3/dist-packages/pybind11/include;/usr/include/python3.12
 //Result of try_run()
 run_result:INTERNAL=0
 

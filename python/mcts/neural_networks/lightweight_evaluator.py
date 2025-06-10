@@ -110,7 +110,7 @@ class LightweightEvaluator:
             except Exception as e:
                 logger.warning(f"Failed to load model: {e}. Using random initialization.")
         else:
-            logger.info("Using randomly initialized lightweight model")
+            logger.debug("Using randomly initialized lightweight model")
         
         # Set to evaluation mode
         self.model.eval()

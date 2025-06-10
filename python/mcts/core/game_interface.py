@@ -45,12 +45,12 @@ try:
     
     import alphazero_py
     HAS_CPP_GAMES = True
-    print(f"Successfully loaded C++ game implementations from alphazero_py module")
+    # Successfully loaded C++ game implementations
 except ImportError as e:
     # Fallback for testing without C++ module
     alphazero_py = None
     HAS_CPP_GAMES = False
-    print(f"C++ game implementations not available: {e}")
+    # C++ game implementations not available
     
 
 class GameType(Enum):
@@ -306,27 +306,38 @@ class GameInterface:
         boards = [self.state_to_numpy(state) for state in states]
         return np.stack(boards)
         
-    def get_legal_moves(self, state: Any) -> List[int]:
+    def get_legal_moves(self, state: Any, shuffle: bool = True) -> List[int]:
         """Get list of legal moves
         
         Args:
             state: Game state
+            shuffle: Whether to shuffle the moves to eliminate ordering bias
             
         Returns:
             List of legal move indices
         """
-        return state.get_legal_moves()
+        moves = state.get_legal_moves()
         
-    def batch_get_legal_moves(self, states: List[Any]) -> List[List[int]]:
+        if shuffle and len(moves) > 1:
+            # Convert to list if needed and shuffle
+            import random
+            moves_list = list(moves)
+            random.shuffle(moves_list)
+            return moves_list
+            
+        return moves
+        
+    def batch_get_legal_moves(self, states: List[Any], shuffle: bool = True) -> List[List[int]]:
         """Get legal moves for batch of states
         
         Args:
             states: List of game states
+            shuffle: Whether to shuffle moves to eliminate ordering bias
             
         Returns:
             List of legal move lists
         """
-        return [self.get_legal_moves(state) for state in states]
+        return [self.get_legal_moves(state, shuffle=shuffle) for state in states]
         
     def apply_move(self, state: Any, move: int) -> Any:
         """Apply move to state
@@ -760,6 +771,58 @@ class GameInterface:
             # For mock states, create a simple copy
             import copy
             return copy.deepcopy(state)
+    
+    def get_canonical_form(self, state: Any) -> np.ndarray:
+        """Get canonical form of the state from current player's perspective
+        
+        For most games, the state is already from the current player's perspective.
+        This method exists for compatibility with training pipelines.
+        
+        Args:
+            state: Game state
+            
+        Returns:
+            State tensor from current player's perspective
+        """
+        # The state is already from the current player's perspective
+        # The neural network input will handle any necessary transformations
+        return self.state_to_numpy(state, use_enhanced=True)
+    
+    def get_next_state(self, state: Any, action: int) -> Any:
+        """Apply move to state (alias for apply_move)
+        
+        Args:
+            state: Current game state
+            action: Move to apply
+            
+        Returns:
+            New game state after move
+        """
+        return self.apply_move(state, action)
+    
+    def get_value(self, state: Any) -> float:
+        """Get value of terminal state from perspective of last player who moved
+        
+        Args:
+            state: Terminal game state
+            
+        Returns:
+            1.0 if last player won, -1.0 if they lost, 0.0 for draw
+        """
+        if not self.is_terminal(state):
+            return 0.0
+            
+        winner = self.get_winner(state)
+        # Note: After a terminal move, current_player has switched
+        # So we need to check from the previous player's perspective
+        last_player = 1 - self.get_current_player(state)
+        
+        if winner == 0:  # Draw
+            return 0.0
+        elif winner == 1:  # Player 1 wins
+            return 1.0 if last_player == 0 else -1.0
+        else:  # Player 2 wins
+            return -1.0 if last_player == 0 else 1.0
 
 
 # Mock implementations for testing without C++ module

@@ -466,3 +466,32 @@ class EvaluatorPool:
             self.performance_history[int(i)] = deque(hist, maxlen=self.config.history_window)
         
         self.stats = state['stats']
+    
+    def shutdown(self):
+        """Shutdown the evaluator pool and clean up resources"""
+        logger.info("Shutting down evaluator pool...")
+        
+        # Shutdown the thread pool executor
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=True)
+            logger.debug("Thread pool executor shut down")
+        
+        # Clear any GPU memory if possible
+        if self.device.type == 'cuda':
+            torch.cuda.empty_cache()
+            
+    def __del__(self):
+        """Cleanup when object is garbage collected"""
+        try:
+            self.shutdown()
+        except Exception as e:
+            logger.warning(f"Error during evaluator pool cleanup: {e}")
+    
+    def __enter__(self):
+        """Context manager support"""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager cleanup"""
+        self.shutdown()
+        return False
