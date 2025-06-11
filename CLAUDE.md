@@ -161,3 +161,66 @@ policy = mcts.search(game_state, num_simulations=100000)
 # Get best move
 best_action = mcts.get_best_action(game_state)
 ```
+
+## Debugging Guidelines
+
+When debugging complex issues in this codebase, follow these comprehensive guidelines:
+
+### General Debugging Approach
+- **Engage in thorough and deep thinking** to carry out complex tasks
+- **Create a comprehensive to-do list** that outlines incremental fixes and changes
+- **Modify code according to test-driven development** for each step
+- **Critically review and assess** the current code before entering a detailed debugging phase
+- **Reflect deeply** to effectively address complicated issues
+- **Prioritize precision above all**, as both correctness and detailed accuracy are vital
+- **Take necessary time** to thoroughly contemplate to meet all requirements
+- **Actively use chain-of-thought process** to enhance and improve results
+- **Consider including detailed debug logging** throughout the codebase
+- **Always maintain a critical mindset**
+- **After writing each code segment**, perform a 'red-team' review to ensure thorough evaluation
+- **Instead of creating new files**, strive to merge and integrate new code snippets into the existing code
+- **Actively use pytest** for testing fixes and modifications
+- **Ensure final output** does not merely repeat comments made during thought process
+- **Always use ~/venv** for the Python virtual environment
+
+### CUDA Multiprocessing Debugging
+When debugging CUDA-related multiprocessing issues:
+
+1. **Environment Setup**:
+   - Set `CUDA_VISIBLE_DEVICES=''` BEFORE importing torch in worker processes
+   - Use multiprocessing `spawn` method: `multiprocessing.set_start_method('spawn', force=True)`
+
+2. **Tensor Serialization**:
+   - Convert CUDA tensors to numpy arrays before passing to workers
+   - Use `mcts.utils.safe_multiprocessing` utilities for safe serialization
+   - Always verify tensors are on CPU before pickling
+
+3. **Worker Process Debugging**:
+   - Add early debug prints before any imports
+   - Log PID, CUDA state, and environment variables
+   - Use `sys.stderr` for immediate output visibility
+
+4. **Common Pitfalls**:
+   - CUDA tensors cannot be unpickled in different processes
+   - Setting CUDA environment after torch import is too late
+   - Dataclasses may contain hidden CUDA references
+
+### Example Debug Pattern
+```python
+# In worker function
+def worker_function(args):
+    import os
+    import sys
+    
+    # Debug output BEFORE imports
+    print(f"[WORKER] PID: {os.getpid()}", file=sys.stderr)
+    
+    # Disable CUDA BEFORE torch import
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    
+    # Now safe to import
+    import torch
+    print(f"[WORKER] CUDA available: {torch.cuda.is_available()}", file=sys.stderr)
+    
+    # ... rest of worker code
+```

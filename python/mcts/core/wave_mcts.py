@@ -272,8 +272,9 @@ class WavePipeline:
             # Vectorized check for expansion needs
             node_children = self.tree.children[valid_current_nodes]
             has_children = (node_children >= 0).any(dim=1)
-            node_visits = self.tree.visit_counts[valid_current_nodes]
-            needs_expansion = (~has_children) & (node_visits == 0)
+            # CRITICAL FIX: Expand nodes without children, regardless of visit count
+            # This handles the case after tree reuse where root has visits but no children
+            needs_expansion = ~has_children
             
             if not needs_expansion.any():
                 self.expansion_done = True
@@ -748,6 +749,7 @@ class WaveMCTS:
         Args:
             action: The action that was taken
         """
+        
         # Find the child corresponding to this action
         if self.tree.num_nodes == 0:
             return
@@ -774,8 +776,6 @@ class WaveMCTS:
         action_matches = valid_actions == action
         if not action_matches.any():
             # Action not found in children, reset tree
-            if logger.level <= logging.DEBUG:
-                logger.debug(f"Action {action} not found in root children, resetting tree")
             self.reset_tree()
             return
             
@@ -783,8 +783,6 @@ class WaveMCTS:
         child_idx = valid_children[action_matches][0].item()
         
         # Shift subtree to root
-        if logger.level <= logging.DEBUG:
-            logger.debug(f"Reusing tree: shifting child {child_idx} (action {action}) to root")
         self._shift_subtree_to_root(child_idx)
     
     def _shift_subtree_to_root(self, new_root_idx: int):
@@ -904,11 +902,13 @@ class WaveMCTS:
         if self.tree.visit_counts[0] == 0:
             self.tree.visit_counts[0] = 1  # Ensure root is visited
         
+        # Clear is_expanded flag for root to force re-expansion
+        if hasattr(self.tree, 'is_expanded'):
+            self.tree.is_expanded[0] = False
+        
         # TODO: Also update CSR structure (row_ptr, col_indices, etc.)
         # For now, the children lookup table should be sufficient
         
-        if logger.level <= logging.DEBUG:
-            logger.debug(f"Tree reuse complete: {new_num_nodes} nodes preserved")
     
     def _get_subtree_nodes(self, root_idx: int) -> List[int]:
         """Get all nodes in the subtree rooted at root_idx using BFS
@@ -972,11 +972,18 @@ class WaveMCTS:
             # CRITICAL FIX: Always update the root state to match the current game state
             # This ensures consistency after tree reuse
             self.tree.node_states[0] = root_state
-            logger.debug(f"Updated root state in existing tree, node_states size: {len(self.tree.node_states)}")
         
         # Initialize root if needed
         if self.tree.visit_counts[0] == 0:
             self._initialize_root(root_state)
+        else:
+            # CRITICAL: Check if root has children - if not, force expansion
+            root_children, _, _ = self.tree.batch_get_children(
+                torch.tensor([0], device=self.device, dtype=torch.int32)
+            )
+            has_children = (root_children[0] >= 0).any()
+            if not has_children:
+                self._initialize_root(root_state)
             
         # Adaptive wave sizing based on GPU utilization
         current_wave_size = self._determine_wave_size()
@@ -1008,13 +1015,15 @@ class WaveMCTS:
         temperature = getattr(self.config, 'temperature', 1.0)
         policy = self._extract_policy_from_root(temperature)
         
+        if policy.sum() == 0:
+            pass  # Zero policy is handled in the caller
+        
         # Update statistics
         elapsed = time.perf_counter() - start_time
         self.stats['total_simulations'] = total_sims
         self.stats['total_time'] = elapsed
         self.stats['simulations_per_second'] = total_sims / elapsed if elapsed > 0 else 0
         
-        # Performance logged in stats, no need for debug output
         
         return policy
         
@@ -1101,7 +1110,6 @@ class WaveMCTS:
         """Setup CUDA graphs for kernel fusion"""
         # CUDA graphs capture a sequence of CUDA operations
         # and can replay them with lower overhead
-        logger.debug("Setting up CUDA graphs for optimized execution")
         
         # This would capture common operation sequences
         # Implementation depends on specific PyTorch version
@@ -1144,7 +1152,6 @@ class WaveMCTS:
             # Ensure policy has correct size
             if policy.size == 1 or len(policy) < action_size:
                 # Single value or wrong size, create uniform policy
-                logger.warning(f"Policy has wrong size {policy.size}, creating uniform policy for {action_size} actions")
                 policy = np.ones(action_size) / action_size
                     
             priors = [float(policy[move]) for move in legal_moves]
@@ -1178,8 +1185,8 @@ class WaveMCTS:
             
             # Verify children were actually added
             root_children, _, _ = self.tree.batch_get_children(torch.tensor([0], device=self.device))
+            valid_children = (root_children[0] >= 0).sum().item()
             if root_children[0].sum() == -len(root_children[0]):  # All -1s
-                logger.error("Root children not properly added after flush_batch")
                 # Force direct addition as fallback
                 for i, (action, prior) in enumerate(zip(legal_moves, priors)):
                     self.tree._add_child_direct(0, action, prior)
@@ -1205,7 +1212,6 @@ class WaveMCTS:
         with torch.no_grad():
             try:
                 if self.tree.num_nodes == 0:
-                    logger.warning("No nodes in tree for policy extraction")
                     return np.zeros(action_size)
                 
                 # Single batch call instead of individual lookups - MAJOR OPTIMIZATION
@@ -1217,7 +1223,7 @@ class WaveMCTS:
                 valid_mask = children >= 0
                 
                 if not valid_mask.any():
-                    logger.warning("No valid children for policy extraction")
+                    # This is normal during early MCTS iterations with few simulations
                     return np.zeros(action_size)
                 
                 # Vectorized extraction - eliminates Python loops
@@ -1227,7 +1233,6 @@ class WaveMCTS:
                 # Bounds checking for actions - prevents CUDA errors
                 action_bounds_mask = (valid_actions >= 0) & (valid_actions < action_size)
                 if not action_bounds_mask.all():
-                    logger.warning(f"Some actions out of bounds: {valid_actions[~action_bounds_mask]}")
                     valid_children = valid_children[action_bounds_mask]
                     valid_actions = valid_actions[action_bounds_mask]
                 
@@ -1237,6 +1242,7 @@ class WaveMCTS:
                 # Single tensor lookup for all visits - MAJOR OPTIMIZATION
                 visits = self.tree.visit_counts[valid_children].float()
                 visit_sum = visits.sum()
+                
                 
                 # Pre-allocate policy tensor
                 policy = torch.zeros(action_size, device=self.device, dtype=torch.float32)
@@ -1274,7 +1280,6 @@ class WaveMCTS:
                 return policy.cpu().numpy()
                 
             except Exception as e:
-                logger.error(f"Optimized policy extraction failed: {e}")
                 # Graceful fallback to uniform policy
                 uniform_policy = np.zeros(action_size)
                 if action_size > 0:

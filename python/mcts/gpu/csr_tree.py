@@ -32,12 +32,10 @@ try:
     if os.path.exists(cuda_ops_path) and not hasattr(torch.ops, 'custom_cuda_ops'):
         torch.ops.load_library(cuda_ops_path)
         CUSTOM_CUDA_AVAILABLE = True
-        logger.debug("Loaded pre-compiled CUDA kernels")
     elif hasattr(torch.ops, 'custom_cuda_ops'):
         CUSTOM_CUDA_AVAILABLE = True
 except Exception as e:
-    logger.debug(f"Custom CUDA kernels not available: {e}")
-
+    pass
 
 @dataclass
 class CSRTreeConfig:
@@ -127,10 +125,8 @@ class CSRTree:
         try:
             from .unified_kernels import get_unified_kernels
             self.batch_ops = get_unified_kernels(self.device)
-            logger.debug("Initialized optimized GPU kernels")
         except ImportError:
             self.batch_ops = None
-            logger.debug("Optimized kernels not available, using fallback")
         
         # Flag for deferred row pointer updates
         self._needs_row_ptr_update = False

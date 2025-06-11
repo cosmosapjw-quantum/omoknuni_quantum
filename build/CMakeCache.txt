@@ -540,6 +540,8 @@ _Python_INCLUDE_DIR:INTERNAL=/usr/include/python3.12
 //Python Properties
 _Python_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/home/cosmo/venv/lib/python3.12;/home/cosmo/venv/lib/python3.12/site-packages;/home/cosmo/venv/lib/python3.12/site-packages
 _Python_INTERPRETER_SIGNATURE:INTERNAL=31c966366695fc895757c4248ab59f7c
+//Interpreter reason failure
+_Python_Interpreter_REASON_FAILURE:INTERNAL=
 //Path to a library.
 _Python_LIBRARY_RELEASE:INTERNAL=/usr/lib/x86_64-linux-gnu/libpython3.12.so
 //NumPy reason failure

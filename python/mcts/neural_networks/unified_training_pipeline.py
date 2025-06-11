@@ -323,12 +323,17 @@ class UnifiedTrainingPipeline:
                 game_examples = self._play_single_game(evaluator, game_idx)
                 examples.extend(game_examples)
         
-        logger.debug(f"Generated {len(examples)} training examples")
         return examples
     
     def _parallel_self_play(self, evaluator) -> List[GameExample]:
         """Run self-play games in parallel"""
+        from mcts.utils.safe_multiprocessing import serialize_state_dict_for_multiprocessing
+        
         examples = []
+        
+        # Serialize model state dict for safe multiprocessing
+        logger.info("Serializing model state dict for multiprocessing...")
+        model_state_dict = serialize_state_dict_for_multiprocessing(self.model.state_dict())
         
         with ProcessPoolExecutor(max_workers=self.config.training.num_workers) as executor:
             # Submit all games
@@ -337,7 +342,7 @@ class UnifiedTrainingPipeline:
                 future = executor.submit(
                     play_self_play_game_wrapper,
                     self.config,
-                    self.model.state_dict(),
+                    model_state_dict,
                     game_idx,
                     self.iteration
                 )
@@ -400,21 +405,13 @@ class UnifiedTrainingPipeline:
             # Get full policy for storage
             policy = mcts.get_action_probabilities(state, temperature=temperature)
             
-            # Debug: Check if policy has any non-zero values
-            if policy.sum() == 0 or (policy == 0).all():
-                logger.error(f"CRITICAL: MCTS returned zero policy at move {move_num}!")
-                logger.error(f"Policy shape: {policy.shape}, sum: {policy.sum():.8f}")
-            elif policy.std() < 1e-8:
-                logger.warning(f"MCTS policy is nearly uniform at move {move_num}, std: {policy.std():.8f}")
             
             # Get only valid actions and their probabilities for sampling
             try:
                 valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
             except AttributeError as e:
-                logger.error(f"MCTS does not have get_valid_actions_and_probabilities method: {e}")
                 # Fallback: get legal moves from game interface
                 legal_moves = self.game_interface.get_legal_moves(state)
-                logger.debug(f"Move {move_num}: Legal moves from game interface: {legal_moves[:10]}... (total: {len(legal_moves)})")
                 
                 # Filter policy to only legal moves
                 legal_probs = policy[legal_moves]
@@ -426,25 +423,10 @@ class UnifiedTrainingPipeline:
                 # This should never happen in a properly implemented game
                 raise ValueError(f"No valid actions available at move {move_num}")
             
-            # Debug logging
-            logger.debug(f"Move {move_num}: Valid actions: {valid_actions[:10]}... (total: {len(valid_actions)})")
-            # Handle both list and numpy array cases
-            probs_sum = sum(valid_probs) if isinstance(valid_probs, list) else valid_probs.sum()
-            logger.debug(f"Move {move_num}: Valid probs sum: {probs_sum:.6f}")
             
             # Sample action from valid moves only
             action = np.random.choice(valid_actions, p=valid_probs)
             
-            # Additional validation
-            legal_moves_check = self.game_interface.get_legal_moves(state)
-            if action not in legal_moves_check:
-                logger.error(f"CRITICAL: Selected action {action} is not in legal moves!")
-                logger.error(f"Valid actions were: {valid_actions[:20]}...")
-                logger.error(f"Legal moves are: {legal_moves_check[:20]}...")
-                logger.error(f"State current player: {self.game_interface.get_current_player(state)}")
-                # Try to recover by selecting first legal move
-                action = legal_moves_check[0]
-                logger.error(f"Recovering by selecting first legal move: {action}")
             
             # Store example (from current player's perspective)
             canonical_state = self.game_interface.get_canonical_form(state)
@@ -479,7 +461,6 @@ class UnifiedTrainingPipeline:
     def train_neural_network(self) -> Dict[str, float]:
         """Train the neural network on replay buffer"""
         if len(self.replay_buffer) < self.config.training.batch_size:
-            logger.warning("Not enough data in replay buffer for training")
             return {"loss": 0, "policy_loss": 0, "value_loss": 0}
         
         # Create data loader
@@ -744,7 +725,6 @@ class UnifiedTrainingPipeline:
         # Find all saved models
         model_files = sorted(self.best_model_dir.glob("model_iter_*.pt"))
         if len(model_files) < 2:
-            logger.warning("Not enough models for tournament")
             return
         
         # Load models
@@ -835,11 +815,31 @@ class UnifiedTrainingPipeline:
 def play_self_play_game_wrapper(config: AlphaZeroConfig, model_state_dict: Dict,
                                game_idx: int, iteration: int) -> List[GameExample]:
     """Wrapper function for parallel self-play"""
+    import os
+    import sys
+    import logging
+    
+    # Set up logging for debugging
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    
+    
+    # Disable CUDA in worker processes
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    
     # Import here to avoid circular imports in multiprocessing
     from mcts.core.mcts import MCTS, MCTSConfig
     from mcts.core.evaluator import AlphaZeroEvaluator
     from mcts.core.game_interface import GameInterface, GameType
     from mcts.neural_networks.nn_model import create_model
+    from mcts.utils.safe_multiprocessing import deserialize_state_dict_from_multiprocessing
+    
+    # Deserialize model state dict
+    model_state_dict = deserialize_state_dict_from_multiprocessing(model_state_dict)
+    
+    # Force CPU device for workers
+    import torch
+    device = torch.device('cpu')
     
     # Recreate model
     game_type = GameType[config.game.game_type.upper()]
@@ -859,13 +859,14 @@ def play_self_play_game_wrapper(config: AlphaZeroConfig, model_state_dict: Dict,
         num_filters=config.network.num_filters
     )
     model.load_state_dict(model_state_dict)
+    model = model.to(device)
     model.eval()
     
     # Create evaluator
     from mcts.core.evaluator import AlphaZeroEvaluator
     evaluator = AlphaZeroEvaluator(
         model=model,
-        device=config.mcts.device
+        device=str(device)  # Use CPU device in workers
     )
     
     # Create MCTS
@@ -875,12 +876,17 @@ def play_self_play_game_wrapper(config: AlphaZeroConfig, model_state_dict: Dict,
         temperature=1.0,
         dirichlet_alpha=config.mcts.dirichlet_alpha,
         dirichlet_epsilon=config.mcts.dirichlet_epsilon,
-        device=config.mcts.device,
+        device=str(device),  # Use CPU device in workers
         game_type=game_type,
-        min_wave_size=getattr(config.mcts, 'min_wave_size', config.mcts.wave_min_size),
-        max_wave_size=getattr(config.mcts, 'max_wave_size', config.mcts.wave_max_size),
-        adaptive_wave_sizing=getattr(config.mcts, 'adaptive_wave_sizing', config.mcts.wave_adaptive_sizing)
+        # Use smaller wave sizes for CPU
+        min_wave_size=32,
+        max_wave_size=64,
+        adaptive_wave_sizing=False,
+        # Reduce memory usage on CPU
+        memory_pool_size_mb=128,
+        max_tree_nodes=50000
     )
+    
     
     mcts = MCTS(mcts_config, evaluator)
     
@@ -896,12 +902,6 @@ def play_self_play_game_wrapper(config: AlphaZeroConfig, model_state_dict: Dict,
         # Get full policy for storage
         policy = mcts.get_action_probabilities(state, temperature=temperature)
         
-        # Debug: Check if policy has any non-zero values
-        if policy.sum() == 0 or (policy == 0).all():
-            logger.error(f"CRITICAL: MCTS returned zero policy at move {move_num}!")
-            logger.error(f"Policy shape: {policy.shape}, sum: {policy.sum():.8f}")
-        elif policy.std() < 1e-8:
-            logger.warning(f"MCTS policy is nearly uniform at move {move_num}, std: {policy.std():.8f}")
         
         # Get only valid actions and their probabilities for sampling
         valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)

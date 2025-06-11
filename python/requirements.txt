@@ -32,3 +32,7 @@ tqdm>=4.66.0
 
 # MinHash for diversity computation
 datasketch>=1.6.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0

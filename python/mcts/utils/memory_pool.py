@@ -76,7 +76,6 @@ class TensorPool:
         total_bytes = 0
         target_bytes = self.config.tensor_pool_size_mb * 1024 * 1024
         
-        logger.debug(f"Pre-allocating {self.config.tensor_pool_size_mb}MB tensor pool")
         
         for shape in self.config.common_tensor_shapes:
             # Estimate how many tensors of this shape to allocate
@@ -94,7 +93,6 @@ class TensorPool:
         self.stats['current_allocated_mb'] = total_bytes / (1024 * 1024)
         self.stats['peak_allocated_mb'] = self.stats['current_allocated_mb']
         
-        logger.debug(f"Pre-allocated {self.stats['current_allocated_mb']:.1f}MB in tensor pools")
         
     def acquire(self, shape: Tuple[int, ...], dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Acquire a tensor from the pool"""
@@ -308,7 +306,6 @@ class MemoryPoolManager:
             'path_list': ObjectPool(lambda: [], config.object_pool_size),
         }
         
-        logger.debug("Memory pool manager initialized")
         
     def acquire_tensor(self, shape: Tuple[int, ...], 
                       dtype: Optional[torch.dtype] = None) -> torch.Tensor:
@@ -371,7 +368,6 @@ class MemoryPoolManager:
         # This could analyze usage patterns and adjust pool sizes
         # For now, just log statistics
         stats = self.get_stats()
-        logger.debug(f"Memory pool stats: {stats}")
         
         # Could implement defragmentation here if needed
         pass

@@ -15,7 +15,7 @@ game:
 
 mcts:
   # Core MCTS parameters
-  num_simulations: 800
+  num_simulations: 10
   c_puct: 1.0
   dirichlet_alpha: 0.15
   dirichlet_epsilon: 0.25

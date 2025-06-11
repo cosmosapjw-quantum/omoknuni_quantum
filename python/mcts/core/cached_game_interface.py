@@ -492,4 +492,3 @@ class CachedGameInterface:
         self.legal_moves_cache.clear()
         self.features_cache.clear()
         self.state_hash_cache.clear()
-        logger.debug("Cleared all game interface caches")
