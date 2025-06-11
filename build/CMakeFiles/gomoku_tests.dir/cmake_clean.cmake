@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/gomoku_tests.dir/link.d"
   "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o"
   "CMakeFiles/gomoku_tests.dir/tests/games/gomoku/gomoku_test.cpp.o.d"
   "bin/Release/gomoku_tests"

@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/games/go/go_rules.cpp.o: \
- /home/cosmos/omoknuni_quantum/src/games/go/go_rules.cpp \
+ /home/cosmo/omoknuni_quantum/src/games/go/go_rules.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_quantum/include/games/go/go_rules.h \
+ /home/cosmo/omoknuni_quantum/include/games/go/go_rules.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -107,7 +107,7 @@ CMakeFiles/alphazero.dir/src/games/go/go_rules.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
  /usr/include/x86_64-linux-gnu/bits/stdlib.h \
  /usr/include/c++/13/bits/std_abs.h \
- /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmo/omoknuni_quantum/include/core/export_macros.h \
  /usr/include/c++/13/queue /usr/include/c++/13/deque \
  /usr/include/c++/13/bits/stl_deque.h /usr/include/c++/13/bits/deque.tcc \
  /usr/include/c++/13/bits/stl_queue.h

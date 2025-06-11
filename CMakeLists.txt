@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Check if CUDA is requested before project declaration
-if(WITH_TORCH)
-    project(AlphaZero VERSION 0.1.0 LANGUAGES CXX CUDA)
-else()
-    project(AlphaZero VERSION 0.1.0 LANGUAGES CXX)
-endif()
+project(AlphaZero VERSION 0.1.0 LANGUAGES CXX)
 
 # ────────────────────────────────── Standard settings ────────────────────────
 set(CMAKE_CXX_STANDARD 17)
@@ -32,73 +27,12 @@ add_compile_options($<$<CONFIG:Release>:-O3>)
 option(BUILD_PYTHON_BINDINGS  "Build Python bindings"  ON)
 option(BUILD_TESTS            "Build tests"            ON)
 option(BUILD_SHARED_LIBS      "Build shared libs"      ON)
-option(WITH_TORCH             "Build with PyTorch GPU support"     ON)
-option(WITH_CUDNN             "Enable cuDNN support (requires WITH_TORCH)" ON)
+option(WITH_TORCH             "Build with PyTorch GPU support"     OFF)
+option(WITH_CUDNN             "Enable cuDNN support (requires WITH_TORCH)" OFF)
 
 include(GNUInstallDirs)
 
-# ───────────────────────────────────── CUDA/Torch detection ────────────────────────────
-if(WITH_TORCH)
-    # Enable CUDA language
-    enable_language(CUDA)
-    
-    # Find CUDA
-    find_package(CUDA REQUIRED)
-    message(STATUS "Found CUDA: ${CUDA_VERSION_STRING}")
-    
-    # Find cuDNN if requested
-    if(WITH_CUDNN)
-        find_path(CUDNN_INCLUDE_DIR cudnn.h
-            HINTS ${CUDA_INCLUDE_DIRS}
-            PATH_SUFFIXES cuda
-        )
-        
-        find_library(CUDNN_LIBRARY cudnn
-            HINTS ${CUDA_TOOLKIT_ROOT_DIR}
-            PATH_SUFFIXES lib64 lib/x64 lib
-        )
-        
-        if(CUDNN_INCLUDE_DIR AND CUDNN_LIBRARY)
-            message(STATUS "Found cuDNN: ${CUDNN_LIBRARY}")
-            set(CUDNN_FOUND TRUE)
-        else()
-            message(WARNING "cuDNN not found. Some features may be disabled.")
-            set(CUDNN_FOUND FALSE)
-        endif()
-    else()
-        set(CUDNN_FOUND FALSE)
-    endif()
-    
-    # Set CUDA architectures
-    set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86" CACHE STRING "CUDA architectures")
-    
-    # Find PyTorch from Python environment
-    if(Python_FOUND)
-        execute_process(
-            COMMAND "${Python_EXECUTABLE}" -c "import torch; import os; print(os.path.join(os.path.dirname(os.path.dirname(torch.__file__)), 'torch', 'share', 'cmake', 'Torch'))"
-            OUTPUT_VARIABLE TORCH_CMAKE_PATH
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE TORCH_CMAKE_RESULT
-            ERROR_QUIET
-        )
-        
-        if(TORCH_CMAKE_RESULT EQUAL 0 AND EXISTS "${TORCH_CMAKE_PATH}")
-            set(Torch_DIR "${TORCH_CMAKE_PATH}" CACHE PATH "Directory containing TorchConfig.cmake" FORCE)
-            message(STATUS "Found PyTorch CMake directory via Python: ${Torch_DIR}")
-        endif()
-    endif()
-    
-    # Fallback to manual path if Python detection fails
-    if(NOT Torch_DIR OR NOT EXISTS "${Torch_DIR}")
-        set(Torch_DIR "/opt/libtorch/share/cmake/Torch" CACHE PATH "Directory containing TorchConfig.cmake")
-    endif()
-    
-    find_package(Torch REQUIRED)
-    message(STATUS "Found PyTorch: ${Torch_DIR}")
-    
-    # Define WITH_TORCH for preprocessor
-    add_compile_definitions(WITH_TORCH)
-endif()
+# PyTorch support disabled
 
 # ───────────────────────────────────── Tests setup ────────────────────────────
 if(BUILD_TESTS)
@@ -204,16 +138,8 @@ set(UTIL_SOURCES
     src/utils/attack_defense_module.cpp
 )
 
-# GPU-specific sources (only included when WITH_TORCH is enabled)
+# GPU-specific sources removed
 set(GPU_UTIL_SOURCES "")
-if(WITH_TORCH)
-    set(GPU_UTIL_SOURCES
-        src/utils/gpu_attack_defense_gomoku.cpp
-        src/utils/gpu_attack_defense_chess.cpp
-        src/utils/gpu_attack_defense_go.cpp
-        src/utils/attack_defense_gpu_manager.cpp
-    )
-endif()
 
 set(ALL_SOURCES
     ${CORE_SOURCES} 
@@ -252,23 +178,7 @@ target_link_libraries(alphazero PUBLIC
     fmt  # For logger
 )
 
-# Link PyTorch if enabled
-if(WITH_TORCH)
-    target_link_libraries(alphazero PUBLIC "${TORCH_LIBRARIES}")
-    target_compile_definitions(alphazero PUBLIC -DWITH_TORCH)
-    
-    # Add CUDA libraries
-    if(CUDA_FOUND)
-        target_link_libraries(alphazero PUBLIC ${CUDA_CUDART_LIBRARY})
-        
-        # Add cuDNN if found
-        if(CUDNN_FOUND)
-            target_include_directories(alphazero PUBLIC ${CUDNN_INCLUDE_DIR})
-            target_link_libraries(alphazero PUBLIC ${CUDNN_LIBRARY})
-            target_compile_definitions(alphazero PUBLIC -DWITH_CUDNN)
-        endif()
-    endif()
-endif()
+# PyTorch linking removed
 
 # ───────────────────────────────── Python module ─────────────────────────────────
 if(PYBIND11_FOUND AND BUILD_PYTHON_BINDINGS)
@@ -307,12 +217,7 @@ if(BUILD_TESTS)
         tests/utils/gomoku_attack_defense_test.cpp
     )
     
-    # GPU tests (only when WITH_TORCH is enabled)
-    if(WITH_TORCH)
-        set(GPU_TEST_SOURCES tests/utils/attack_defense_benchmark.cpp)
-        # Also add GPU tests to attack_defense test suite
-        list(APPEND ATTACK_DEFENSE_TEST_SOURCES ${GPU_TEST_SOURCES})
-    endif()
+    # GPU tests removed
     
     function(make_test name)
         add_executable(${name} ${ARGN})
@@ -345,28 +250,15 @@ if(BUILD_TESTS)
     make_test(gomoku_tests  ${GOMOKU_TEST_SOURCES})
     make_test(attack_defense_tests ${ATTACK_DEFENSE_TEST_SOURCES})
     
-    # Add GPU tests if WITH_TORCH is enabled
-    if(WITH_TORCH)
-        make_test(gpu_attack_defense_test ${GPU_TEST_SOURCES})
-    endif()
+    # GPU tests removed
     
-    # Create all_tests executable with conditional GPU tests
-    if(WITH_TORCH)
-        make_test(all_tests     tests/all_tests_main.cpp
-                                ${CORE_TEST_SOURCES} 
-                                ${CHESS_TEST_SOURCES}
-                                ${GO_TEST_SOURCES} 
-                                ${GOMOKU_TEST_SOURCES}
-                                ${ATTACK_DEFENSE_TEST_SOURCES}
-                                ${GPU_TEST_SOURCES})
-    else()
-        make_test(all_tests     tests/all_tests_main.cpp
-                                ${CORE_TEST_SOURCES} 
-                                ${CHESS_TEST_SOURCES}
-                                ${GO_TEST_SOURCES} 
-                                ${GOMOKU_TEST_SOURCES}
-                                ${ATTACK_DEFENSE_TEST_SOURCES})
-    endif()
+    # Create all_tests executable
+    make_test(all_tests     tests/all_tests_main.cpp
+                            ${CORE_TEST_SOURCES} 
+                            ${CHESS_TEST_SOURCES}
+                            ${GO_TEST_SOURCES} 
+                            ${GOMOKU_TEST_SOURCES}
+                            ${ATTACK_DEFENSE_TEST_SOURCES})
 endif()
 
 # ───────────────────────────────── Installation ───────────────────────────────

@@ -11,9 +11,6 @@
 #include <array>
 #include <cmath>
 
-#ifdef WITH_TORCH
-#include <torch/torch.h>
-#endif
 
 namespace alphazero {
 namespace games {

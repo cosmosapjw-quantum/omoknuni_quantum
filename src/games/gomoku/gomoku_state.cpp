@@ -4,10 +4,6 @@
 #include "core/illegal_move_exception.h" // For core::IllegalMoveException
 // #include "mcts/aggressive_memory_manager.h" // Removed - not needed
 #include "utils/attack_defense_module.h"  // For attack/defense planes
-#ifdef WITH_TORCH
-#include "utils/gpu_attack_defense_module.h"
-#include <torch/torch.h>
-#endif
 #include <stdexcept> // For std::invalid_argument, std::out_of_range
 #include <iostream>  // For debugging (optional, remove in production)
 #include <numeric>   // For std::accumulate, std::gcd

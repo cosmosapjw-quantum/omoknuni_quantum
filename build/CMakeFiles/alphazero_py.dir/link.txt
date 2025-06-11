@@ -1,1 +1,1 @@
-/usr/bin/c++ -fPIC -O3 -DNDEBUG -flto -Wl,--dependency-file=CMakeFiles/alphazero_py.dir/link.d -shared  -o lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o  -Wl,-rpath,/home/cosmos/omoknuni_quantum/build/lib/Release: lib/Release/libalphazero.so -lfmt
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -flto -shared  -o lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o  -Wl,-rpath,/home/cosmo/omoknuni_quantum/build/lib/Release: lib/Release/libalphazero.so -lfmt 

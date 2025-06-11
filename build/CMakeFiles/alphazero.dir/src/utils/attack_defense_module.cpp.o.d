@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o: \
- /home/cosmos/omoknuni_quantum/src/utils/attack_defense_module.cpp \
+ /home/cosmo/omoknuni_quantum/src/utils/attack_defense_module.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_quantum/include/utils/attack_defense_module.h \
+ /home/cosmo/omoknuni_quantum/include/utils/attack_defense_module.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -166,8 +166,8 @@ CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o: \
  /usr/include/c++/13/backward/auto_ptr.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
- /home/cosmos/omoknuni_quantum/include/utils/hash_specializations.h \
+ /home/cosmo/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmo/omoknuni_quantum/include/utils/hash_specializations.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
@@ -182,9 +182,9 @@ CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o: \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/cstdint \
  /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h \
- /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
+ /home/cosmo/omoknuni_quantum/include/core/igamestate.h \
  /usr/include/c++/13/optional /usr/include/c++/13/stdexcept \
- /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
+ /home/cosmo/omoknuni_quantum/include/core/illegal_move_exception.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
@@ -229,8 +229,8 @@ CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o: \
  /usr/include/c++/13/tr1/riemann_zeta.tcc /usr/include/c++/13/queue \
  /usr/include/c++/13/deque /usr/include/c++/13/bits/stl_deque.h \
  /usr/include/c++/13/bits/deque.tcc /usr/include/c++/13/bits/stl_queue.h \
- /home/cosmos/omoknuni_quantum/include/games/gomoku/gomoku_state.h \
- /home/cosmos/omoknuni_quantum/include/utils/zobrist_hash.h \
+ /home/cosmo/omoknuni_quantum/include/games/gomoku/gomoku_state.h \
+ /home/cosmo/omoknuni_quantum/include/utils/zobrist_hash.h \
  /usr/include/c++/13/random /usr/include/c++/13/bits/random.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h \
  /usr/include/c++/13/bits/random.tcc /usr/include/c++/13/numeric \
@@ -248,10 +248,10 @@ CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o: \
  /usr/include/c++/13/ratio /usr/include/c++/13/bits/parse_numbers.h \
  /usr/include/c++/13/bits/std_mutex.h \
  /usr/include/c++/13/bits/unique_lock.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess_state.h \
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess_state.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess_types.h \
- /home/cosmos/omoknuni_quantum/include/games/go/go_state.h \
- /home/cosmos/omoknuni_quantum/include/games/go/go_rules.h
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess_types.h \
+ /home/cosmo/omoknuni_quantum/include/games/go/go_state.h \
+ /home/cosmo/omoknuni_quantum/include/games/go/go_rules.h

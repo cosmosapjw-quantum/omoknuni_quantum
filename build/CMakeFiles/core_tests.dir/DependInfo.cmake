@@ -8,10 +8,9 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_quantum/tests/core/game_export_test.cpp" "CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o.d"
-  "/home/cosmos/omoknuni_quantum/tests/core/igamestate_test.cpp" "CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o.d"
-  "/home/cosmos/omoknuni_quantum/tests/core_tests_main.cpp" "CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o.d"
-  "" "bin/Release/core_tests" "gcc" "CMakeFiles/core_tests.dir/link.d"
+  "/home/cosmo/omoknuni_quantum/tests/core/game_export_test.cpp" "CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core/game_export_test.cpp.o.d"
+  "/home/cosmo/omoknuni_quantum/tests/core/igamestate_test.cpp" "CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core/igamestate_test.cpp.o.d"
+  "/home/cosmo/omoknuni_quantum/tests/core_tests_main.cpp" "CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o" "gcc" "CMakeFiles/core_tests.dir/tests/core_tests_main.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

@@ -8,8 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_quantum/tests/games/go/go_test.cpp" "CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o" "gcc" "CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o.d"
-  "" "bin/Release/go_tests" "gcc" "CMakeFiles/go_tests.dir/link.d"
+  "/home/cosmo/omoknuni_quantum/tests/games/go/go_test.cpp" "CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o" "gcc" "CMakeFiles/go_tests.dir/tests/games/go/go_test.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

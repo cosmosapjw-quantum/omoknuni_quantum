@@ -1,7 +1,7 @@
 CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o: \
- /home/cosmos/omoknuni_quantum/src/games/chess/chess_state.cpp \
+ /home/cosmo/omoknuni_quantum/src/games/chess/chess_state.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess_state.h \
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess_state.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -174,10 +174,10 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o: \
  /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/map \
  /usr/include/c++/13/bits/stl_tree.h /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h /usr/include/c++/13/atomic \
- /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
+ /home/cosmo/omoknuni_quantum/include/core/igamestate.h \
  /usr/include/c++/13/cstdint /usr/include/c++/13/stdexcept \
- /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
- /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
+ /home/cosmo/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmo/omoknuni_quantum/include/core/illegal_move_exception.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
@@ -196,7 +196,7 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o: \
  /usr/include/c++/13/bits/ostream.tcc \
  /usr/include/c++/13/bits/istream.tcc \
  /usr/include/c++/13/bits/sstream.tcc \
- /home/cosmos/omoknuni_quantum/include/utils/zobrist_hash.h \
+ /home/cosmo/omoknuni_quantum/include/utils/zobrist_hash.h \
  /usr/include/c++/13/random /usr/include/c++/13/cmath /usr/include/math.h \
  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
@@ -226,17 +226,17 @@ CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o: \
  /usr/include/c++/13/bits/random.tcc /usr/include/c++/13/numeric \
  /usr/include/c++/13/bits/stl_numeric.h \
  /usr/include/c++/13/pstl/glue_numeric_defs.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess_types.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess_rules.h \
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess_types.h \
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess_rules.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h \
- /home/cosmos/omoknuni_quantum/include/games/chess/chess960.h \
- /home/cosmos/omoknuni_quantum/include/utils/attack_defense_module.h \
+ /home/cosmo/omoknuni_quantum/include/games/chess/chess960.h \
+ /home/cosmo/omoknuni_quantum/include/utils/attack_defense_module.h \
  /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
- /home/cosmos/omoknuni_quantum/include/utils/hash_specializations.h \
+ /home/cosmo/omoknuni_quantum/include/utils/hash_specializations.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/iomanip \
  /usr/include/c++/13/locale \
  /usr/include/c++/13/bits/locale_facets_nonio.h /usr/include/c++/13/ctime \

@@ -1,26 +1,15 @@
 #include "utils/attack_defense_module.h"
-#ifdef WITH_TORCH
-#include "utils/gpu_attack_defense_module.h"
-#endif
 #include <iostream>
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
 #include <queue>
 
-#ifdef WITH_TORCH
-#include <torch/torch.h>
-#endif
-
 #ifdef BUILD_PYTHON_BINDINGS
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
-#endif
-
-#ifdef WITH_TORCH
-#include <torch/torch.h>
 #endif
 
 #include "utils/hash_specializations.h"

@@ -9,9 +9,6 @@
 #include "utils/hash_specializations.h"
 #include "core/igamestate.h"
 
-#ifdef WITH_TORCH
-#include <torch/torch.h>
-#endif
 
 namespace alphazero {
 

@@ -1,8 +1,8 @@
 CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o: \
- /home/cosmos/omoknuni_quantum/src/games/gomoku/gomoku_state.cpp \
+ /home/cosmo/omoknuni_quantum/src/games/gomoku/gomoku_state.cpp \
  /usr/include/stdc-predef.h \
- /home/cosmos/omoknuni_quantum/include/games/gomoku/gomoku_state.h \
- /home/cosmos/omoknuni_quantum/include/core/igamestate.h \
+ /home/cosmo/omoknuni_quantum/include/games/gomoku/gomoku_state.h \
+ /home/cosmo/omoknuni_quantum/include/core/igamestate.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -167,8 +167,8 @@ CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o: \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/cstdint \
  /usr/include/c++/13/stdexcept \
- /home/cosmos/omoknuni_quantum/include/core/export_macros.h \
- /home/cosmos/omoknuni_quantum/include/core/illegal_move_exception.h \
+ /home/cosmo/omoknuni_quantum/include/core/export_macros.h \
+ /home/cosmo/omoknuni_quantum/include/core/illegal_move_exception.h \
  /usr/include/c++/13/sstream /usr/include/c++/13/istream \
  /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
@@ -187,7 +187,7 @@ CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o: \
  /usr/include/c++/13/bits/ostream.tcc \
  /usr/include/c++/13/bits/istream.tcc \
  /usr/include/c++/13/bits/sstream.tcc \
- /home/cosmos/omoknuni_quantum/include/utils/zobrist_hash.h \
+ /home/cosmo/omoknuni_quantum/include/utils/zobrist_hash.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
  /usr/include/c++/13/bits/hashtable.h \
@@ -241,7 +241,7 @@ CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o: \
  /usr/include/c++/13/ratio /usr/include/c++/13/bits/parse_numbers.h \
  /usr/include/c++/13/bits/std_mutex.h \
  /usr/include/c++/13/bits/unique_lock.h \
- /home/cosmos/omoknuni_quantum/include/games/gomoku/gomoku_rules.h \
+ /home/cosmo/omoknuni_quantum/include/games/gomoku/gomoku_rules.h \
  /usr/include/c++/13/set /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/stl_set.h \
  /usr/include/c++/13/bits/stl_multiset.h /usr/include/c++/13/utility \
@@ -250,6 +250,6 @@ CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o: \
  /usr/include/c++/13/compare /usr/include/c++/13/map \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
- /home/cosmos/omoknuni_quantum/include/utils/hash_specializations.h \
- /home/cosmos/omoknuni_quantum/include/utils/attack_defense_module.h \
+ /home/cosmo/omoknuni_quantum/include/utils/hash_specializations.h \
+ /home/cosmo/omoknuni_quantum/include/utils/attack_defense_module.h \
  /usr/include/c++/13/iostream

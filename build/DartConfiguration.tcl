@@ -4,8 +4,8 @@
 
 
 # Configuration directories and files
-SourceDirectory: /home/cosmos/omoknuni_quantum
-BuildDirectory: /home/cosmos/omoknuni_quantum/build
+SourceDirectory: /home/cosmo/omoknuni_quantum
+BuildDirectory: /home/cosmo/omoknuni_quantum/build
 
 # Where to place the cost data store
 CostDataFile: 
@@ -14,7 +14,7 @@ CostDataFile:
 Site: cosmosapjw
 
 # Build name is osname-revision-compiler, i.e. Linux-2.4.2-2smp-c++
-BuildName: Linux-g++
+BuildName: Linux-c++
 
 # Subprojects
 LabelsForSubprojects: 
@@ -27,7 +27,7 @@ SubmitInactivityTimeout:
 NightlyStartTime: 00:00:00 EDT
 
 # Commands for the build/test/submit cycle
-ConfigureCommand: "/usr/bin/cmake" "/home/cosmos/omoknuni_quantum"
+ConfigureCommand: "/usr/bin/cmake" "/home/cosmo/omoknuni_quantum"
 MakeCommand: /usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}"
 DefaultCTestConfigurationType: Release
 
@@ -63,7 +63,7 @@ UpdateOptions:
 UpdateType: git
 
 # Compiler info
-Compiler: /usr/bin/g++
+Compiler: /usr/bin/c++
 CompilerVersion: 13.3.0
 
 # Dynamic analysis (MemCheck)
@@ -94,9 +94,6 @@ TimeOut: 1500
 # During parallel testing CTest will not start a new test if doing
 # so would cause the system load to exceed this value.
 TestLoad: 
-
-TLSVerify: 
-TLSVersion: 
 
 UseLaunchers: 
 CurlOptions: 

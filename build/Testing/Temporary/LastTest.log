@@ -1,0 +1,793 @@
+Start testing: Jun 11 20:48 KST
+----------------------------------------------------------
+1/6 Testing: core_tests
+1/6 Test: core_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/core_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"core_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+[==========] Running 7 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from IGameStateTest
+[ RUN      ] IGameStateTest.BasicFunctionality
+[       OK ] IGameStateTest.BasicFunctionality (5 ms)
+[ RUN      ] IGameStateTest.GamePlay
+[       OK ] IGameStateTest.GamePlay (0 ms)
+[ RUN      ] IGameStateTest.IllegalMove
+[       OK ] IGameStateTest.IllegalMove (0 ms)
+[----------] 3 tests from IGameStateTest (5 ms total)
+
+[----------] 4 tests from GameExportTest
+[ RUN      ] GameExportTest.GameRegistryWorks
+[       OK ] GameExportTest.GameRegistryWorks (0 ms)
+[ RUN      ] GameExportTest.GameFactoryWorks
+[       OK ] GameExportTest.GameFactoryWorks (0 ms)
+[ RUN      ] GameExportTest.GameSerializerWorks
+[       OK ] GameExportTest.GameSerializerWorks (0 ms)
+[ RUN      ] GameExportTest.GameTypeConversionWorks
+[       OK ] GameExportTest.GameTypeConversionWorks (0 ms)
+[----------] 4 tests from GameExportTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 2 test suites ran. (6 ms total)
+[  PASSED  ] 7 tests.
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"core_tests" end time: Jun 11 20:48 KST
+"core_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/6 Testing: chess_tests
+2/6 Test: chess_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/chess_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"chess_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+Running main() from ./googletest/src/gtest_main.cc
+[==========] Running 24 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 20 tests from ChessTest
+[ RUN      ] ChessTest.Initialization
+[       OK ] ChessTest.Initialization (0 ms)
+[ RUN      ] ChessTest.PieceOperations
+[       OK ] ChessTest.PieceOperations (0 ms)
+[ RUN      ] ChessTest.FENConversion
+[       OK ] ChessTest.FENConversion (0 ms)
+[ RUN      ] ChessTest.LegalMoves
+[       OK ] ChessTest.LegalMoves (0 ms)
+[ RUN      ] ChessTest.MoveRepresentation
+[       OK ] ChessTest.MoveRepresentation (0 ms)
+[ RUN      ] ChessTest.StandardAlgebraicNotation
+[       OK ] ChessTest.StandardAlgebraicNotation (0 ms)
+[ RUN      ] ChessTest.Castling
+[       OK ] ChessTest.Castling (0 ms)
+[ RUN      ] ChessTest.EnPassant
+[       OK ] ChessTest.EnPassant (0 ms)
+[ RUN      ] ChessTest.Promotion
+[       OK ] ChessTest.Promotion (0 ms)
+[ RUN      ] ChessTest.CheckDetection
+[       OK ] ChessTest.CheckDetection (0 ms)
+[ RUN      ] ChessTest.CheckmateDetection
+[       OK ] ChessTest.CheckmateDetection (0 ms)
+[ RUN      ] ChessTest.StalemateDetection
+[       OK ] ChessTest.StalemateDetection (0 ms)
+[ RUN      ] ChessTest.InsufficientMaterialDetection
+[       OK ] ChessTest.InsufficientMaterialDetection (0 ms)
+[ RUN      ] ChessTest.FiftyMoveRule
+[       OK ] ChessTest.FiftyMoveRule (0 ms)
+[ RUN      ] ChessTest.UndoMove
+[       OK ] ChessTest.UndoMove (0 ms)
+[ RUN      ] ChessTest.CloneAndEquality
+[       OK ] ChessTest.CloneAndEquality (0 ms)
+[ RUN      ] ChessTest.MoveHistoryTracking
+[       OK ] ChessTest.MoveHistoryTracking (0 ms)
+[ RUN      ] ChessTest.TensorRepresentation
+[       OK ] ChessTest.TensorRepresentation (0 ms)
+[ RUN      ] ChessTest.GameValidation
+[       OK ] ChessTest.GameValidation (0 ms)
+[ RUN      ] ChessTest.ThreefoldRepetition
+[       OK ] ChessTest.ThreefoldRepetition (0 ms)
+[----------] 20 tests from ChessTest (1 ms total)
+
+[----------] 4 tests from Chess960Test
+[ RUN      ] Chess960Test.PositionGeneration
+[       OK ] Chess960Test.PositionGeneration (0 ms)
+[ RUN      ] Chess960Test.PositionValidation
+[       OK ] Chess960Test.PositionValidation (0 ms)
+[ RUN      ] Chess960Test.Chess960FENHandling
+[       OK ] Chess960Test.Chess960FENHandling (0 ms)
+[ RUN      ] Chess960Test.Chess960Castling
+[       OK ] Chess960Test.Chess960Castling (0 ms)
+[----------] 4 tests from Chess960Test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 24 tests from 2 test suites ran. (1 ms total)
+[  PASSED  ] 24 tests.
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"chess_tests" end time: Jun 11 20:48 KST
+"chess_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/6 Testing: go_tests
+3/6 Test: go_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/go_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"go_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+Running main() from ./googletest/src/gtest_main.cc
+[==========] Running 33 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 33 tests from GoTest
+[ RUN      ] GoTest.Initialization
+[       OK ] GoTest.Initialization (0 ms)
+[ RUN      ] GoTest.BasicMoves
+[       OK ] GoTest.BasicMoves (0 ms)
+[ RUN      ] GoTest.PassMoves
+[       OK ] GoTest.PassMoves (0 ms)
+[ RUN      ] GoTest.Captures
+[       OK ] GoTest.Captures (0 ms)
+[ RUN      ] GoTest.SuicideRule
+[       OK ] GoTest.SuicideRule (0 ms)
+[ RUN      ] GoTest.KoRule
+[       OK ] GoTest.KoRule (0 ms)
+[ RUN      ] GoTest.SuperkoRuleExtended
+[       OK ] GoTest.SuperkoRuleExtended (0 ms)
+[ RUN      ] GoTest.LibertyCounting
+[       OK ] GoTest.LibertyCounting (0 ms)
+[ RUN      ] GoTest.ChineseScoringRules
+[       OK ] GoTest.ChineseScoringRules (2 ms)
+[ RUN      ] GoTest.JapaneseScoringRules
+[       OK ] GoTest.JapaneseScoringRules (1 ms)
+[ RUN      ] GoTest.PrisonerCountingCorrectness
+[       OK ] GoTest.PrisonerCountingCorrectness (0 ms)
+[ RUN      ] GoTest.DeadStoneMarking
+[       OK ] GoTest.DeadStoneMarking (1 ms)
+[ RUN      ] GoTest.UndoMove
+[       OK ] GoTest.UndoMove (0 ms)
+[ RUN      ] GoTest.CloneAndEquality
+[       OK ] GoTest.CloneAndEquality (0 ms)
+[ RUN      ] GoTest.MoveHistoryTracking
+[       OK ] GoTest.MoveHistoryTracking (0 ms)
+[ RUN      ] GoTest.TensorRepresentation
+[       OK ] GoTest.TensorRepresentation (0 ms)
+[ RUN      ] GoTest.StringConversion
+[       OK ] GoTest.StringConversion (0 ms)
+[ RUN      ] GoTest.BoardRepresentation
+[       OK ] GoTest.BoardRepresentation (0 ms)
+[ RUN      ] GoTest.DifferentBoardSizes
+[       OK ] GoTest.DifferentBoardSizes (0 ms)
+[ RUN      ] GoTest.MultipleCaptures
+[       OK ] GoTest.MultipleCaptures (0 ms)
+[ RUN      ] GoTest.DameFillingChineseRules
+[       OK ] GoTest.DameFillingChineseRules (35 ms)
+[ RUN      ] GoTest.DameNotRequiredJapaneseRules
+[       OK ] GoTest.DameNotRequiredJapaneseRules (1 ms)
+[ RUN      ] GoTest.GameValidation
+[       OK ] GoTest.GameValidation (0 ms)
+[ RUN      ] GoTest.JapaneseNoResultTripleKo
+[       OK ] GoTest.JapaneseNoResultTripleKo (0 ms)
+[ RUN      ] GoTest.ChineseRulesNoTripleKo
+[       OK ] GoTest.ChineseRulesNoTripleKo (0 ms)
+[ RUN      ] GoTest.KoreanRulesInitialization
+[       OK ] GoTest.KoreanRulesInitialization (0 ms)
+[ RUN      ] GoTest.KoreanRulesCustomKomi
+[       OK ] GoTest.KoreanRulesCustomKomi (0 ms)
+[ RUN      ] GoTest.KoreanRulesTripleKoDraw
+[       OK ] GoTest.KoreanRulesTripleKoDraw (0 ms)
+[ RUN      ] GoTest.KoreanScoringRules
+[       OK ] GoTest.KoreanScoringRules (1 ms)
+[ RUN      ] GoTest.KoreanDameFillingRequired
+[       OK ] GoTest.KoreanDameFillingRequired (0 ms)
+[ RUN      ] GoTest.KoreanSuperkoEnforcement
+[       OK ] GoTest.KoreanSuperkoEnforcement (0 ms)
+[ RUN      ] GoTest.ToStringDisplaysRuleSet
+[       OK ] GoTest.ToStringDisplaysRuleSet (0 ms)
+[ RUN      ] GoTest.CloningPreservesRuleSet
+[       OK ] GoTest.CloningPreservesRuleSet (0 ms)
+[----------] 33 tests from GoTest (48 ms total)
+
+[----------] Global test environment tear-down
+[==========] 33 tests from 1 test suite ran. (49 ms total)
+[  PASSED  ] 33 tests.
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"go_tests" end time: Jun 11 20:48 KST
+"go_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/6 Testing: gomoku_tests
+4/6 Test: gomoku_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/gomoku_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"gomoku_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+Running main() from ./googletest/src/gtest_main.cc
+[==========] Running 28 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 11 tests from GomokuTest
+[ RUN      ] GomokuTest.Initialization
+[       OK ] GomokuTest.Initialization (1 ms)
+[ RUN      ] GomokuTest.LegalMoves
+[       OK ] GomokuTest.LegalMoves (0 ms)
+[ RUN      ] GomokuTest.WinDetectionHorizontal
+[       OK ] GomokuTest.WinDetectionHorizontal (1 ms)
+[ RUN      ] GomokuTest.WinDetectionVertical
+[       OK ] GomokuTest.WinDetectionVertical (0 ms)
+[ RUN      ] GomokuTest.WinDetectionDiagonal
+[       OK ] GomokuTest.WinDetectionDiagonal (0 ms)
+[ RUN      ] GomokuTest.WinDetectionAntiDiagonal
+[       OK ] GomokuTest.WinDetectionAntiDiagonal (0 ms)
+[ RUN      ] GomokuTest.OverlineStandardAllowedAndWins
+[       OK ] GomokuTest.OverlineStandardAllowedAndWins (0 ms)
+[ RUN      ] GomokuTest.StalemateDetection
+[       OK ] GomokuTest.StalemateDetection (0 ms)
+[ RUN      ] GomokuTest.CloneEqualityAndUndoRedo
+[       OK ] GomokuTest.CloneEqualityAndUndoRedo (0 ms)
+[ RUN      ] GomokuTest.MoveHistoryAndTensor
+[       OK ] GomokuTest.MoveHistoryAndTensor (0 ms)
+[ RUN      ] GomokuTest.Validation
+[       OK ] GomokuTest.Validation (0 ms)
+[----------] 11 tests from GomokuTest (8 ms total)
+
+[----------] 10 tests from OmokTest
+[ RUN      ] OmokTest.OmokDoubleThreePlusShape
+[       OK ] OmokTest.OmokDoubleThreePlusShape (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeXShape
+[       OK ] OmokTest.OmokDoubleThreeXShape (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_SE
+[       OK ] OmokTest.OmokDoubleThreeCorner_SE (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_NE
+[       OK ] OmokTest.OmokDoubleThreeCorner_NE (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_SW
+[       OK ] OmokTest.OmokDoubleThreeCorner_SW (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_NW
+[       OK ] OmokTest.OmokDoubleThreeCorner_NW (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_W
+[       OK ] OmokTest.OmokDoubleThreeTT_W (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_N
+[       OK ] OmokTest.OmokDoubleThreeTT_N (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_E
+[       OK ] OmokTest.OmokDoubleThreeTT_E (0 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_S
+[       OK ] OmokTest.OmokDoubleThreeTT_S (0 ms)
+[----------] 10 tests from OmokTest (9 ms total)
+
+[----------] 7 tests from RenjuTest
+[ RUN      ] RenjuTest.RenjuOverlineBlack
+[       OK ] RenjuTest.RenjuOverlineBlack (0 ms)
+[ RUN      ] RenjuTest.RenjuOverlineWhite
+[       OK ] RenjuTest.RenjuOverlineWhite (1 ms)
+[ RUN      ] RenjuTest.RenjuDoubleFourBlack
+[       OK ] RenjuTest.RenjuDoubleFourBlack (0 ms)
+[ RUN      ] RenjuTest.RenjuDoubleFourWhiteAllowed
+[       OK ] RenjuTest.RenjuDoubleFourWhiteAllowed (0 ms)
+[ RUN      ] RenjuTest.RenjuSimpleDoubleThreeBlackForbidden
+[       OK ] RenjuTest.RenjuSimpleDoubleThreeBlackForbidden (1 ms)
+[ RUN      ] RenjuTest.RenjuDoubleThreeException_a
+[       OK ] RenjuTest.RenjuDoubleThreeException_a (0 ms)
+[ RUN      ] RenjuTest.RenjuDoubleThreeException_b
+[       OK ] RenjuTest.RenjuDoubleThreeException_b (0 ms)
+[----------] 7 tests from RenjuTest (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 28 tests from 3 test suites ran. (25 ms total)
+[  PASSED  ] 28 tests.
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"gomoku_tests" end time: Jun 11 20:48 KST
+"gomoku_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/6 Testing: attack_defense_tests
+5/6 Test: attack_defense_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/attack_defense_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"attack_defense_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+Running main() from ./googletest/src/gtest_main.cc
+[==========] Running 55 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 11 tests from GomokuAttackDefenseTest
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeHorizontal
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeHorizontal (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeVertical
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeVertical (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeDiagonal
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeDiagonal (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DefenseAgainstOpenThree
+[       OK ] GomokuAttackDefenseTest.DefenseAgainstOpenThree (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.CreateWinningMove
+[       OK ] GomokuAttackDefenseTest.CreateWinningMove (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.BlockWinningThreat
+[       OK ] GomokuAttackDefenseTest.BlockWinningThreat (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectBrokenPattern
+[       OK ] GomokuAttackDefenseTest.DetectBrokenPattern (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.MultipleThreats
+[       OK ] GomokuAttackDefenseTest.MultipleThreats (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.EdgeCaseBoundary
+[       OK ] GomokuAttackDefenseTest.EdgeCaseBoundary (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.BatchProcessing
+[       OK ] GomokuAttackDefenseTest.BatchProcessing (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.ComputePlanes
+[       OK ] GomokuAttackDefenseTest.ComputePlanes (6 ms)
+[----------] 11 tests from GomokuAttackDefenseTest (7 ms total)
+
+[----------] 11 tests from ChessAttackDefenseTest
+[ RUN      ] ChessAttackDefenseTest.PieceValues
+[       OK ] ChessAttackDefenseTest.PieceValues (0 ms)
+[ RUN      ] ChessAttackDefenseTest.KnightAttacks
+[       OK ] ChessAttackDefenseTest.KnightAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.BishopAttacks
+[       OK ] ChessAttackDefenseTest.BishopAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.RookAttacks
+[       OK ] ChessAttackDefenseTest.RookAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.QueenAttacks
+[       OK ] ChessAttackDefenseTest.QueenAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.KingAttacks
+[       OK ] ChessAttackDefenseTest.KingAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.DefenseBlockingCheck
+[       OK ] ChessAttackDefenseTest.DefenseBlockingCheck (0 ms)
+[ RUN      ] ChessAttackDefenseTest.MultiplePieces
+[       OK ] ChessAttackDefenseTest.MultiplePieces (0 ms)
+[ RUN      ] ChessAttackDefenseTest.PawnAttacks
+[       OK ] ChessAttackDefenseTest.PawnAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.BatchProcessing
+[       OK ] ChessAttackDefenseTest.BatchProcessing (0 ms)
+[ RUN      ] ChessAttackDefenseTest.ComputePlanes
+[       OK ] ChessAttackDefenseTest.ComputePlanes (0 ms)
+[----------] 11 tests from ChessAttackDefenseTest (0 ms total)
+
+[----------] 13 tests from GoAttackDefenseTest
+[ RUN      ] GoAttackDefenseTest.CaptureDetection
+[       OK ] GoAttackDefenseTest.CaptureDetection (0 ms)
+[ RUN      ] GoAttackDefenseTest.AtariDefense
+[       OK ] GoAttackDefenseTest.AtariDefense (0 ms)
+[ RUN      ] GoAttackDefenseTest.EyeCreation
+[       OK ] GoAttackDefenseTest.EyeCreation (0 ms)
+[ RUN      ] GoAttackDefenseTest.MultipleCaptures
+[       OK ] GoAttackDefenseTest.MultipleCaptures (0 ms)
+[ RUN      ] GoAttackDefenseTest.LadderCapture
+[       OK ] GoAttackDefenseTest.LadderCapture (0 ms)
+[ RUN      ] GoAttackDefenseTest.KoSituation
+[       OK ] GoAttackDefenseTest.KoSituation (0 ms)
+[ RUN      ] GoAttackDefenseTest.TerritoryEnclosure
+[       OK ] GoAttackDefenseTest.TerritoryEnclosure (0 ms)
+[ RUN      ] GoAttackDefenseTest.ConnectionDefense
+[       OK ] GoAttackDefenseTest.ConnectionDefense (0 ms)
+[ RUN      ] GoAttackDefenseTest.TwoEyesLife
+[       OK ] GoAttackDefenseTest.TwoEyesLife (0 ms)
+[ RUN      ] GoAttackDefenseTest.Snapback
+[       OK ] GoAttackDefenseTest.Snapback (0 ms)
+[ RUN      ] GoAttackDefenseTest.ComputePlanes
+[       OK ] GoAttackDefenseTest.ComputePlanes (3 ms)
+[ RUN      ] GoAttackDefenseTest.SmallBoardCapture
+[       OK ] GoAttackDefenseTest.SmallBoardCapture (0 ms)
+[ RUN      ] GoAttackDefenseTest.BatchProcessing
+[       OK ] GoAttackDefenseTest.BatchProcessing (0 ms)
+[----------] 13 tests from GoAttackDefenseTest (3 ms total)
+
+[----------] 2 tests from AttackDefenseFactoryTest
+[ RUN      ] AttackDefenseFactoryTest.CreateModules
+[       OK ] AttackDefenseFactoryTest.CreateModules (0 ms)
+[ RUN      ] AttackDefenseFactoryTest.InvalidGameType
+[       OK ] AttackDefenseFactoryTest.InvalidGameType (0 ms)
+[----------] 2 tests from AttackDefenseFactoryTest (0 ms total)
+
+[----------] 18 tests from GomokuPatternTest
+[ RUN      ] GomokuPatternTest.OpenThreeHorizontalPerfect
+[       OK ] GomokuPatternTest.OpenThreeHorizontalPerfect (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeVerticalPerfect
+[       OK ] GomokuPatternTest.OpenThreeVerticalPerfect (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeDiagonalMain
+[       OK ] GomokuPatternTest.OpenThreeDiagonalMain (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeDiagonalAnti
+[       OK ] GomokuPatternTest.OpenThreeDiagonalAnti (0 ms)
+[ RUN      ] GomokuPatternTest.BrokenThreePattern
+[       OK ] GomokuPatternTest.BrokenThreePattern (0 ms)
+[ RUN      ] GomokuPatternTest.OpenFourCreation
+[       OK ] GomokuPatternTest.OpenFourCreation (0 ms)
+[ RUN      ] GomokuPatternTest.WinningMoveHorizontal
+[       OK ] GomokuPatternTest.WinningMoveHorizontal (0 ms)
+[ RUN      ] GomokuPatternTest.WinningMoveVertical
+[       OK ] GomokuPatternTest.WinningMoveVertical (0 ms)
+[ RUN      ] GomokuPatternTest.BlockOpponentOpenThree
+[       OK ] GomokuPatternTest.BlockOpponentOpenThree (0 ms)
+[ RUN      ] GomokuPatternTest.BlockOpponentOpenFour
+[       OK ] GomokuPatternTest.BlockOpponentOpenFour (0 ms)
+[ RUN      ] GomokuPatternTest.BlockWinningMove
+[       OK ] GomokuPatternTest.BlockWinningMove (0 ms)
+[ RUN      ] GomokuPatternTest.DoubleThreats
+[       OK ] GomokuPatternTest.DoubleThreats (0 ms)
+[ RUN      ] GomokuPatternTest.ForkCreation
+[       OK ] GomokuPatternTest.ForkCreation (0 ms)
+[ RUN      ] GomokuPatternTest.BoardEdgePatterns
+[       OK ] GomokuPatternTest.BoardEdgePatterns (0 ms)
+[ RUN      ] GomokuPatternTest.InvalidMoves
+[       OK ] GomokuPatternTest.InvalidMoves (0 ms)
+[ RUN      ] GomokuPatternTest.BatchConsistency
+[       OK ] GomokuPatternTest.BatchConsistency (0 ms)
+[ RUN      ] GomokuPatternTest.CountMultipleOpenThrees
+[       OK ] GomokuPatternTest.CountMultipleOpenThrees (0 ms)
+[ RUN      ] GomokuPatternTest.LargeBatchPerformance
+[       OK ] GomokuPatternTest.LargeBatchPerformance (2 ms)
+[----------] 18 tests from GomokuPatternTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 55 tests from 5 test suites ran. (15 ms total)
+[  PASSED  ] 55 tests.
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"attack_defense_tests" end time: Jun 11 20:48 KST
+"attack_defense_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/6 Testing: all_tests
+6/6 Test: all_tests
+Command: "/home/cosmo/omoknuni_quantum/build/bin/Release/all_tests"
+Directory: /home/cosmo/omoknuni_quantum/build
+"all_tests" start time: Jun 11 20:48 KST
+Output:
+----------------------------------------------------------
+[==========] Running 147 tests from 13 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from IGameStateTest
+[ RUN      ] IGameStateTest.BasicFunctionality
+[       OK ] IGameStateTest.BasicFunctionality (0 ms)
+[ RUN      ] IGameStateTest.GamePlay
+[       OK ] IGameStateTest.GamePlay (0 ms)
+[ RUN      ] IGameStateTest.IllegalMove
+[       OK ] IGameStateTest.IllegalMove (0 ms)
+[----------] 3 tests from IGameStateTest (0 ms total)
+
+[----------] 4 tests from GameExportTest
+[ RUN      ] GameExportTest.GameRegistryWorks
+[       OK ] GameExportTest.GameRegistryWorks (0 ms)
+[ RUN      ] GameExportTest.GameFactoryWorks
+[       OK ] GameExportTest.GameFactoryWorks (0 ms)
+[ RUN      ] GameExportTest.GameSerializerWorks
+[       OK ] GameExportTest.GameSerializerWorks (0 ms)
+[ RUN      ] GameExportTest.GameTypeConversionWorks
+[       OK ] GameExportTest.GameTypeConversionWorks (0 ms)
+[----------] 4 tests from GameExportTest (0 ms total)
+
+[----------] 20 tests from ChessTest
+[ RUN      ] ChessTest.Initialization
+[       OK ] ChessTest.Initialization (0 ms)
+[ RUN      ] ChessTest.PieceOperations
+[       OK ] ChessTest.PieceOperations (0 ms)
+[ RUN      ] ChessTest.FENConversion
+[       OK ] ChessTest.FENConversion (0 ms)
+[ RUN      ] ChessTest.LegalMoves
+[       OK ] ChessTest.LegalMoves (0 ms)
+[ RUN      ] ChessTest.MoveRepresentation
+[       OK ] ChessTest.MoveRepresentation (0 ms)
+[ RUN      ] ChessTest.StandardAlgebraicNotation
+[       OK ] ChessTest.StandardAlgebraicNotation (0 ms)
+[ RUN      ] ChessTest.Castling
+[       OK ] ChessTest.Castling (0 ms)
+[ RUN      ] ChessTest.EnPassant
+[       OK ] ChessTest.EnPassant (0 ms)
+[ RUN      ] ChessTest.Promotion
+[       OK ] ChessTest.Promotion (0 ms)
+[ RUN      ] ChessTest.CheckDetection
+[       OK ] ChessTest.CheckDetection (0 ms)
+[ RUN      ] ChessTest.CheckmateDetection
+[       OK ] ChessTest.CheckmateDetection (0 ms)
+[ RUN      ] ChessTest.StalemateDetection
+[       OK ] ChessTest.StalemateDetection (0 ms)
+[ RUN      ] ChessTest.InsufficientMaterialDetection
+[       OK ] ChessTest.InsufficientMaterialDetection (0 ms)
+[ RUN      ] ChessTest.FiftyMoveRule
+[       OK ] ChessTest.FiftyMoveRule (0 ms)
+[ RUN      ] ChessTest.UndoMove
+[       OK ] ChessTest.UndoMove (0 ms)
+[ RUN      ] ChessTest.CloneAndEquality
+[       OK ] ChessTest.CloneAndEquality (0 ms)
+[ RUN      ] ChessTest.MoveHistoryTracking
+[       OK ] ChessTest.MoveHistoryTracking (0 ms)
+[ RUN      ] ChessTest.TensorRepresentation
+[       OK ] ChessTest.TensorRepresentation (0 ms)
+[ RUN      ] ChessTest.GameValidation
+[       OK ] ChessTest.GameValidation (0 ms)
+[ RUN      ] ChessTest.ThreefoldRepetition
+[       OK ] ChessTest.ThreefoldRepetition (0 ms)
+[----------] 20 tests from ChessTest (1 ms total)
+
+[----------] 4 tests from Chess960Test
+[ RUN      ] Chess960Test.PositionGeneration
+[       OK ] Chess960Test.PositionGeneration (0 ms)
+[ RUN      ] Chess960Test.PositionValidation
+[       OK ] Chess960Test.PositionValidation (0 ms)
+[ RUN      ] Chess960Test.Chess960FENHandling
+[       OK ] Chess960Test.Chess960FENHandling (0 ms)
+[ RUN      ] Chess960Test.Chess960Castling
+[       OK ] Chess960Test.Chess960Castling (0 ms)
+[----------] 4 tests from Chess960Test (0 ms total)
+
+[----------] 33 tests from GoTest
+[ RUN      ] GoTest.Initialization
+[       OK ] GoTest.Initialization (0 ms)
+[ RUN      ] GoTest.BasicMoves
+[       OK ] GoTest.BasicMoves (0 ms)
+[ RUN      ] GoTest.PassMoves
+[       OK ] GoTest.PassMoves (1 ms)
+[ RUN      ] GoTest.Captures
+[       OK ] GoTest.Captures (0 ms)
+[ RUN      ] GoTest.SuicideRule
+[       OK ] GoTest.SuicideRule (0 ms)
+[ RUN      ] GoTest.KoRule
+[       OK ] GoTest.KoRule (0 ms)
+[ RUN      ] GoTest.SuperkoRuleExtended
+[       OK ] GoTest.SuperkoRuleExtended (0 ms)
+[ RUN      ] GoTest.LibertyCounting
+[       OK ] GoTest.LibertyCounting (0 ms)
+[ RUN      ] GoTest.ChineseScoringRules
+[       OK ] GoTest.ChineseScoringRules (3 ms)
+[ RUN      ] GoTest.JapaneseScoringRules
+[       OK ] GoTest.JapaneseScoringRules (2 ms)
+[ RUN      ] GoTest.PrisonerCountingCorrectness
+[       OK ] GoTest.PrisonerCountingCorrectness (0 ms)
+[ RUN      ] GoTest.DeadStoneMarking
+[       OK ] GoTest.DeadStoneMarking (2 ms)
+[ RUN      ] GoTest.UndoMove
+[       OK ] GoTest.UndoMove (0 ms)
+[ RUN      ] GoTest.CloneAndEquality
+[       OK ] GoTest.CloneAndEquality (0 ms)
+[ RUN      ] GoTest.MoveHistoryTracking
+[       OK ] GoTest.MoveHistoryTracking (0 ms)
+[ RUN      ] GoTest.TensorRepresentation
+[       OK ] GoTest.TensorRepresentation (0 ms)
+[ RUN      ] GoTest.StringConversion
+[       OK ] GoTest.StringConversion (0 ms)
+[ RUN      ] GoTest.BoardRepresentation
+[       OK ] GoTest.BoardRepresentation (0 ms)
+[ RUN      ] GoTest.DifferentBoardSizes
+[       OK ] GoTest.DifferentBoardSizes (0 ms)
+[ RUN      ] GoTest.MultipleCaptures
+[       OK ] GoTest.MultipleCaptures (0 ms)
+[ RUN      ] GoTest.DameFillingChineseRules
+[       OK ] GoTest.DameFillingChineseRules (43 ms)
+[ RUN      ] GoTest.DameNotRequiredJapaneseRules
+[       OK ] GoTest.DameNotRequiredJapaneseRules (1 ms)
+[ RUN      ] GoTest.GameValidation
+[       OK ] GoTest.GameValidation (0 ms)
+[ RUN      ] GoTest.JapaneseNoResultTripleKo
+[       OK ] GoTest.JapaneseNoResultTripleKo (0 ms)
+[ RUN      ] GoTest.ChineseRulesNoTripleKo
+[       OK ] GoTest.ChineseRulesNoTripleKo (0 ms)
+[ RUN      ] GoTest.KoreanRulesInitialization
+[       OK ] GoTest.KoreanRulesInitialization (0 ms)
+[ RUN      ] GoTest.KoreanRulesCustomKomi
+[       OK ] GoTest.KoreanRulesCustomKomi (0 ms)
+[ RUN      ] GoTest.KoreanRulesTripleKoDraw
+[       OK ] GoTest.KoreanRulesTripleKoDraw (0 ms)
+[ RUN      ] GoTest.KoreanScoringRules
+[       OK ] GoTest.KoreanScoringRules (2 ms)
+[ RUN      ] GoTest.KoreanDameFillingRequired
+[       OK ] GoTest.KoreanDameFillingRequired (0 ms)
+[ RUN      ] GoTest.KoreanSuperkoEnforcement
+[       OK ] GoTest.KoreanSuperkoEnforcement (0 ms)
+[ RUN      ] GoTest.ToStringDisplaysRuleSet
+[       OK ] GoTest.ToStringDisplaysRuleSet (0 ms)
+[ RUN      ] GoTest.CloningPreservesRuleSet
+[       OK ] GoTest.CloningPreservesRuleSet (0 ms)
+[----------] 33 tests from GoTest (61 ms total)
+
+[----------] 11 tests from GomokuTest
+[ RUN      ] GomokuTest.Initialization
+[       OK ] GomokuTest.Initialization (1 ms)
+[ RUN      ] GomokuTest.LegalMoves
+[       OK ] GomokuTest.LegalMoves (1 ms)
+[ RUN      ] GomokuTest.WinDetectionHorizontal
+[       OK ] GomokuTest.WinDetectionHorizontal (2 ms)
+[ RUN      ] GomokuTest.WinDetectionVertical
+[       OK ] GomokuTest.WinDetectionVertical (2 ms)
+[ RUN      ] GomokuTest.WinDetectionDiagonal
+[       OK ] GomokuTest.WinDetectionDiagonal (2 ms)
+[ RUN      ] GomokuTest.WinDetectionAntiDiagonal
+[       OK ] GomokuTest.WinDetectionAntiDiagonal (2 ms)
+[ RUN      ] GomokuTest.OverlineStandardAllowedAndWins
+[       OK ] GomokuTest.OverlineStandardAllowedAndWins (1 ms)
+[ RUN      ] GomokuTest.StalemateDetection
+[       OK ] GomokuTest.StalemateDetection (1 ms)
+[ RUN      ] GomokuTest.CloneEqualityAndUndoRedo
+[       OK ] GomokuTest.CloneEqualityAndUndoRedo (2 ms)
+[ RUN      ] GomokuTest.MoveHistoryAndTensor
+[       OK ] GomokuTest.MoveHistoryAndTensor (2 ms)
+[ RUN      ] GomokuTest.Validation
+[       OK ] GomokuTest.Validation (0 ms)
+[----------] 11 tests from GomokuTest (19 ms total)
+
+[----------] 10 tests from OmokTest
+[ RUN      ] OmokTest.OmokDoubleThreePlusShape
+[       OK ] OmokTest.OmokDoubleThreePlusShape (1 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeXShape
+[       OK ] OmokTest.OmokDoubleThreeXShape (2 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_SE
+[       OK ] OmokTest.OmokDoubleThreeCorner_SE (2 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_NE
+[       OK ] OmokTest.OmokDoubleThreeCorner_NE (2 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_SW
+[       OK ] OmokTest.OmokDoubleThreeCorner_SW (1 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeCorner_NW
+[       OK ] OmokTest.OmokDoubleThreeCorner_NW (1 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_W
+[       OK ] OmokTest.OmokDoubleThreeTT_W (2 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_N
+[       OK ] OmokTest.OmokDoubleThreeTT_N (1 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_E
+[       OK ] OmokTest.OmokDoubleThreeTT_E (2 ms)
+[ RUN      ] OmokTest.OmokDoubleThreeTT_S
+[       OK ] OmokTest.OmokDoubleThreeTT_S (2 ms)
+[----------] 10 tests from OmokTest (20 ms total)
+
+[----------] 7 tests from RenjuTest
+[ RUN      ] RenjuTest.RenjuOverlineBlack
+[       OK ] RenjuTest.RenjuOverlineBlack (2 ms)
+[ RUN      ] RenjuTest.RenjuOverlineWhite
+[       OK ] RenjuTest.RenjuOverlineWhite (2 ms)
+[ RUN      ] RenjuTest.RenjuDoubleFourBlack
+[       OK ] RenjuTest.RenjuDoubleFourBlack (2 ms)
+[ RUN      ] RenjuTest.RenjuDoubleFourWhiteAllowed
+[       OK ] RenjuTest.RenjuDoubleFourWhiteAllowed (2 ms)
+[ RUN      ] RenjuTest.RenjuSimpleDoubleThreeBlackForbidden
+[       OK ] RenjuTest.RenjuSimpleDoubleThreeBlackForbidden (2 ms)
+[ RUN      ] RenjuTest.RenjuDoubleThreeException_a
+[       OK ] RenjuTest.RenjuDoubleThreeException_a (1 ms)
+[ RUN      ] RenjuTest.RenjuDoubleThreeException_b
+[       OK ] RenjuTest.RenjuDoubleThreeException_b (1 ms)
+[----------] 7 tests from RenjuTest (14 ms total)
+
+[----------] 11 tests from GomokuAttackDefenseTest
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeHorizontal
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeHorizontal (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeVertical
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeVertical (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectOpenThreeDiagonal
+[       OK ] GomokuAttackDefenseTest.DetectOpenThreeDiagonal (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DefenseAgainstOpenThree
+[       OK ] GomokuAttackDefenseTest.DefenseAgainstOpenThree (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.CreateWinningMove
+[       OK ] GomokuAttackDefenseTest.CreateWinningMove (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.BlockWinningThreat
+[       OK ] GomokuAttackDefenseTest.BlockWinningThreat (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.DetectBrokenPattern
+[       OK ] GomokuAttackDefenseTest.DetectBrokenPattern (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.MultipleThreats
+[       OK ] GomokuAttackDefenseTest.MultipleThreats (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.EdgeCaseBoundary
+[       OK ] GomokuAttackDefenseTest.EdgeCaseBoundary (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.BatchProcessing
+[       OK ] GomokuAttackDefenseTest.BatchProcessing (0 ms)
+[ RUN      ] GomokuAttackDefenseTest.ComputePlanes
+[       OK ] GomokuAttackDefenseTest.ComputePlanes (11 ms)
+[----------] 11 tests from GomokuAttackDefenseTest (12 ms total)
+
+[----------] 11 tests from ChessAttackDefenseTest
+[ RUN      ] ChessAttackDefenseTest.PieceValues
+[       OK ] ChessAttackDefenseTest.PieceValues (0 ms)
+[ RUN      ] ChessAttackDefenseTest.KnightAttacks
+[       OK ] ChessAttackDefenseTest.KnightAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.BishopAttacks
+[       OK ] ChessAttackDefenseTest.BishopAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.RookAttacks
+[       OK ] ChessAttackDefenseTest.RookAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.QueenAttacks
+[       OK ] ChessAttackDefenseTest.QueenAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.KingAttacks
+[       OK ] ChessAttackDefenseTest.KingAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.DefenseBlockingCheck
+[       OK ] ChessAttackDefenseTest.DefenseBlockingCheck (0 ms)
+[ RUN      ] ChessAttackDefenseTest.MultiplePieces
+[       OK ] ChessAttackDefenseTest.MultiplePieces (0 ms)
+[ RUN      ] ChessAttackDefenseTest.PawnAttacks
+[       OK ] ChessAttackDefenseTest.PawnAttacks (0 ms)
+[ RUN      ] ChessAttackDefenseTest.BatchProcessing
+[       OK ] ChessAttackDefenseTest.BatchProcessing (0 ms)
+[ RUN      ] ChessAttackDefenseTest.ComputePlanes
+[       OK ] ChessAttackDefenseTest.ComputePlanes (0 ms)
+[----------] 11 tests from ChessAttackDefenseTest (0 ms total)
+
+[----------] 13 tests from GoAttackDefenseTest
+[ RUN      ] GoAttackDefenseTest.CaptureDetection
+[       OK ] GoAttackDefenseTest.CaptureDetection (0 ms)
+[ RUN      ] GoAttackDefenseTest.AtariDefense
+[       OK ] GoAttackDefenseTest.AtariDefense (0 ms)
+[ RUN      ] GoAttackDefenseTest.EyeCreation
+[       OK ] GoAttackDefenseTest.EyeCreation (0 ms)
+[ RUN      ] GoAttackDefenseTest.MultipleCaptures
+[       OK ] GoAttackDefenseTest.MultipleCaptures (0 ms)
+[ RUN      ] GoAttackDefenseTest.LadderCapture
+[       OK ] GoAttackDefenseTest.LadderCapture (0 ms)
+[ RUN      ] GoAttackDefenseTest.KoSituation
+[       OK ] GoAttackDefenseTest.KoSituation (0 ms)
+[ RUN      ] GoAttackDefenseTest.TerritoryEnclosure
+[       OK ] GoAttackDefenseTest.TerritoryEnclosure (0 ms)
+[ RUN      ] GoAttackDefenseTest.ConnectionDefense
+[       OK ] GoAttackDefenseTest.ConnectionDefense (0 ms)
+[ RUN      ] GoAttackDefenseTest.TwoEyesLife
+[       OK ] GoAttackDefenseTest.TwoEyesLife (0 ms)
+[ RUN      ] GoAttackDefenseTest.Snapback
+[       OK ] GoAttackDefenseTest.Snapback (0 ms)
+[ RUN      ] GoAttackDefenseTest.ComputePlanes
+[       OK ] GoAttackDefenseTest.ComputePlanes (5 ms)
+[ RUN      ] GoAttackDefenseTest.SmallBoardCapture
+[       OK ] GoAttackDefenseTest.SmallBoardCapture (0 ms)
+[ RUN      ] GoAttackDefenseTest.BatchProcessing
+[       OK ] GoAttackDefenseTest.BatchProcessing (0 ms)
+[----------] 13 tests from GoAttackDefenseTest (6 ms total)
+
+[----------] 2 tests from AttackDefenseFactoryTest
+[ RUN      ] AttackDefenseFactoryTest.CreateModules
+[       OK ] AttackDefenseFactoryTest.CreateModules (0 ms)
+[ RUN      ] AttackDefenseFactoryTest.InvalidGameType
+[       OK ] AttackDefenseFactoryTest.InvalidGameType (0 ms)
+[----------] 2 tests from AttackDefenseFactoryTest (0 ms total)
+
+[----------] 18 tests from GomokuPatternTest
+[ RUN      ] GomokuPatternTest.OpenThreeHorizontalPerfect
+[       OK ] GomokuPatternTest.OpenThreeHorizontalPerfect (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeVerticalPerfect
+[       OK ] GomokuPatternTest.OpenThreeVerticalPerfect (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeDiagonalMain
+[       OK ] GomokuPatternTest.OpenThreeDiagonalMain (0 ms)
+[ RUN      ] GomokuPatternTest.OpenThreeDiagonalAnti
+[       OK ] GomokuPatternTest.OpenThreeDiagonalAnti (0 ms)
+[ RUN      ] GomokuPatternTest.BrokenThreePattern
+[       OK ] GomokuPatternTest.BrokenThreePattern (0 ms)
+[ RUN      ] GomokuPatternTest.OpenFourCreation
+[       OK ] GomokuPatternTest.OpenFourCreation (0 ms)
+[ RUN      ] GomokuPatternTest.WinningMoveHorizontal
+[       OK ] GomokuPatternTest.WinningMoveHorizontal (0 ms)
+[ RUN      ] GomokuPatternTest.WinningMoveVertical
+[       OK ] GomokuPatternTest.WinningMoveVertical (0 ms)
+[ RUN      ] GomokuPatternTest.BlockOpponentOpenThree
+[       OK ] GomokuPatternTest.BlockOpponentOpenThree (0 ms)
+[ RUN      ] GomokuPatternTest.BlockOpponentOpenFour
+[       OK ] GomokuPatternTest.BlockOpponentOpenFour (0 ms)
+[ RUN      ] GomokuPatternTest.BlockWinningMove
+[       OK ] GomokuPatternTest.BlockWinningMove (0 ms)
+[ RUN      ] GomokuPatternTest.DoubleThreats
+[       OK ] GomokuPatternTest.DoubleThreats (0 ms)
+[ RUN      ] GomokuPatternTest.ForkCreation
+[       OK ] GomokuPatternTest.ForkCreation (0 ms)
+[ RUN      ] GomokuPatternTest.BoardEdgePatterns
+[       OK ] GomokuPatternTest.BoardEdgePatterns (0 ms)
+[ RUN      ] GomokuPatternTest.InvalidMoves
+[       OK ] GomokuPatternTest.InvalidMoves (0 ms)
+[ RUN      ] GomokuPatternTest.BatchConsistency
+[       OK ] GomokuPatternTest.BatchConsistency (0 ms)
+[ RUN      ] GomokuPatternTest.CountMultipleOpenThrees
+[       OK ] GomokuPatternTest.CountMultipleOpenThrees (0 ms)
+[ RUN      ] GomokuPatternTest.LargeBatchPerformance
+[       OK ] GomokuPatternTest.LargeBatchPerformance (4 ms)
+[----------] 18 tests from GomokuPatternTest (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 147 tests from 13 test suites ran. (143 ms total)
+[  PASSED  ] 147 tests.
+<end of output>
+Test time =   0.15 sec
+----------------------------------------------------------
+Test Passed.
+"all_tests" end time: Jun 11 20:48 KST
+"all_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Jun 11 20:48 KST

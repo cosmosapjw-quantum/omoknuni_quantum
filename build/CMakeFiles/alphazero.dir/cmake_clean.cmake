@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/alphazero.dir/link.d"
   "CMakeFiles/alphazero.dir/src/core/game_export.cpp.o"
   "CMakeFiles/alphazero.dir/src/core/game_export.cpp.o.d"
   "CMakeFiles/alphazero.dir/src/core/igamestate.cpp.o"

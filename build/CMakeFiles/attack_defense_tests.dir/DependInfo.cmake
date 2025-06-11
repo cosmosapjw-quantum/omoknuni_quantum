@@ -8,9 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cosmos/omoknuni_quantum/tests/utils/attack_defense_test.cpp" "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o" "gcc" "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
-  "/home/cosmos/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp" "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o" "gcc" "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d"
-  "" "bin/Release/attack_defense_tests" "gcc" "CMakeFiles/attack_defense_tests.dir/link.d"
+  "/home/cosmo/omoknuni_quantum/tests/utils/attack_defense_test.cpp" "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o" "gcc" "CMakeFiles/attack_defense_tests.dir/tests/utils/attack_defense_test.cpp.o.d"
+  "/home/cosmo/omoknuni_quantum/tests/utils/gomoku_attack_defense_test.cpp" "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o" "gcc" "CMakeFiles/attack_defense_tests.dir/tests/utils/gomoku_attack_defense_test.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.
