@@ -40,12 +40,12 @@ except Exception as e:
 @dataclass
 class CSRTreeConfig:
     """Configuration for CSR tree format"""
-    max_nodes: int = 1_000_000
-    max_edges: int = 5_000_000  # Estimate: ~5 edges per node on average
+    max_nodes: int = 0  # 0 means no limit (will use float('inf'))
+    max_edges: int = 0  # 0 means no limit, will grow dynamically
     device: str = 'cuda'
     dtype_indices: 'torch.dtype' = None  # Will be set to torch.int32 in __post_init__
-    dtype_actions: 'torch.dtype' = None  # Will be set to torch.int16 in __post_init__
-    dtype_values: 'torch.dtype' = None   # Will be set to torch.float16 in __post_init__
+    dtype_actions: 'torch.dtype' = None  # Will be set to torch.int32 in __post_init__
+    dtype_values: 'torch.dtype' = None   # Will be set to torch.float32 in __post_init__
     
     # Performance tuning
     initial_capacity_factor: float = 0.1  # Start with 10% of max capacity
@@ -100,7 +100,7 @@ class CSRTree:
         self.num_edges = 0
         # Remove artificial node limit - use dynamic growth
         self.max_nodes = config.max_nodes if config.max_nodes > 0 else float('inf')
-        self.max_edges = config.max_edges
+        self.max_edges = config.max_edges if config.max_edges > 0 else float('inf')
         
         # Initialize storage
         self._init_node_storage()
@@ -151,7 +151,8 @@ class CSRTree:
         
     def _init_node_storage(self):
         """Initialize node data storage"""
-        n = self.max_nodes
+        # Start with smaller initial allocation if no max_nodes specified
+        n = int(self.config.max_nodes) if self.config.max_nodes > 0 else 100000
         device = self.device
         
         # Node statistics
@@ -176,15 +177,21 @@ class CSRTree:
         self.node_states = {}  # Dict mapping node index to game state
         
         # For compatibility with wave engine - children lookup table
-        self.children = torch.full((n, 361), -1, device=device, dtype=torch.int32)  # Max 361 for Go
+        # Allocate based on game type: Go=361, Gomoku=225, Chess=64
+        max_children = 512  # Use larger size to handle any game type safely
+        self.children = torch.full((n, max_children), -1, device=device, dtype=torch.int32)
         
     def _init_csr_storage(self):
         """Initialize CSR format storage"""
         # Start with reduced capacity for memory efficiency
-        initial_edges = int(self.max_edges * self.config.initial_capacity_factor)
+        if self.config.max_edges > 0:
+            initial_edges = int(self.config.max_edges * self.config.initial_capacity_factor)
+        else:
+            initial_edges = 50000  # Default initial capacity
         
         # CSR row pointers (one per node + 1)
-        self.row_ptr = torch.zeros(self.max_nodes + 1, device=self.device, 
+        initial_nodes = int(self.config.max_nodes) if self.config.max_nodes > 0 else 100000
+        self.row_ptr = torch.zeros(initial_nodes + 1, device=self.device, 
                                   dtype=self.config.dtype_indices)
         
         # CSR column indices (child node IDs)
@@ -217,10 +224,11 @@ class CSRTree:
         """Grow edge storage when capacity is exceeded"""
         new_capacity = max(min_required, 
                           int(self.edge_capacity * self.config.growth_factor))
-        new_capacity = min(new_capacity, self.max_edges)
         
-        if new_capacity <= self.edge_capacity:
-            raise RuntimeError(f"Cannot grow edge storage beyond {self.max_edges}")
+        if self.max_edges != float('inf'):
+            new_capacity = min(new_capacity, int(self.max_edges))
+            if new_capacity <= self.edge_capacity:
+                raise RuntimeError(f"Cannot grow edge storage beyond {self.max_edges}")
             
         # Allocate new tensors
         new_col_indices = torch.zeros(new_capacity, device=self.device,
@@ -243,10 +251,66 @@ class CSRTree:
         
         self.stats['memory_reallocations'] += 1
         
+    def _grow_node_storage(self):
+        """Grow node storage when capacity is exceeded"""
+        current_size = len(self.visit_counts)
+        new_size = int(current_size * self.config.growth_factor)
+        
+        if self.max_nodes != float('inf'):
+            new_size = min(new_size, int(self.max_nodes))
+            if new_size <= current_size:
+                raise RuntimeError(f"Cannot grow node storage beyond {self.max_nodes}")
+        
+        # Allocate new tensors
+        device = self.device
+        new_visit_counts = torch.zeros(new_size, device=device, dtype=torch.int32)
+        new_value_sums = torch.zeros(new_size, device=device, dtype=self.config.dtype_values)
+        new_node_priors = torch.zeros(new_size, device=device, dtype=self.config.dtype_values)
+        new_virtual_loss_counts = torch.zeros(new_size, device=device, dtype=torch.int32)
+        new_parent_indices = torch.full((new_size,), -1, device=device, dtype=torch.int32)
+        new_parent_actions = torch.full((new_size,), -1, device=device, dtype=self.config.dtype_actions)
+        new_flags = torch.zeros(new_size, device=device, dtype=torch.uint8)
+        new_phases = torch.zeros(new_size, device=device, dtype=self.config.dtype_values)
+        new_children = torch.full((new_size, self.children.shape[1]), -1, device=device, dtype=torch.int32)
+        
+        # Copy existing data
+        new_visit_counts[:current_size] = self.visit_counts
+        new_value_sums[:current_size] = self.value_sums
+        new_node_priors[:current_size] = self.node_priors
+        new_virtual_loss_counts[:current_size] = self.virtual_loss_counts
+        new_parent_indices[:current_size] = self.parent_indices
+        new_parent_actions[:current_size] = self.parent_actions
+        new_flags[:current_size] = self.flags
+        new_phases[:current_size] = self.phases
+        new_children[:current_size] = self.children
+        
+        # Replace old tensors
+        self.visit_counts = new_visit_counts
+        self.value_sums = new_value_sums
+        self.node_priors = new_node_priors
+        self.virtual_loss_counts = new_virtual_loss_counts
+        self.parent_indices = new_parent_indices
+        self.parent_actions = new_parent_actions
+        self.flags = new_flags
+        self.phases = new_phases
+        self.children = new_children
+        
+        # Also grow row_ptr if needed
+        if new_size + 1 > len(self.row_ptr):
+            new_row_ptr = torch.zeros(new_size + 1, device=device, dtype=self.config.dtype_indices)
+            new_row_ptr[:len(self.row_ptr)] = self.row_ptr
+            self.row_ptr = new_row_ptr
+        
+        self.stats['memory_reallocations'] += 1
+        
     def add_root(self, prior: float = 1.0, state: Optional[Any] = None) -> int:
         """Add root node and return its index"""
-        if self.num_nodes >= self.max_nodes:
+        if self.max_nodes != float('inf') and self.num_nodes >= self.max_nodes:
             raise RuntimeError(f"Tree full: {self.num_nodes} nodes")
+        
+        # Check if we need to grow storage
+        if self.num_nodes >= len(self.visit_counts):
+            self._grow_node_storage()
             
         idx = self.num_nodes
         self.num_nodes += 1
@@ -289,8 +353,13 @@ class CSRTree:
     def _add_child_direct(self, parent_idx: int, action: int, child_prior: float, 
                          child_state: Optional[Any] = None) -> int:
         """Add a child node directly (non-batched)"""
-        if self.num_nodes >= self.max_nodes:
+        if self.max_nodes != float('inf') and self.num_nodes >= self.max_nodes:
             raise RuntimeError(f"Tree full: {self.num_nodes} nodes")
+        
+        # Check if we need to grow node storage
+        if self.num_nodes >= len(self.visit_counts):
+            self._grow_node_storage()
+            
         if self.num_edges >= self.edge_capacity:
             self._grow_edge_storage(self.num_edges + 1)
             
@@ -329,61 +398,101 @@ class CSRTree:
         self._needs_row_ptr_update = True
         
         # Update children lookup table for vectorized operations
+        # Fix: Add bounds checking to prevent infinite loop
+        children_updated = False
         for i in range(self.children.shape[1]):
             if self.children[parent_idx, i] == -1:
                 self.children[parent_idx, i] = child_idx
+                children_updated = True
                 break
+        
+        if not children_updated:
+            # Log warning but don't fail - CSR format is the primary storage
+            logger.warning(f"Children table full for node {parent_idx}, but CSR format still works")
         
         return child_idx
         
     def add_children_batch(self, parent_idx: int, actions: List[int], priors: List[float], 
                           states: Optional[List[Any]] = None) -> List[int]:
-        """Add multiple children to a parent node (batched)
+        """Add multiple children to a parent node - VECTORIZED VERSION
         
-        This is the optimized version that accumulates operations and executes in batches.
+        This is critical for performance - avoid Python loops!
         """
-        if not self.config.enable_batched_ops:
-            # Fallback to sequential addition
-            child_indices = []
-            for i, (action, prior) in enumerate(zip(actions, priors)):
-                state = states[i] if states else None
-                child_idx = self._add_child_direct(parent_idx, action, prior, state)
-                child_indices.append(child_idx)
-            return child_indices
-            
         if not actions:
             return []
-            
+        
         num_children = len(actions)
         
-        # Add to batch
-        batch_pos = self.batch_position
-        self.batch_parent_indices[batch_pos] = parent_idx
-        self.batch_num_children[batch_pos] = num_children
+        # Check capacity
+        if self.max_nodes != float('inf') and self.num_nodes + num_children > self.max_nodes:
+            raise RuntimeError(f"Tree full: {self.num_nodes + num_children} > {self.max_nodes}")
         
-        # Vectorized fill of actions and priors
-        if isinstance(actions, list):
-            actions = torch.tensor(actions, device=self.device, dtype=torch.int32)
-        if isinstance(priors, list):
-            priors = torch.tensor(priors, device=self.device, dtype=torch.float32)
+        # Grow storage if needed
+        while self.num_nodes + num_children > len(self.visit_counts):
+            self._grow_node_storage()
             
-        self.batch_actions[batch_pos, :num_children] = actions[:num_children]
-        self.batch_priors[batch_pos, :num_children] = priors[:num_children]
+        if self.num_edges + num_children > self.edge_capacity:
+            self._grow_edge_storage(self.num_edges + num_children)
         
+        # Allocate child indices
+        start_idx = self.num_nodes
+        child_indices = list(range(start_idx, start_idx + num_children))
+        
+        # Convert to tensors for vectorized operations
+        child_indices_tensor = torch.arange(start_idx, start_idx + num_children, 
+                                          device=self.device, dtype=torch.int32)
+        actions_tensor = torch.tensor(actions, device=self.device, dtype=self.config.dtype_actions)
+        priors_tensor = torch.tensor(priors, device=self.device, dtype=self.config.dtype_values)
+        
+        # Vectorized node initialization
+        self.visit_counts[child_indices_tensor] = 0
+        self.value_sums[child_indices_tensor] = 0.0
+        self.node_priors[child_indices_tensor] = priors_tensor
+        self.parent_indices[child_indices_tensor] = parent_idx
+        self.parent_actions[child_indices_tensor] = actions_tensor
+        self.flags[child_indices_tensor] = 0
+        self.phases[child_indices_tensor] = 0.0
+        
+        # Add to CSR structure
+        start_edge = self.num_edges
+        edge_indices = torch.arange(start_edge, start_edge + num_children, device=self.device)
+        self.col_indices[edge_indices] = child_indices_tensor
+        self.edge_actions[edge_indices] = actions_tensor
+        self.edge_priors[edge_indices] = priors_tensor
+        
+        # Update counts
+        self.num_nodes += num_children
+        self.num_edges += num_children
+        
+        # Update atomic counters
+        self.node_counter[0] = self.num_nodes
+        self.edge_counter[0] = self.num_edges
+        
+        # Mark for row pointer update
+        self._needs_row_ptr_update = True
+        
+        # Update children lookup table (vectorized)
+        # Find first empty slots
+        parent_children = self.children[parent_idx]
+        empty_mask = parent_children == -1
+        empty_indices = torch.where(empty_mask)[0]
+        
+        if len(empty_indices) >= num_children:
+            # Fill slots
+            self.children[parent_idx, empty_indices[:num_children]] = child_indices_tensor
+        else:
+            # Not enough slots - log warning but continue
+            if len(empty_indices) > 0:
+                self.children[parent_idx, empty_indices] = child_indices_tensor[:len(empty_indices)]
+            logger.warning(f"Children table nearly full for node {parent_idx}")
+        
+        # Store game states if provided
         if states:
-            # Store state reference
-            if batch_pos < len(self.batch_states) and len(states) > 0:
-                self.batch_states[batch_pos] = (0, states[0])  # Simplified for now
-                    
-        self.batch_position += 1
+            for i, (child_idx, state) in enumerate(zip(child_indices, states)):
+                if state is not None:
+                    self.node_states[child_idx] = state
         
-        # Execute batch if full
-        if self.batch_position >= self.config.batch_size:
-            return self._execute_batch_add()[-num_children:]  # Return indices for this call
-        
-        # For now, return placeholder indices (will be updated when batch executes)
-        start_idx = self.node_counter[0].item() if hasattr(self, 'node_counter') else self.num_nodes
-        return list(range(start_idx, start_idx + num_children))
+        return child_indices
     
     def flush_batch(self) -> None:
         """Force execution of any pending batched operations"""
@@ -522,8 +631,13 @@ class CSRTree:
         """Vectorized implementation of adding multiple children"""
         num_children = len(parent_indices)
         
-        if self.num_nodes + num_children > self.max_nodes:
+        if self.max_nodes != float('inf') and self.num_nodes + num_children > self.max_nodes:
             raise RuntimeError(f"Tree full: {self.num_nodes + num_children} > {self.max_nodes}")
+        
+        # Check if we need to grow node storage
+        while self.num_nodes + num_children > len(self.visit_counts):
+            self._grow_node_storage()
+            
         if self.num_edges + num_children > self.edge_capacity:
             self._grow_edge_storage(self.num_edges + num_children)
         

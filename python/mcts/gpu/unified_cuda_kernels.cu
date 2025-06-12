@@ -244,6 +244,116 @@ __global__ void quantum_interference_kernel(
 }
 
 // ============================================================================
+// Game State Management Kernels
+// ============================================================================
+
+// Kernel to apply moves to game states in batch
+__global__ void batch_apply_moves_kernel(
+    int8_t* __restrict__ boards,           // Board states [num_states x board_size x board_size]
+    int8_t* __restrict__ current_players,  // Current player for each state
+    int16_t* __restrict__ move_counts,     // Move counter for each state
+    int16_t* __restrict__ move_history,    // Move history [num_states x history_size]
+    const int* __restrict__ state_indices, // Which states to update
+    const int* __restrict__ actions,       // Actions to apply
+    const int batch_size,
+    const int board_size,
+    const int history_size,
+    const int game_type  // 0=chess, 1=go, 2=gomoku
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= batch_size) return;
+    
+    int state_idx = state_indices[tid];
+    int action = actions[tid];
+    
+    if (action < 0) return;  // Invalid action
+    
+    if (game_type == 2 || game_type == 1) {  // Gomoku or Go
+        // Convert action to board coordinates
+        int row = action / board_size;
+        int col = action % board_size;
+        
+        // Get current player
+        int8_t player = current_players[state_idx];
+        
+        // Place stone on board
+        int board_offset = state_idx * board_size * board_size;
+        boards[board_offset + row * board_size + col] = player;
+        
+        // Update move history (shift left and add new move)
+        int history_offset = state_idx * history_size;
+        for (int i = 0; i < history_size - 1; i++) {
+            move_history[history_offset + i] = move_history[history_offset + i + 1];
+        }
+        move_history[history_offset + history_size - 1] = action;
+        
+        // Switch player
+        current_players[state_idx] = (player == 1) ? 2 : 1;
+        
+        // Increment move count
+        move_counts[state_idx]++;
+    }
+    // Chess would require more complex move application
+}
+
+// Kernel to generate legal moves mask for multiple states
+__global__ void generate_legal_moves_mask_kernel(
+    const int8_t* __restrict__ boards,     // Board states
+    const int8_t* __restrict__ metadata,   // Game-specific metadata
+    bool* __restrict__ legal_mask,         // Output: legal moves mask
+    int* __restrict__ move_counts,         // Output: number of legal moves per state
+    const int* __restrict__ state_indices, // States to process
+    const int batch_size,
+    const int board_size,
+    const int action_space_size,
+    const int game_type
+) {
+    // Grid-stride loop for efficiency
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    
+    // Each thread processes multiple actions
+    for (int idx = tid; idx < batch_size * action_space_size; idx += stride) {
+        int batch_idx = idx / action_space_size;
+        int action_idx = idx % action_space_size;
+        
+        if (batch_idx >= batch_size) continue;
+        
+        int state_idx = state_indices[batch_idx];
+        int board_offset = state_idx * board_size * board_size;
+        
+        bool is_legal = false;
+        
+        if (game_type == 2) {  // Gomoku
+            // For Gomoku, legal moves are empty squares
+            if (action_idx < board_size * board_size) {
+                is_legal = (boards[board_offset + action_idx] == 0);
+            }
+        } else if (game_type == 1) {  // Go
+            // For Go, check empty squares and ko rule
+            if (action_idx < board_size * board_size) {
+                is_legal = (boards[board_offset + action_idx] == 0);
+                // TODO: Check ko point from metadata
+            }
+        }
+        // Chess would require complex legal move generation
+        
+        // Write result
+        legal_mask[batch_idx * action_space_size + action_idx] = is_legal;
+        
+        // Count legal moves (first thread per batch)
+        if (action_idx == 0) {
+            atomicAdd(&move_counts[batch_idx], 0);  // Initialize
+        }
+        __syncthreads();
+        
+        if (is_legal) {
+            atomicAdd(&move_counts[batch_idx], 1);
+        }
+    }
+}
+
+// ============================================================================
 // Tree Building Kernels
 // ============================================================================
 
@@ -882,6 +992,80 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> phase_kicked_policy_cuda
 }
 
 // ============================================================================
+// C++ Wrapper Functions for New Kernels
+// ============================================================================
+
+void batch_apply_moves_cuda(
+    torch::Tensor boards,
+    torch::Tensor current_players,
+    torch::Tensor move_counts,
+    torch::Tensor move_history,
+    torch::Tensor state_indices,
+    torch::Tensor actions,
+    int game_type
+) {
+    const int batch_size = state_indices.size(0);
+    const int board_size = boards.size(1);  // Assuming square board
+    const int history_size = move_history.size(1);
+    
+    const int threads = 256;
+    const int blocks = (batch_size + threads - 1) / threads;
+    
+    batch_apply_moves_kernel<<<blocks, threads>>>(
+        boards.data_ptr<int8_t>(),
+        current_players.data_ptr<int8_t>(),
+        move_counts.data_ptr<int16_t>(),
+        move_history.data_ptr<int16_t>(),
+        state_indices.data_ptr<int>(),
+        actions.data_ptr<int>(),
+        batch_size,
+        board_size,
+        history_size,
+        game_type
+    );
+    
+    cudaDeviceSynchronize();
+}
+
+torch::Tensor generate_legal_moves_mask_cuda(
+    torch::Tensor boards,
+    torch::Tensor metadata,
+    torch::Tensor state_indices,
+    int action_space_size,
+    int game_type
+) {
+    const int batch_size = state_indices.size(0);
+    const int board_size = boards.size(1);  // Assuming square board
+    
+    // Allocate output tensors
+    auto legal_mask = torch::zeros({batch_size, action_space_size}, 
+                                  torch::dtype(torch::kBool).device(boards.device()));
+    auto move_counts = torch::zeros({batch_size}, 
+                                   torch::dtype(torch::kInt32).device(boards.device()));
+    
+    // Launch kernel with grid-stride pattern
+    const int threads = 256;
+    const int total_work = batch_size * action_space_size;
+    const int blocks = std::min((total_work + threads - 1) / threads, 65535);
+    
+    generate_legal_moves_mask_kernel<<<blocks, threads>>>(
+        boards.data_ptr<int8_t>(),
+        metadata.data_ptr<int8_t>(),
+        legal_mask.data_ptr<bool>(),
+        move_counts.data_ptr<int>(),
+        state_indices.data_ptr<int>(),
+        batch_size,
+        board_size,
+        action_space_size,
+        game_type
+    );
+    
+    cudaDeviceSynchronize();
+    
+    return legal_mask;
+}
+
+// ============================================================================
 // Python Bindings
 // ============================================================================
 
@@ -904,4 +1088,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           "Fused MinHash signature computation with interference (CUDA)");
     m.def("phase_kicked_policy", &phase_kicked_policy_cuda,
           "Apply phase kicks to policy based on uncertainty (CUDA)");
+    m.def("batch_apply_moves", &batch_apply_moves_cuda,
+          "Apply moves to game states in batch (CUDA)");
+    m.def("generate_legal_moves_mask", &generate_legal_moves_mask_cuda,
+          "Generate legal moves mask for multiple states (CUDA)");
 }

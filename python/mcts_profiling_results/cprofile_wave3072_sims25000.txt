@@ -1,0 +1,62 @@
+cProfile Report
+Configuration: wave_size=3072, simulations=25000
+Performance: 23,141 sims/s
+================================================================================
+         215134 function calls (159352 primitive calls) in 1.078 seconds
+
+   Ordered by: cumulative time
+   List reduced from 214 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      2/1    0.000    0.000    1.078    1.078 /home/cosmo/omoknuni_quantum/python/mcts/core/mcts.py:134(search)
+        1    0.000    0.000    1.078    1.078 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:130(search)
+        9    0.000    0.000    1.076    0.120 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:205(_search_wave)
+       36    0.001    0.000    1.040    0.029 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:390(_profile_phase)
+        9    0.000    0.000    0.524    0.058 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:368(instrumented_expand)
+        9    0.000    0.000    0.388    0.043 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:365(instrumented_select)
+        9    0.041    0.005    0.305    0.034 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:289(_expand_batch)
+       91    0.149    0.002    0.264    0.003 {built-in method time.sleep}
+        9    0.068    0.008    0.260    0.029 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:226(_select_batch)
+        9    0.000    0.000    0.183    0.020 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:371(instrumented_evaluate)
+       48    0.030    0.001    0.154    0.003 /home/cosmo/omoknuni_quantum/python/mcts/gpu/gpu_game_states.py:213(clone_states)
+      184    0.017    0.000    0.130    0.001 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_common.py:452(wrapper)
+      285    0.126    0.000    0.126    0.000 {built-in method torch.where}
+       30    0.049    0.002    0.110    0.004 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:972(batch_action_to_child)
+       48    0.058    0.001    0.097    0.002 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:415(add_children_batch)
+       92    0.016    0.000    0.089    0.001 /home/cosmo/venv/lib/python3.12/site-packages/psutil/__init__.py:1964(virtual_memory)
+       48    0.011    0.000    0.072    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/gpu_game_states.py:119(allocate_states)
+       30    0.000    0.000    0.064    0.002 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:782(batch_select_ucb_optimized)
+      164    0.064    0.000    0.064    0.000 {method 'cpu' of 'torch._C.TensorBase' objects}
+       92    0.012    0.000    0.062    0.001 /home/cosmo/venv/lib/python3.12/site-packages/psutil/__init__.py:1009(cpu_percent)
+      348    0.006    0.000    0.060    0.000 /home/cosmo/venv/lib/python3.12/site-packages/torch/cuda/memory.py:225(memory_stats)
+       48    0.058    0.001    0.058    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/gpu_game_states.py:153(_reset_states)
+       39    0.050    0.001    0.052    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:738(batch_get_children)
+56028/348    0.035    0.000    0.045    0.000 /home/cosmo/venv/lib/python3.12/site-packages/torch/cuda/memory.py:314(_recurse_add_to_result)
+       48    0.042    0.001    0.042    0.001 {built-in method torch.repeat_interleave}
+       48    0.035    0.001    0.035    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:1198(set_expanded)
+       30    0.000    0.000    0.035    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:1257(ensure_consistent)
+      162    0.033    0.000    0.033    0.000 {built-in method torch.tensor}
+      164    0.001    0.000    0.032    0.000 /home/cosmo/venv/lib/python3.12/site-packages/torch/cuda/memory.py:523(memory_allocated)
+        9    0.020    0.002    0.032    0.004 /home/cosmo/omoknuni_quantum/python/mcts/gpu/csr_tree.py:1205(_rebuild_row_pointers)
+      184    0.001    0.000    0.030    0.000 /home/cosmo/venv/lib/python3.12/site-packages/torch/cuda/memory.py:561(memory_reserved)
+       30    0.005    0.000    0.026    0.001 /home/cosmo/omoknuni_quantum/python/mcts/gpu/unified_kernels.py:111(batch_ucb_selection)
+        9    0.013    0.001    0.024    0.003 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:400(_evaluate_batch)
+        9    0.000    0.000    0.020    0.002 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:374(instrumented_backup)
+  276/184    0.001    0.000    0.014    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_pslinux.py:1642(wrapper)
+       48    0.010    0.000    0.014    0.000 /home/cosmo/omoknuni_quantum/python/mcts/gpu/gpu_game_states.py:299(apply_moves)
+      109    0.000    0.000    0.012    0.000 /home/cosmo/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:1030(synchronize)
+        9    0.005    0.001    0.011    0.001 /home/cosmo/omoknuni_quantum/python/mcts/core/unified_mcts.py:459(_backup_batch)
+       74    0.000    0.000    0.010    0.000 {built-in method builtins.next}
+       74    0.000    0.000    0.010    0.000 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:186(timer)
+      109    0.009    0.000    0.010    0.000 {built-in method torch._C._cuda_synchronize}
+        9    0.009    0.001    0.009    0.001 {built-in method torch.bincount}
+       92    0.000    0.000    0.009    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_pslinux.py:1863(cpu_times)
+       37    0.000    0.000    0.009    0.000 /usr/lib/python3.12/contextlib.py:141(__exit__)
+       92    0.005    0.000    0.009    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_pslinux.py:352(virtual_memory)
+       37    0.000    0.000    0.008    0.000 /home/cosmo/omoknuni_quantum/python/mcts_comprehensive_profiler.py:168(end_timer)
+       92    0.001    0.000    0.008    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_pslinux.py:1701(_parse_stat_file)
+       92    0.002    0.000    0.007    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/__init__.py:1113(memory_info)
+       92    0.000    0.000    0.007    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_common.py:812(bcat)
+      276    0.000    0.000    0.007    0.000 /home/cosmo/venv/lib/python3.12/site-packages/psutil/_common.py:765(open_binary)
+
+

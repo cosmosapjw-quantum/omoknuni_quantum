@@ -58,7 +58,8 @@
       "Bash(PYTHONPATH=/home/cosmos/omoknuni_quantum/python:$PYTHONPATH python test_illegal_move_debug.py)",
       "Bash(for file in configs/chess_classical.yaml configs/go_19x19_quantum.yaml configs/gomoku_classical.yaml configs/gomoku_one_loop.yaml configs/minimal_test.yaml)",
       "Bash(do)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(jq:*)"
     ],
     "deny": []
   },

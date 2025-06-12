@@ -18,16 +18,12 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 import logging
 
-from .wave_mcts import WaveMCTS, WaveMCTSConfig
-from .optimized_wave_mcts import OptimizedWaveMCTS
-from .cached_game_interface import CachedGameInterface, CacheConfig
-from .game_interface import GameInterface, GameType
+from .unified_mcts import UnifiedMCTS, UnifiedMCTSConfig
+from .game_interface import GameInterface, GameType as LegacyGameType
+from ..gpu.gpu_game_states import GameType
 from ..neural_networks.evaluator_pool import EvaluatorPool
 from ..neural_networks.simple_evaluator_wrapper import SimpleEvaluatorWrapper
-from ..utils.memory_pool import MemoryPoolManager, MemoryPoolConfig
-from ..gpu.csr_tree import CSRTreeConfig
 from ..quantum.quantum_features import QuantumConfig as QuantumMCTSConfig
-from ..quantum.path_integral import PathIntegralConfig
 
 logger = logging.getLogger(__name__)
 
@@ -43,32 +39,16 @@ class MCTSConfig:
     dirichlet_epsilon: float = 0.25
     
     # Wave parallelization
+    wave_size: Optional[int] = None  # Auto-determine if None
     min_wave_size: int = 1024
-    max_wave_size: int = 2048
-    adaptive_wave_sizing: bool = True
-    
-    # Performance targets
-    target_sims_per_second: int = 100000
-    
-    # Memory optimization
-    memory_pool_size_mb: int = 1024
-    cache_legal_moves: bool = True
-    cache_features: bool = True
-    use_zobrist_hashing: bool = True
+    max_wave_size: int = 4096
     
     # GPU optimization
     device: str = 'cuda'
-    use_mixed_precision: bool = True
-    use_cuda_graphs: bool = True
-    use_tensor_cores: bool = True
     
     # Quantum features (optional)
     enable_quantum: bool = False
     quantum_config: Optional[QuantumMCTSConfig] = None
-    
-    # Tree configuration
-    max_tree_nodes: int = 500000
-    tree_batch_size: int = 1024
     
     # Virtual loss for leaf parallelization
     enable_virtual_loss: bool = True
@@ -76,9 +56,21 @@ class MCTSConfig:
     
     # Game type
     game_type: GameType = GameType.GOMOKU
+    board_size: Optional[int] = None  # Auto-set based on game_type if None
     
-    # Performance optimization
-    use_optimized_implementation: bool = True  # Use OptimizedWaveMCTS for better CPU/GPU parallelization
+    # Legacy parameters (ignored)
+    adaptive_wave_sizing: bool = True
+    target_sims_per_second: int = 100000
+    memory_pool_size_mb: int = 1024
+    cache_legal_moves: bool = True
+    cache_features: bool = True
+    use_zobrist_hashing: bool = True
+    use_mixed_precision: bool = True
+    use_cuda_graphs: bool = True
+    use_tensor_cores: bool = True
+    max_tree_nodes: int = 500000
+    tree_batch_size: int = 1024
+    use_optimized_implementation: bool = True
 
 
 class MCTS:
@@ -100,70 +92,34 @@ class MCTS:
         self.config = config
         self.device = torch.device(config.device)
         
-        # Setup memory pool
-        self.memory_pool = MemoryPoolManager(MemoryPoolConfig(
-            tensor_pool_size_mb=config.memory_pool_size_mb,
-            device=config.device
-        ))
-        
-        # Setup game interface with caching
-        if game_interface is None:
-            game_interface = GameInterface(config.game_type)
-            
-        self.cached_game = CachedGameInterface(
-            game_interface,
-            CacheConfig(
-                max_legal_moves_cache=50000,
-                max_features_cache=50000,
-                use_zobrist_hashing=config.use_zobrist_hashing,
-                cache_ttl_seconds=3600
-            )
-        )
-        
-        # Setup evaluator pool if needed
-        if not isinstance(evaluator, EvaluatorPool):
-            # Wrap single evaluator
-            self.evaluator_pool = SimpleEvaluatorWrapper(evaluator, config.device)
-        else:
-            self.evaluator_pool = evaluator
-            
-        # Configure wave MCTS
-        wave_config = WaveMCTSConfig(
-            min_wave_size=config.min_wave_size,
-            max_wave_size=config.max_wave_size,
-            adaptive_wave_sizing=config.adaptive_wave_sizing,
-            target_sims_per_second=config.target_sims_per_second,
+        # Convert config to UnifiedMCTSConfig
+        unified_config = UnifiedMCTSConfig(
+            num_simulations=config.num_simulations,
             c_puct=config.c_puct,
+            temperature=config.temperature,
             dirichlet_alpha=config.dirichlet_alpha,
             dirichlet_epsilon=config.dirichlet_epsilon,
-            temperature=config.temperature,
-            use_memory_pools=True,
-            use_cuda_graphs=config.use_cuda_graphs,
-            use_tensor_cores=config.use_tensor_cores,
-            use_mixed_precision=config.use_mixed_precision,
+            wave_size=config.wave_size,
+            min_wave_size=config.min_wave_size,
+            max_wave_size=config.max_wave_size,
             device=config.device,
-            tree_config=CSRTreeConfig(
-                max_nodes=config.max_tree_nodes,
-                batch_size=config.tree_batch_size,
-                device=config.device,
-                enable_virtual_loss=config.enable_virtual_loss,
-                virtual_loss_value=config.virtual_loss_value
-                # Let CSRTreeConfig use its default dtypes (float32)
-            ),
-            cache_config=CacheConfig(
-                max_legal_moves_cache=config.cache_legal_moves,
-                max_features_cache=config.cache_features,
-                use_zobrist_hashing=config.use_zobrist_hashing
-            ),
-            quantum_config=config.quantum_config if config.enable_quantum else None
+            game_type=config.game_type,
+            board_size=config.board_size,
+            enable_quantum=config.enable_quantum,
+            quantum_config=config.quantum_config,
+            enable_virtual_loss=config.enable_virtual_loss,
+            virtual_loss_value=config.virtual_loss_value
         )
         
-        # Create wave MCTS - use optimized implementation if requested
-        if config.use_optimized_implementation and config.device == 'cuda':
-            logger.info("Using OptimizedWaveMCTS for better CPU/GPU parallelization")
-            self.wave_mcts = OptimizedWaveMCTS(wave_config, self.cached_game, self.evaluator_pool)
+        # Setup evaluator if needed
+        if not isinstance(evaluator, EvaluatorPool):
+            # Wrap single evaluator
+            self.evaluator = SimpleEvaluatorWrapper(evaluator, config.device)
         else:
-            self.wave_mcts = WaveMCTS(wave_config, self.cached_game, self.evaluator_pool)
+            self.evaluator = evaluator
+            
+        # Create unified MCTS
+        self.unified_mcts = UnifiedMCTS(unified_config, self.evaluator)
         
         # Statistics
         self.stats = {
@@ -171,28 +127,9 @@ class MCTS:
             'total_simulations': 0,
             'total_time': 0.0,
             'avg_sims_per_second': 0.0,
-            'peak_sims_per_second': 0.0
+            'peak_sims_per_second': 0.0,
+            'last_search_sims_per_second': 0.0
         }
-        
-        # Load custom CUDA kernels if available
-        self._load_cuda_kernels()
-        
-        
-    def _load_cuda_kernels(self):
-        """Load custom CUDA kernels if available"""
-        if torch.cuda.is_available():
-            import os
-            cuda_ops_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), 
-                'build_cuda', 
-                'custom_cuda_ops.so'
-            )
-            if os.path.exists(cuda_ops_path):
-                try:
-                    torch.ops.load_library(cuda_ops_path)
-                    pass  # Loaded successfully
-                except Exception as e:
-                    logger.warning(f"Failed to load CUDA kernels: {e}")
                     
     def search(self, state: Any, num_simulations: Optional[int] = None) -> np.ndarray:
         """Run MCTS search from given state
@@ -209,15 +146,8 @@ class MCTS:
             
         search_start = time.perf_counter()
         
-        # Clear caches periodically to prevent unbounded growth
-        if self.stats['total_searches'] % 100 == 0:
-            self.cached_game.clear_caches()
-            
-        # Reset memory pool frame
-        self.memory_pool.reset_frame()
-        
-        # Run wave-based search
-        policy = self.wave_mcts.search(state, num_simulations)
+        # Run unified MCTS search
+        policy = self.unified_mcts.search(state, num_simulations)
         
         # Update statistics
         elapsed = time.perf_counter() - search_start
@@ -236,6 +166,9 @@ class MCTS:
         )
         self.stats['last_search_sims_per_second'] = sims_per_sec
         
+        # Merge statistics from unified MCTS
+        unified_stats = self.unified_mcts.get_statistics()
+        self.stats.update(unified_stats)
         
         return policy
         
@@ -407,11 +340,10 @@ class MCTS:
         Args:
             action: The action that was taken
         """
-        self.wave_mcts.update_root(action)
-        
-        # CRITICAL: Clear caches after move to prevent stale legal moves
-        if hasattr(self.cached_game, 'clear_caches'):
-            self.cached_game.clear_caches()
+        # Unified MCTS manages its own tree updates
+        # For now, we'll reset the tree for simplicity
+        # In production, you'd want to reuse subtrees
+        self.unified_mcts.reset_tree()
         
     def get_best_action(self, state: Any) -> int:
         """Get best action for a state
@@ -440,18 +372,6 @@ class MCTS:
             Dictionary with performance metrics
         """
         stats = self.stats.copy()
-        
-        # Add wave MCTS statistics
-        wave_stats = self.wave_mcts.get_statistics()
-        stats['wave_stats'] = wave_stats
-        
-        # Add cache statistics
-        cache_stats = self.cached_game.get_cache_stats()
-        stats['cache_stats'] = cache_stats
-        
-        # Add memory pool statistics
-        pool_stats = self.memory_pool.get_stats()
-        stats['memory_pool'] = pool_stats
         
         # GPU memory usage
         if torch.cuda.is_available():
@@ -488,9 +408,6 @@ class MCTS:
                 self.config.use_mixed_precision = False
                 self.config.use_tensor_cores = False
                 
-            # Update wave MCTS config
-            self.wave_mcts.config.max_wave_size = self.config.max_wave_size
-            self.wave_mcts.config.min_wave_size = self.config.min_wave_size
             
             logger.debug(f"Optimized for {props.name}:")
             logger.debug(f"  Wave size: {self.config.min_wave_size}-{self.config.max_wave_size}")
@@ -581,9 +498,9 @@ class MCTS:
         """Shutdown MCTS and clean up resources"""
         logger.info("Shutting down MCTS...")
         
-        # Shutdown evaluator pool if it has shutdown method
-        if hasattr(self.evaluator_pool, 'shutdown'):
-            self.evaluator_pool.shutdown()
+        # Shutdown evaluator if it has shutdown method
+        if hasattr(self, 'evaluator') and hasattr(self.evaluator, 'shutdown'):
+            self.evaluator.shutdown()
         
         # Clear GPU memory
         if self.device.type == 'cuda':
