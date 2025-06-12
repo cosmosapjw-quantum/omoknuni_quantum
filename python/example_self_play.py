@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import logging
 
 # MCTS imports
-from mcts.core.optimized_mcts import MCTS, MCTSConfig
+from mcts.core.mcts import MCTS, MCTSConfig
 from mcts.gpu.gpu_game_states import GameType
 from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
 import alphazero_py

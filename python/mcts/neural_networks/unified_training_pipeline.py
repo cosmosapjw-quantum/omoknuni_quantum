@@ -201,19 +201,47 @@ class UnifiedTrainingPipeline:
             input_height=self.config.game.board_size,
             input_width=self.config.game.board_size,
             num_actions=action_size,
-            input_channels=20,  # Always use enhanced representation with 20 channels
+            input_channels=network_config.input_channels,  # Configurable input channels
             num_res_blocks=network_config.num_res_blocks,
             num_filters=network_config.num_filters,
             value_head_hidden_size=network_config.value_head_hidden_size
         )
     
     def _create_optimizer(self):
-        """Create optimizer"""
-        return optim.Adam(
-            self.model.parameters(),
-            lr=self.config.training.learning_rate,
-            weight_decay=self.config.training.weight_decay
-        )
+        """Create optimizer based on configuration"""
+        training_config = self.config.training
+        
+        if training_config.optimizer.lower() == "adam":
+            return optim.Adam(
+                self.model.parameters(),
+                lr=training_config.learning_rate,
+                betas=(training_config.adam_beta1, training_config.adam_beta2),
+                eps=training_config.adam_epsilon,
+                weight_decay=training_config.weight_decay
+            )
+        elif training_config.optimizer.lower() == "adamw":
+            return optim.AdamW(
+                self.model.parameters(),
+                lr=training_config.learning_rate,
+                betas=(training_config.adam_beta1, training_config.adam_beta2),
+                eps=training_config.adam_epsilon,
+                weight_decay=training_config.weight_decay
+            )
+        elif training_config.optimizer.lower() == "sgd":
+            return optim.SGD(
+                self.model.parameters(),
+                lr=training_config.learning_rate,
+                momentum=training_config.sgd_momentum,
+                nesterov=training_config.sgd_nesterov,
+                weight_decay=training_config.weight_decay
+            )
+        else:
+            logger.warning(f"Unknown optimizer {training_config.optimizer}, defaulting to Adam")
+            return optim.Adam(
+                self.model.parameters(),
+                lr=training_config.learning_rate,
+                weight_decay=training_config.weight_decay
+            )
     
     def _create_scheduler(self):
         """Create learning rate scheduler"""
@@ -249,7 +277,7 @@ class UnifiedTrainingPipeline:
             mcts_simulations=self.config.arena.mcts_simulations,
             c_puct=self.config.arena.c_puct,
             temperature=self.config.arena.temperature,
-            temperature_threshold=0,
+            temperature_threshold=self.config.mcts.temperature_threshold,  # Use configurable threshold
             device=self.config.mcts.device
         )
         
@@ -415,23 +443,63 @@ class UnifiedTrainingPipeline:
         
         return examples
     
+    def _create_quantum_config(self):
+        """Create quantum configuration from MCTS config"""
+        from mcts.quantum.quantum_features import QuantumConfig
+        
+        return QuantumConfig(
+            quantum_level=self.config.mcts.quantum_level.value,
+            enable_quantum=self.config.mcts.enable_quantum,
+            min_wave_size=self.config.mcts.min_wave_size,
+            optimal_wave_size=self.config.mcts.max_wave_size,
+            hbar_eff=self.config.mcts.quantum_coupling,
+            phase_kick_strength=self.config.mcts.phase_kick_strength,
+            interference_alpha=self.config.mcts.interference_alpha,
+            coupling_strength=self.config.mcts.quantum_coupling,
+            temperature=self.config.mcts.quantum_temperature,
+            decoherence_rate=self.config.mcts.decoherence_rate,
+            fast_mode=True,  # Enable fast mode for training
+            device=self.config.mcts.device,
+            use_mixed_precision=self.config.mcts.use_mixed_precision
+        )
+    
     def _play_single_game(self, evaluator, game_idx: int) -> List[GameExample]:
         """Play a single self-play game"""
         from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         
-        # Create MCTS with quantum features if enabled
+        # Create MCTS configuration from full config
         mcts_config = MCTSConfig(
+            # Core MCTS parameters
             num_simulations=self.config.mcts.num_simulations,
             c_puct=self.config.mcts.c_puct,
-            temperature=1.0,
+            temperature=self.config.mcts.temperature,  # Will be adjusted during play
             dirichlet_alpha=self.config.mcts.dirichlet_alpha,
             dirichlet_epsilon=self.config.mcts.dirichlet_epsilon,
+            
+            # Performance and wave parameters
+            min_wave_size=self.config.mcts.min_wave_size,
+            max_wave_size=self.config.mcts.max_wave_size,
+            adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
+            
+            # Memory and optimization
+            memory_pool_size_mb=self.config.mcts.memory_pool_size_mb,
+            max_tree_nodes=self.config.mcts.max_tree_nodes,
+            use_mixed_precision=self.config.mcts.use_mixed_precision,
+            use_cuda_graphs=self.config.mcts.use_cuda_graphs,
+            use_tensor_cores=self.config.mcts.use_tensor_cores,
+            
+            # Game and device configuration
             device=self.config.mcts.device,
             game_type=self.game_type,
-            min_wave_size=getattr(self.config.mcts, 'min_wave_size', self.config.mcts.wave_min_size),
-            max_wave_size=getattr(self.config.mcts, 'max_wave_size', self.config.mcts.wave_max_size),
-            adaptive_wave_sizing=getattr(self.config.mcts, 'adaptive_wave_sizing', self.config.mcts.wave_adaptive_sizing)
+            board_size=self.config.game.board_size,
+            
+            # Enable quantum features if configured
+            enable_quantum=self.config.mcts.enable_quantum,
+            quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
+            
+            # Enable debug logging from global config
+            enable_debug_logging=(self.config.log_level == "DEBUG")
         )
         
         # Create MCTS with quantum features if enabled
@@ -453,33 +521,40 @@ class UnifiedTrainingPipeline:
         game_id = f"iter{self.iteration}_game{game_idx}"
         
         for move_num in range(self.config.training.max_moves_per_game):
-            # Get action probabilities from MCTS
-            temperature = 1.0 if move_num < self.config.mcts.temperature_threshold else 0.0
+            # AlphaZero-style temperature annealing
+            # Use exploration temperature for first N moves, then switch to deterministic
+            if move_num < self.config.mcts.temperature_threshold:
+                # Exploration phase - use stochastic temperature
+                mcts.config.temperature = 1.0
+            else:
+                # Exploitation phase - deterministic play
+                mcts.config.temperature = 0.0
             
-            # Get full policy for storage
-            policy = mcts.get_action_probabilities(state, temperature=temperature)
+            # Search with MCTS
+            policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
             
+            # Convert to numpy if needed
+            if isinstance(policy, torch.Tensor):
+                policy = policy.cpu().numpy()
             
-            # Get only valid actions and their probabilities for sampling
-            try:
-                valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
-            except AttributeError as e:
-                # Fallback: get legal moves from game interface
-                legal_moves = self.game_interface.get_legal_moves(state)
-                
-                # Filter policy to only legal moves
-                legal_probs = policy[legal_moves]
-                legal_probs = legal_probs / legal_probs.sum()
-                valid_actions = legal_moves
-                valid_probs = legal_probs
-            
-            if not valid_actions:
-                # This should never happen in a properly implemented game
-                raise ValueError(f"No valid actions available at move {move_num}")
-            
-            
-            # Sample action from valid moves only
-            action = np.random.choice(valid_actions, p=valid_probs)
+            # Select move based on policy
+            # Note: MCTS already applies temperature scaling to visit counts using
+            # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
+            if mcts.config.temperature == 0:
+                # Deterministic - select highest probability move
+                action = np.argmax(policy)
+            else:
+                # Stochastic - sample from the temperature-scaled distribution
+                # Ensure we have a valid probability distribution
+                if np.sum(policy) > 0:
+                    policy = policy / np.sum(policy)  # Normalize
+                    action = np.random.choice(len(policy), p=policy)
+                else:
+                    # Fallback to uniform random if all probabilities are zero
+                    legal_moves = self.game_interface.get_legal_moves(state)
+                    if not legal_moves:
+                        raise ValueError(f"No legal actions available at move {move_num}")
+                    action = np.random.choice(legal_moves)
             
             
             # Store example (from current player's perspective)
@@ -495,8 +570,8 @@ class UnifiedTrainingPipeline:
             # Apply action
             state = self.game_interface.get_next_state(state, action)
             
-            # Update MCTS tree root for tree reuse
-            mcts.update_root(action)
+            # Reset MCTS tree for next search (no tree reuse for better exploration)
+            mcts.reset_tree()
             
             # Check terminal
             if self.game_interface.is_terminal(state):

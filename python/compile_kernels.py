@@ -672,8 +672,10 @@ def compile_cuda_kernels(force_rebuild=False, verbose=False):
         logger.info("Attempting fast inline CUDA compilation...")
         from torch.utils.cpp_extension import load_inline
         
-        # Read the CUDA source
-        cuda_source_path = gpu_dir / "custom_cuda_kernels_optimized.cu"
+        # Read the CUDA source - prefer unified kernels with quantum support
+        cuda_source_path = gpu_dir / "unified_cuda_kernels.cu"
+        if not cuda_source_path.exists():
+            cuda_source_path = gpu_dir / "custom_cuda_kernels_optimized.cu"
         if not cuda_source_path.exists():
             cuda_source_path = gpu_dir / "custom_cuda_kernels.cu"
         
@@ -690,12 +692,12 @@ def compile_cuda_kernels(force_rebuild=False, verbose=False):
             }
             """
             
-            # Try to compile inline
+            # Try to compile inline with quantum support
             module = load_inline(
                 name='mcts_cuda_kernels_inline',
                 cpp_sources=[cpp_source],
                 cuda_sources=[cuda_source],
-                functions=['batched_ucb_selection', 'parallel_backup'],
+                functions=['batched_ucb_selection', 'batched_ucb_selection_quantum', 'parallel_backup', 'quantum_interference'],
                 verbose=verbose,
                 extra_cuda_cflags=['-O3', '--use_fast_math']
             )

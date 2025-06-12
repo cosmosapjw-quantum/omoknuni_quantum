@@ -106,21 +106,16 @@ class MCTS:
                 temperature=config.temperature,
                 dirichlet_alpha=config.dirichlet_alpha,
                 dirichlet_epsilon=config.dirichlet_epsilon,
-                wave_size=config.wave_size or 8192,  # Default to 8192 for RTX 3060 Ti
-                min_wave_size=config.min_wave_size,
-                max_wave_size=config.max_wave_size,
+                min_wave_size=config.wave_size or config.min_wave_size,
+                max_wave_size=config.wave_size or config.max_wave_size,
                 adaptive_wave_sizing=False,  # Always false for best performance
                 device=config.device,
                 game_type=config.game_type,
-                board_size=config.board_size,
+                board_size=config.board_size or 15,  # Default to 15 for Gomoku
                 enable_quantum=config.enable_quantum,
                 quantum_config=config.quantum_config,
                 enable_virtual_loss=config.enable_virtual_loss,
-                virtual_loss_value=config.virtual_loss_value,
-                state_pool_size=1000000,  # 1M states for high performance
-                initial_children_per_expansion=10,
-                max_children_per_node=100,
-                progressive_expansion_threshold=5
+                virtual_loss_value=config.virtual_loss_value
             )
             
             # Wrap evaluator if needed

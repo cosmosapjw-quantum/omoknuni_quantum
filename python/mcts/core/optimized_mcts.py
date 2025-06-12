@@ -264,7 +264,45 @@ class MCTS:
         state_idx = state_indices[0].item()  # Convert to Python int
         
         # Convert CPU state to GPU state
-        if hasattr(root_state, 'to_tensor'):
+        if hasattr(root_state, 'get_tensor_representation'):
+            # For alphazero_py game states
+            tensor_repr = root_state.get_tensor_representation()
+            
+            if self.config.game_type == GameType.GOMOKU:
+                # Gomoku: 3 channels - current player stones, opponent stones, current player indicator
+                current_player = root_state.get_current_player()
+                
+                # Create board with absolute positions
+                # Player 1 (BLACK) = 1, Player 2 (WHITE) = -1, Empty = 0
+                board = np.zeros((self.config.board_size, self.config.board_size), dtype=np.int8)
+                
+                # Current player stones (from current player's perspective)
+                current_stones = tensor_repr[0]
+                opponent_stones = tensor_repr[1]
+                
+                if current_player == 1:  # BLACK
+                    board[current_stones > 0] = 1   # BLACK stones
+                    board[opponent_stones > 0] = -1  # WHITE stones
+                else:  # WHITE (current_player == 2)
+                    board[current_stones > 0] = -1  # WHITE stones
+                    board[opponent_stones > 0] = 1   # BLACK stones
+                
+                state_tensor = torch.tensor(board, dtype=torch.int8, device=self.device)
+                
+            elif self.config.game_type == GameType.GO:
+                # Go: 3 channels - black stones, white stones, current player
+                # Channel 0 is black stones, channel 1 is white stones (absolute, not relative)
+                board = np.zeros((self.config.board_size, self.config.board_size), dtype=np.int8)
+                board[tensor_repr[0] > 0] = 1   # Black stones
+                board[tensor_repr[1] > 0] = -1  # White stones
+                state_tensor = torch.tensor(board, dtype=torch.int8, device=self.device)
+                
+            else:  # Chess
+                # Chess: 12 channels for piece positions
+                # For now, just use a simplified representation
+                # TODO: Proper chess board representation
+                state_tensor = torch.zeros((8, 8), dtype=torch.int8, device=self.device)
+        elif hasattr(root_state, 'to_tensor'):
             state_tensor = root_state.to_tensor()
         else:
             # Handle board representation
@@ -282,8 +320,19 @@ class MCTS:
             # Reshape if flattened
             state_tensor = state_tensor.view(self.config.board_size, self.config.board_size)
         self.game_states.boards[state_idx] = state_tensor
-        self.game_states.current_player[state_idx] = getattr(root_state, 'current_player', 1)
-        self.game_states.move_count[state_idx] = getattr(root_state, 'move_count', 0)
+        
+        # Get current player
+        if hasattr(root_state, 'get_current_player'):
+            self.game_states.current_player[state_idx] = root_state.get_current_player()
+        else:
+            self.game_states.current_player[state_idx] = getattr(root_state, 'current_player', 1)
+        
+        # Get move count if available
+        if hasattr(root_state, 'get_move_history'):
+            move_history = root_state.get_move_history()
+            self.game_states.move_count[state_idx] = len(move_history)
+        else:
+            self.game_states.move_count[state_idx] = getattr(root_state, 'move_count', 0)
         self.game_states.is_terminal[state_idx] = False
         self.game_states.winner[state_idx] = 0
         
@@ -313,6 +362,8 @@ class MCTS:
         
         if self.config.profile_gpu_kernels:
             torch.cuda.synchronize()
+            if 'wave_total' not in self.kernel_timings:
+                self.kernel_timings['wave_total'] = 0
             self.kernel_timings['wave_total'] += time.perf_counter() - wave_start
         
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -362,10 +413,23 @@ class MCTS:
                 actions_tensor = children_data[1].unsqueeze(0)
                 priors_tensor = children_data[2].unsqueeze(0)
             
-            # Use optimized UCB selection (unless quantum features are enabled)
-            if hasattr(self.tree, 'batch_select_ucb_optimized') and not self.quantum_features:
+            # Use optimized UCB selection through tree method
+            if hasattr(self.tree, 'batch_select_ucb_optimized'):
+                # Prepare quantum parameters if enabled
+                quantum_params = {}
+                if self.quantum_features:
+                    quantum_params = {
+                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                        'uncertainty_table': getattr(self.quantum_features, 'uncertainty_table', torch.empty(0, device=self.device)),
+                        'hbar_eff': self.quantum_features.config.hbar_eff,
+                        'phase_kick_strength': self.quantum_features.config.phase_kick_strength,
+                        'interference_alpha': self.quantum_features.config.interference_alpha,
+                        'enable_quantum': True
+                    }
+                
+                # The tree method handles CSR consistency internally
                 selected_actions, _ = self.tree.batch_select_ucb_optimized(
-                    active_nodes, self.config.c_puct, 0.0  # No temperature during selection
+                    active_nodes, self.config.c_puct, 0.0, **quantum_params
                 )
                 # Convert actions to child indices
                 best_children = self.tree.batch_action_to_child(active_nodes, selected_actions)
@@ -510,7 +574,7 @@ class MCTS:
                 self.game_states.apply_moves(non_root_new_states, parent_actions)
                 
                 # Update node to state mapping
-                self.node_to_state[non_root_nodes] = non_root_new_states
+                self.node_to_state[non_root_nodes] = (non_root_new_states.int()).int()
                 node_states[needs_state] = new_state_indices
         
         # Get features for all nodes
@@ -649,7 +713,7 @@ class MCTS:
             
             # Update node to state mapping in batch
             child_tree_tensor = torch.tensor(child_tree_indices, dtype=torch.int32, device=self.device)
-            self.node_to_state[child_tree_tensor] = child_states.to(torch.int32)
+            self.node_to_state[child_tree_tensor] = (child_states.to(torch.int32)).int()
             
             child_offset += count
     
@@ -664,7 +728,7 @@ class MCTS:
         allocated = free_indices[:count]
         self.state_pool_free[allocated] = False
         
-        return allocated
+        return allocated.int()
     
     def _clone_states_batch(self, source_indices: torch.Tensor, dest_indices: torch.Tensor):
         """Efficiently clone game states"""
@@ -832,7 +896,17 @@ class MCTS:
         children, actions, _ = self.tree.get_children(node_idx)
         
         if len(children) == 0:
-            return np.ones(self.config.board_size ** 2) / (self.config.board_size ** 2)
+            # No children means no valid search was done
+            # Return uniform policy over legal moves
+            node_state = self.node_to_state[node_idx]
+            if node_state >= 0:
+                legal_mask = self.game_states.get_legal_moves_mask(node_state.unsqueeze(0))[0]
+                policy = legal_mask.float().cpu().numpy()
+                policy = policy / policy.sum()
+                return policy
+            else:
+                # Fallback - this shouldn't happen
+                return np.ones(self.config.board_size ** 2) / (self.config.board_size ** 2)
         
         # Get visit counts
         visits = self.tree.visit_counts[children]
@@ -896,6 +970,71 @@ class MCTS:
             stats.update({f'kernel_{k}': v for k, v in self.kernel_timings.items()})
         
         return stats
+    
+    def _get_quantum_phases(self, active_nodes: torch.Tensor, children_tensor: torch.Tensor) -> torch.Tensor:
+        """Generate quantum phases for edges based on node properties
+        
+        Args:
+            active_nodes: Parent node indices [batch_size]
+            children_tensor: Children node indices [batch_size, max_children]
+        
+        Returns:
+            Quantum phases for edges [num_edges]
+        """
+        if not self.quantum_features or not hasattr(self.quantum_features, 'config'):
+            # Return empty tensor if quantum features not enabled
+            return torch.empty(0, device=self.device, dtype=torch.float32)
+        
+        # Get quantum configuration
+        quantum_config = self.quantum_features.config
+        base_frequency = getattr(quantum_config, 'base_frequency', 0.1)
+        visit_modulation = getattr(quantum_config, 'visit_modulation', 0.01)
+        
+        # Flatten children tensor to get all edges
+        valid_mask = children_tensor >= 0
+        edge_nodes = children_tensor[valid_mask]
+        
+        if edge_nodes.numel() == 0:
+            return torch.empty(0, device=self.device, dtype=torch.float32)
+        
+        # Get parent nodes for each edge
+        batch_indices, child_indices = torch.where(valid_mask)
+        parent_nodes = active_nodes[batch_indices]
+        
+        # Generate edge indices (position in flattened array)
+        edge_indices = torch.arange(edge_nodes.numel(), device=self.device)
+        
+        # Get visit counts for parent nodes
+        parent_visits = self.tree.visit_counts[parent_nodes].float()
+        
+        # Check if we have quantum CUDA kernel support
+        if hasattr(self.gpu_ops, 'generate_quantum_phases') or \
+           (hasattr(self, 'quantum_features') and hasattr(self.quantum_features, 'generate_quantum_phases_cuda')):
+            try:
+                # Try using CUDA kernel for phase generation
+                from ..gpu.quantum_cuda_extension import generate_quantum_phases
+                phases = generate_quantum_phases(
+                    parent_nodes, edge_indices, parent_visits,
+                    base_frequency, visit_modulation
+                )
+                return phases
+            except Exception as e:
+                if self.config.enable_debug_logging:
+                    logger.warning(f"CUDA quantum phase generation failed: {e}, using CPU fallback")
+        
+        # CPU fallback implementation
+        # Generate quantum phases based on edge properties
+        phases = base_frequency * edge_indices.float()
+        phases += visit_modulation * torch.log(1.0 + parent_visits)
+        
+        # Add some randomness based on node indices for diversity
+        node_hash = (parent_nodes * 1337 + edge_nodes * 7919) % 10007
+        phases += 0.01 * node_hash.float() / 10007.0
+        
+        # Wrap phases to [0, 2π]
+        phases = torch.fmod(phases, 2.0 * 3.14159265)
+        
+        return phases
     
     def reset_tree(self):
         """Reset tree for new game"""

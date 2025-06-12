@@ -208,37 +208,54 @@ class SelfPlayManager:
         game_id = f"iter{iteration}_game{game_idx}"
         
         for move_num in range(self.config.training.max_moves_per_game):
-            # Get action probabilities
-            temperature = 1.0 if move_num < self.config.mcts.temperature_threshold else 0.0
+            # AlphaZero-style temperature annealing
+            # Use exploration temperature for first N moves, then switch to deterministic
+            if move_num < self.config.mcts.temperature_threshold:
+                # Exploration phase - use stochastic temperature
+                mcts.config.temperature = 1.0
+            else:
+                # Exploitation phase - deterministic play
+                mcts.config.temperature = 0.0
             
-            # Get full policy for storage
-            policy = mcts.get_action_probabilities(state, temperature=temperature)
+            # Search with MCTS
+            policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
             
-            # Get only valid actions and their probabilities for sampling
-            valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
+            # Convert to numpy if needed
+            if isinstance(policy, torch.Tensor):
+                policy = policy.cpu().numpy()
             
-            if not valid_actions:
-                # This should never happen in a properly implemented game
-                raise ValueError(f"No valid actions available at move {move_num}")
-            
-            # Sample action from valid moves only
-            action = np.random.choice(valid_actions, p=valid_probs)
+            # Select move based on policy
+            # Note: MCTS already applies temperature scaling to visit counts using
+            # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
+            if mcts.config.temperature == 0:
+                # Deterministic - select highest probability move
+                action = np.argmax(policy)
+            else:
+                # Stochastic - sample from the temperature-scaled distribution
+                # Ensure we have a valid probability distribution
+                if np.sum(policy) > 0:
+                    policy = policy / np.sum(policy)  # Normalize to ensure valid probabilities
+                    action = np.random.choice(len(policy), p=policy)
+                else:
+                    # Fallback to uniform random if all probabilities are zero
+                    legal_moves = self.game_interface.get_legal_moves(state)
+                    if not legal_moves:
+                        raise ValueError(f"No legal actions available at move {move_num}")
+                    action = np.random.choice(legal_moves)
             
             # Double-check the action is actually legal
-            if not state.is_legal_move(action):
+            if not self.game_interface.is_move_legal(state, action):
                 logger.error(f"MCTS returned illegal action {action} at move {move_num}")
-                logger.error(f"Valid actions according to MCTS: {valid_actions[:10]}...")
                 legal_moves = self.game_interface.get_legal_moves(state)
-                logger.error(f"Actual legal moves: {legal_moves[:10]}... (total {len(legal_moves)})")
-                # Try to find a legal action
-                legal_valid = [a for a in valid_actions if a in legal_moves]
-                if legal_valid:
-                    action = np.random.choice(legal_valid)
-                    logger.warning(f"Using alternative legal action: {action}")
-                else:
-                    raise ValueError(f"No legal actions available from MCTS at move {move_num}")
+                logger.error(f"Legal moves: {legal_moves[:10]}... (total {len(legal_moves)})")
+                logger.error(f"Policy values: {policy[legal_moves[:10]]}")
+                # Try to select best legal action from policy
+                legal_policies = [(a, policy[a]) for a in legal_moves]
+                legal_policies.sort(key=lambda x: x[1], reverse=True)
+                action = legal_policies[0][0]
+                logger.warning(f"Using best legal action: {action} with policy value {policy[action]}")
             
-            # Store example
+            # Store example with the full policy (before move selection)
             canonical_state = self.game_interface.get_canonical_form(state)
             examples.append(GameExample(
                 state=canonical_state,
@@ -254,12 +271,12 @@ class SelfPlayManager:
             except ValueError as e:
                 # Log more context when illegal move happens
                 logger.error(f"Illegal move at move {move_num}: action={action}")
-                logger.error(f"Valid actions were: {valid_actions[:10]}... (total {len(valid_actions)})")
+                logger.error(f"Policy for this action: {policy[action]}")
                 logger.error(f"Game terminal before move: {self.game_interface.is_terminal(state)}")
                 raise
             
-            # Update MCTS tree root for tree reuse
-            mcts.update_root(action)
+            # Reset MCTS tree for next search (no tree reuse for better exploration)
+            mcts.reset_tree()
             
             # Check terminal
             if self.game_interface.is_terminal(state):
@@ -272,28 +289,64 @@ class SelfPlayManager:
         
         return examples
     
+    def _create_quantum_config(self):
+        """Create quantum configuration from MCTS config"""
+        from mcts.quantum.quantum_features import QuantumConfig
+        
+        return QuantumConfig(
+            quantum_level=self.config.mcts.quantum_level.value,
+            enable_quantum=self.config.mcts.enable_quantum,
+            min_wave_size=self.config.mcts.min_wave_size,
+            optimal_wave_size=self.config.mcts.max_wave_size,
+            hbar_eff=self.config.mcts.quantum_coupling,
+            phase_kick_strength=self.config.mcts.phase_kick_strength,
+            interference_alpha=self.config.mcts.interference_alpha,
+            coupling_strength=self.config.mcts.quantum_coupling,
+            temperature=self.config.mcts.quantum_temperature,
+            decoherence_rate=self.config.mcts.decoherence_rate,
+            fast_mode=True,  # Enable fast mode for training
+            device=self.config.mcts.device,
+            use_mixed_precision=self.config.mcts.use_mixed_precision
+        )
+
     def _create_mcts(self, evaluator: Any):
         """Create MCTS instance with quantum features if enabled"""
         from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         
-        # Workers CAN use GPU for tree operations (custom CUDA kernels)
-        # Only neural network evaluation goes through the service
+        # Create MCTS configuration using unified config system
         mcts_config = MCTSConfig(
+            # Core MCTS parameters
             num_simulations=self.config.mcts.num_simulations,
             c_puct=self.config.mcts.c_puct,
-            temperature=1.0,
-            device='cuda' if torch.cuda.is_available() else 'cpu',  # Use GPU for tree operations!
-            game_type=self.game_type,
+            temperature=self.config.mcts.temperature,  # Will be adjusted during play
+            dirichlet_alpha=self.config.mcts.dirichlet_alpha,
+            dirichlet_epsilon=self.config.mcts.dirichlet_epsilon,
+            
+            # Performance and wave parameters
             min_wave_size=self.config.mcts.min_wave_size,
             max_wave_size=self.config.mcts.max_wave_size,
             adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
-            use_optimized_implementation=True,  # Use optimized implementation
-            memory_pool_size_mb=512,  # Smaller pool for each worker
-            use_mixed_precision=True,
-            use_cuda_graphs=True,
-            use_tensor_cores=True
+            
+            # Memory and optimization (reduced for workers)
+            memory_pool_size_mb=max(512, self.config.mcts.memory_pool_size_mb // 4),  # Reduced for workers
+            max_tree_nodes=self.config.mcts.max_tree_nodes // 2,  # Reduced for workers
+            use_mixed_precision=self.config.mcts.use_mixed_precision,
+            use_cuda_graphs=self.config.mcts.use_cuda_graphs,
+            use_tensor_cores=self.config.mcts.use_tensor_cores,
+            
+            # Game and device configuration  
+            device=self.config.mcts.device,
+            game_type=self.game_type,
+            board_size=self.config.game.board_size,
+            
+            # Enable quantum features if configured
+            enable_quantum=self.config.mcts.enable_quantum,
+            quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
+            
+            # Enable debug logging from global config
+            enable_debug_logging=(self.config.log_level == "DEBUG")
         )
         
         # Create MCTS with quantum features if enabled
@@ -398,12 +451,15 @@ def _play_game_worker(config, model_state_dict: Dict,
         mcts_config = MCTSConfig(
         num_simulations=config.mcts.num_simulations,
         c_puct=config.mcts.c_puct,
-        temperature=1.0,
+        temperature=1.0,  # Will be adjusted during play
         device=str(device),  # Convert device object to string
         game_type=game_type,
         min_wave_size=config.mcts.min_wave_size,
         max_wave_size=config.mcts.max_wave_size,
-        adaptive_wave_sizing=config.mcts.adaptive_wave_sizing
+        adaptive_wave_sizing=config.mcts.adaptive_wave_sizing,
+        dirichlet_epsilon=0.25,  # Add exploration noise to root
+        dirichlet_alpha=0.3,  # Dirichlet noise parameter
+        enable_debug_logging=False
         )
         
         # Create MCTS with quantum features if enabled
@@ -425,23 +481,42 @@ def _play_game_worker(config, model_state_dict: Dict,
         game_id = f"iter{iteration}_game{game_idx}"
     
         for move_num in range(config.training.max_moves_per_game):
-            # Get action probabilities
-            temperature = 1.0 if move_num < config.mcts.temperature_threshold else 0.0
+            # AlphaZero-style temperature annealing
+            # Use exploration temperature for first N moves, then switch to deterministic
+            if move_num < config.mcts.temperature_threshold:
+                # Exploration phase - use stochastic temperature
+                mcts.config.temperature = 1.0
+            else:
+                # Exploitation phase - deterministic play
+                mcts.config.temperature = 0.0
             
-            # Get full policy for storage
-            policy = mcts.get_action_probabilities(state, temperature=temperature)
+            # Search with MCTS
+            policy = mcts.search(state, num_simulations=config.mcts.num_simulations)
             
-            # Get only valid actions and their probabilities for sampling
-            valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
+            # Convert to numpy if needed
+            if isinstance(policy, torch.Tensor):
+                policy = policy.cpu().numpy()
             
-            if not valid_actions:
-                # This should never happen in a properly implemented game
-                raise ValueError(f"No valid actions available at move {move_num}")
+            # Select move based on policy
+            # Note: MCTS already applies temperature scaling to visit counts using
+            # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
+            if mcts.config.temperature == 0:
+                # Deterministic - select highest probability move
+                action = np.argmax(policy)
+            else:
+                # Stochastic - sample from the temperature-scaled distribution
+                # Ensure we have a valid probability distribution
+                if np.sum(policy) > 0:
+                    policy = policy / np.sum(policy)  # Normalize to ensure valid probabilities
+                    action = np.random.choice(len(policy), p=policy)
+                else:
+                    # Fallback to uniform random if all probabilities are zero
+                    legal_moves = game_interface.get_legal_moves(state)
+                    if not legal_moves:
+                        raise ValueError(f"No valid actions available at move {move_num}")
+                    action = np.random.choice(legal_moves)
             
-            # Sample action from valid moves only
-            action = np.random.choice(valid_actions, p=valid_probs)
-            
-            # Store example
+            # Store example with the full policy (before move selection)
             canonical_state = game_interface.get_canonical_form(state)
             examples.append(GameExample(
                 state=canonical_state,
@@ -454,8 +529,8 @@ def _play_game_worker(config, model_state_dict: Dict,
             # Apply action
             state = game_interface.get_next_state(state, action)
             
-            # Update MCTS tree root for tree reuse
-            mcts.update_root(action)
+            # Reset MCTS tree for next search (no tree reuse for better exploration)
+            mcts.reset_tree()
             
             # Check terminal
             if game_interface.is_terminal(state):
@@ -548,7 +623,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         mcts_config = MCTSConfig(
             num_simulations=config.mcts.num_simulations,
             c_puct=config.mcts.c_puct,
-            temperature=1.0,
+            temperature=1.0,  # Will be adjusted during play
             device='cuda' if torch.cuda.is_available() else 'cpu',  # Use GPU for tree operations
             game_type=game_type,
             min_wave_size=config.mcts.min_wave_size,
@@ -559,7 +634,10 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             use_mixed_precision=True,
             use_cuda_graphs=False,  # Disable CUDA graphs in workers to save memory
             use_tensor_cores=True,
-            max_tree_nodes=100000  # Limit tree size per worker
+            max_tree_nodes=100000,  # Limit tree size per worker
+            dirichlet_epsilon=0.25,  # Add exploration noise to root
+            dirichlet_alpha=0.3,  # Dirichlet noise parameter
+            enable_debug_logging=False
         )
         
         # Create MCTS with quantum features if enabled
@@ -607,22 +685,42 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         game_id = f"iter{iteration}_game{game_idx}"
         
         for move_num in range(config.training.max_moves_per_game):
-            # Get action probabilities
-            temperature = 1.0 if move_num < config.mcts.temperature_threshold else 0.0
+            # AlphaZero-style temperature annealing
+            # Use exploration temperature for first N moves, then switch to deterministic
+            if move_num < config.mcts.temperature_threshold:
+                # Exploration phase - use stochastic temperature
+                mcts.config.temperature = 1.0
+            else:
+                # Exploitation phase - deterministic play
+                mcts.config.temperature = 0.0
             
-            # Get full policy for storage
-            policy = mcts.get_action_probabilities(state, temperature=temperature)
+            # Search with MCTS
+            policy = mcts.search(state, num_simulations=config.mcts.num_simulations)
             
-            # Get only valid actions and their probabilities for sampling
-            valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
+            # Convert to numpy if needed
+            if isinstance(policy, torch.Tensor):
+                policy = policy.cpu().numpy()
             
-            if not valid_actions:
-                raise ValueError(f"No valid actions available at move {move_num}")
+            # Select move based on policy
+            # Note: MCTS already applies temperature scaling to visit counts using
+            # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
+            if mcts.config.temperature == 0:
+                # Deterministic - select highest probability move
+                action = np.argmax(policy)
+            else:
+                # Stochastic - sample from the temperature-scaled distribution
+                # Ensure we have a valid probability distribution
+                if np.sum(policy) > 0:
+                    policy = policy / np.sum(policy)  # Normalize to ensure valid probabilities
+                    action = np.random.choice(len(policy), p=policy)
+                else:
+                    # Fallback to uniform random if all probabilities are zero
+                    legal_moves = game_interface.get_legal_moves(state)
+                    if not legal_moves:
+                        raise ValueError(f"No legal actions available at move {move_num}")
+                    action = np.random.choice(legal_moves)
             
-            # Sample action from valid moves only
-            action = np.random.choice(valid_actions, p=valid_probs)
-            
-            # Store example
+            # Store example with the full policy (before move selection)
             canonical_state = game_interface.get_canonical_form(state)
             examples.append(GameExample(
                 state=canonical_state,
@@ -635,8 +733,8 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             # Apply action
             state = game_interface.get_next_state(state, action)
             
-            # Update MCTS tree root for tree reuse
-            mcts.update_root(action)
+            # Reset MCTS tree for next search (no tree reuse for better exploration)
+            mcts.reset_tree()
             
             # Check terminal
             if game_interface.is_terminal(state):

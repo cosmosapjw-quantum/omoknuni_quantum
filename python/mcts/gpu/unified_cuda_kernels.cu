@@ -172,6 +172,106 @@ __global__ void batched_ucb_selection_kernel(
     selected_scores[idx] = best_ucb;
 }
 
+// Quantum-enhanced UCB selection kernel
+__global__ void batched_ucb_selection_quantum_kernel(
+    const float* __restrict__ q_values,
+    const int* __restrict__ visit_counts,
+    const int* __restrict__ parent_visits,
+    const float* __restrict__ priors,
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_indices,
+    int* __restrict__ selected_actions,
+    float* __restrict__ selected_scores,
+    const int64_t num_nodes,
+    const float c_puct,
+    // Quantum parameters
+    const float* __restrict__ quantum_phases,     // Pre-computed phases [num_edges]
+    const float* __restrict__ uncertainty_table,  // Quantum uncertainty lookup [max_visits]
+    const int max_table_size,                     // Size of uncertainty table
+    const float hbar_eff,                         // Effective Planck constant
+    const float phase_kick_strength,              // Phase kick amplitude
+    const float interference_alpha,               // Interference strength
+    const bool enable_quantum                     // Quantum features enable flag
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_nodes) return;
+    
+    int start = row_ptr[idx];
+    int end = row_ptr[idx + 1];
+    
+    if (start == end) {
+        selected_actions[idx] = -1;
+        selected_scores[idx] = 0.0f;
+        return;
+    }
+    
+    float parent_visit = static_cast<float>(parent_visits[idx]);
+    float sqrt_parent = sqrtf(parent_visit + 1.0f);
+    
+    float best_ucb = -1e10f;
+    int best_action = 0;
+    
+    // Generate node-specific quantum seed for reproducible randomness
+    unsigned int quantum_seed = idx * 1337 + static_cast<unsigned int>(parent_visit);
+    
+    // Single pass UCB selection with quantum enhancements
+    for (int i = start; i < end; i++) {
+        int child_idx = col_indices[i];
+        float child_visit = static_cast<float>(visit_counts[child_idx]);
+        
+        float q_value = (child_visit > 0) ? 
+            q_values[child_idx] : 0.0f;
+        
+        float ucb;
+        if (parent_visit > 0) {
+            float exploration = c_puct * priors[i] * sqrt_parent / (1.0f + child_visit);
+            ucb = q_value + exploration;
+            
+            // Apply quantum enhancements if enabled
+            if (enable_quantum) {
+                // 1. Quantum uncertainty boost for low-visit nodes
+                int visit_idx = min(static_cast<int>(child_visit), max_table_size - 1);
+                float quantum_boost = uncertainty_table[visit_idx];
+                
+                // 2. Phase-kicked prior for exploration enhancement
+                float phase_kick = 0.0f;
+                if (child_visit < 10.0f) {  // Apply phase kick to low-visit nodes
+                    // Use quantum seed to generate pseudo-random phase
+                    quantum_seed = quantum_seed * 1664525u + 1013904223u;  // LCG
+                    float rand_val = static_cast<float>(quantum_seed) / 4294967295.0f;
+                    phase_kick = phase_kick_strength * sinf(2.0f * 3.14159265f * rand_val);
+                }
+                
+                // 3. Interference based on pre-computed phases
+                float interference = 0.0f;
+                if (quantum_phases != nullptr && i < end) {
+                    float phase = quantum_phases[i];
+                    interference = interference_alpha * cosf(phase);
+                }
+                
+                // Combine quantum corrections
+                float quantum_correction = quantum_boost + phase_kick + interference;
+                ucb += quantum_correction;
+            }
+        } else {
+            // Parent not visited yet - use priors with potential quantum enhancement
+            ucb = priors[i];
+            if (enable_quantum && quantum_phases != nullptr) {
+                float phase = quantum_phases[i];
+                ucb += interference_alpha * 0.1f * cosf(phase);  // Small quantum boost
+            }
+        }
+        
+        if (ucb > best_ucb) {
+            best_ucb = ucb;
+            best_action = i - start;
+        }
+    }
+    
+    selected_actions[idx] = best_action;
+    selected_scores[idx] = best_ucb;
+}
+
 __global__ void parallel_backup_kernel(
     const int* __restrict__ paths,
     const float* __restrict__ leaf_values,
@@ -526,6 +626,63 @@ std::tuple<torch::Tensor, torch::Tensor> batched_ucb_selection_cuda(
         selected_scores.data_ptr<float>(),
         num_nodes,
         c_puct
+    );
+    
+    return std::make_tuple(selected_actions, selected_scores);
+}
+
+// Quantum-enhanced UCB selection with CUDA acceleration
+std::tuple<torch::Tensor, torch::Tensor> batched_ucb_selection_quantum_cuda(
+    torch::Tensor q_values,
+    torch::Tensor visit_counts,
+    torch::Tensor parent_visits,
+    torch::Tensor priors,
+    torch::Tensor row_ptr,
+    torch::Tensor col_indices,
+    float c_puct,
+    // Quantum parameters
+    torch::Tensor quantum_phases,
+    torch::Tensor uncertainty_table,
+    float hbar_eff,
+    float phase_kick_strength,
+    float interference_alpha,
+    bool enable_quantum
+) {
+    const int num_nodes = parent_visits.size(0);
+    auto selected_actions = torch::zeros({num_nodes}, 
+        torch::TensorOptions().dtype(torch::kInt32).device(q_values.device()));
+    auto selected_scores = torch::zeros({num_nodes}, 
+        torch::TensorOptions().dtype(torch::kFloat32).device(q_values.device()));
+    
+    const int threads = 256;
+    const int blocks = (num_nodes + threads - 1) / threads;
+    
+    // Prepare quantum parameters
+    const float* quantum_phases_ptr = quantum_phases.numel() > 0 ? 
+        quantum_phases.data_ptr<float>() : nullptr;
+    const float* uncertainty_table_ptr = uncertainty_table.numel() > 0 ? 
+        uncertainty_table.data_ptr<float>() : nullptr;
+    const int max_table_size = uncertainty_table.numel();
+    
+    // Launch quantum-enhanced kernel
+    batched_ucb_selection_quantum_kernel<<<blocks, threads>>>(
+        q_values.data_ptr<float>(),
+        visit_counts.data_ptr<int>(),
+        parent_visits.data_ptr<int>(),
+        priors.data_ptr<float>(),
+        row_ptr.data_ptr<int>(),
+        col_indices.data_ptr<int>(),
+        selected_actions.data_ptr<int>(),
+        selected_scores.data_ptr<float>(),
+        num_nodes,
+        c_puct,
+        quantum_phases_ptr,
+        uncertainty_table_ptr,
+        max_table_size,
+        hbar_eff,
+        phase_kick_strength,
+        interference_alpha,
+        enable_quantum
     );
     
     return std::make_tuple(selected_actions, selected_scores);
@@ -1072,6 +1229,8 @@ torch::Tensor generate_legal_moves_mask_cuda(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("batched_ucb_selection", &batched_ucb_selection_cuda, 
           "Batched UCB selection with random tie-breaking (CUDA)");
+    m.def("batched_ucb_selection_quantum", &batched_ucb_selection_quantum_cuda,
+          "Quantum-enhanced batched UCB selection (CUDA)");
     m.def("parallel_backup", &parallel_backup_cuda, 
           "Parallel backup for MCTS (CUDA)");
     m.def("quantum_interference", &quantum_interference_cuda, 

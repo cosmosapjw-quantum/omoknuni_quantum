@@ -24,8 +24,21 @@ def _load_kernels():
         return _KERNELS_AVAILABLE
     
     try:
+        # Try direct import first (for compiled extensions)
+        try:
+            import mcts.gpu.unified_cuda_kernels as unified_module
+            _UNIFIED_KERNELS = unified_module
+            _KERNELS_AVAILABLE = True
+            logger.info("Successfully imported unified_cuda_kernels module")
+            funcs = [attr for attr in dir(unified_module) if not attr.startswith('_') and callable(getattr(unified_module, attr))]
+            logger.debug(f"Available kernel functions: {funcs}")
+            return True
+        except ImportError:
+            pass
+            
         # Try to load pre-compiled kernels
         kernel_paths = [
+            Path(__file__).parent / "unified_cuda_kernels.cpython-312-x86_64-linux-gnu.so",
             Path(__file__).parent / "mcts_cuda_kernels.cpython-312-x86_64-linux-gnu.so",
             Path(__file__).parent / "unified_cuda_kernels.so",
             Path(__file__).parent.parent.parent / "build_cuda" / "unified_cuda_kernels.so",
@@ -36,7 +49,9 @@ def _load_kernels():
                 try:
                     # Try importing as a module first (preferred method)
                     import importlib.util
-                    spec = importlib.util.spec_from_file_location('mcts_cuda_kernels', str(path))
+                    # Extract module name from filename
+                    module_name = path.stem.split('.')[0]  # Remove .cpython-... suffix
+                    spec = importlib.util.spec_from_file_location(module_name, str(path))
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
                     _UNIFIED_KERNELS = module
@@ -118,7 +133,14 @@ class UnifiedGPUKernels:
         visit_counts: torch.Tensor,
         value_sums: torch.Tensor,
         c_puct: float = 1.414,
-        temperature: float = 1.0
+        temperature: float = 1.0,
+        # Quantum parameters (optional)
+        quantum_phases: Optional[torch.Tensor] = None,
+        uncertainty_table: Optional[torch.Tensor] = None,
+        hbar_eff: float = 0.05,
+        phase_kick_strength: float = 0.1,
+        interference_alpha: float = 0.05,
+        enable_quantum: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Batch UCB selection with random tie-breaking
         
@@ -144,7 +166,6 @@ class UnifiedGPUKernels:
         
         # Debug logging for first few calls
         if self.stats['ucb_calls'] <= 5:
-            import os
             pid = os.getpid()
             logger.info(f"[PID {pid}] batch_ucb_selection call #{self.stats['ucb_calls']}:")
             logger.info(f"[PID {pid}]   Batch size: {len(node_indices)}")
@@ -167,12 +188,40 @@ class UnifiedGPUKernels:
                 row_ptr_int = row_ptr.int()
                 col_indices_int = col_indices.int()
                 
-                # Call CUDA kernel directly from loaded module
-                # The kernel now returns (actions, scores) tuple
-                result = _UNIFIED_KERNELS.batched_ucb_selection(
-                    q_values, visit_counts_int, parent_visits_int, edge_priors_float,
-                    row_ptr_int, col_indices_int, c_puct
-                )
+                # Choose between quantum and classical kernel
+                if enable_quantum and hasattr(_UNIFIED_KERNELS, 'batched_ucb_selection_quantum'):
+                    # Prepare quantum tensors
+                    if quantum_phases is None:
+                        quantum_phases = torch.empty(0, device=q_values.device, dtype=torch.float32)
+                    if uncertainty_table is None:
+                        uncertainty_table = torch.empty(0, device=q_values.device, dtype=torch.float32)
+                    
+                    # Log quantum kernel usage
+                    logger.info(f"[PID {os.getpid()}] Using QUANTUM CUDA kernel:")
+                    logger.info(f"  quantum_phases shape: {quantum_phases.shape}")
+                    logger.info(f"  hbar_eff: {hbar_eff}")
+                    logger.info(f"  phase_kick_strength: {phase_kick_strength}")
+                    
+                    # Ensure quantum tensors are on the right device and type
+                    quantum_phases = quantum_phases.to(device=q_values.device, dtype=torch.float32)
+                    uncertainty_table = uncertainty_table.to(device=q_values.device, dtype=torch.float32)
+                    
+                    # Call quantum-enhanced CUDA kernel
+                    result = _UNIFIED_KERNELS.batched_ucb_selection_quantum(
+                        q_values, visit_counts_int, parent_visits_int, edge_priors_float,
+                        row_ptr_int, col_indices_int, c_puct,
+                        quantum_phases, uncertainty_table,
+                        hbar_eff, phase_kick_strength, interference_alpha, enable_quantum
+                    )
+                    
+                    # Update quantum call statistics
+                    self.stats['quantum_calls'] += 1
+                else:
+                    # Call classical CUDA kernel
+                    result = _UNIFIED_KERNELS.batched_ucb_selection(
+                        q_values, visit_counts_int, parent_visits_int, edge_priors_float,
+                        row_ptr_int, col_indices_int, c_puct
+                    )
                 
                 # Handle both old (single tensor) and new (tuple) return formats
                 if isinstance(result, tuple):
@@ -203,7 +252,6 @@ class UnifiedGPUKernels:
                 return selected_actions, selected_scores
                 
             except Exception as e:
-                import os
                 pid = os.getpid()
                 logger.warning(f"[PID {pid}] CUDA kernel batched_ucb_selection failed: {e}. Falling back to PyTorch implementation.")
                 if self.stats['ucb_calls'] <= 5:

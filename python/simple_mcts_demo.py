@@ -8,7 +8,7 @@ This example shows basic usage and verifies the MCTS is working correctly.
 import torch
 import numpy as np
 import time
-from mcts.core.optimized_mcts import MCTS, MCTSConfig
+from mcts.core.mcts import MCTS, MCTSConfig
 from mcts.gpu.gpu_game_states import GameType
 import alphazero_py
 

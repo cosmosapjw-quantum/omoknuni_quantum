@@ -335,9 +335,9 @@ class GPUGameStates:
             self.move_history[state_indices, -1] = actions.to(torch.int16)
             
             # Store in full move history at current move count position
-            move_counts = self.move_count[state_indices]
-            batch_indices = torch.arange(len(state_indices), device=self.device)
-            self.full_move_history[batch_indices, move_counts] = actions.to(torch.int16)
+            move_counts = self.move_count[state_indices].long()
+            # Use state_indices directly for first dimension, move_counts for second
+            self.full_move_history[state_indices.long(), move_counts] = actions.to(torch.int16)
             
             # Switch players
             self.current_player[state_indices] = 3 - current_players  # 1->2, 2->1

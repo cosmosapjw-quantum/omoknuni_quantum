@@ -59,7 +59,8 @@
       "Bash(for file in configs/chess_classical.yaml configs/go_19x19_quantum.yaml configs/gomoku_classical.yaml configs/gomoku_one_loop.yaml configs/minimal_test.yaml)",
       "Bash(do)",
       "Bash(done)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "Bash(diff:*)"
     ],
     "deny": []
   },
