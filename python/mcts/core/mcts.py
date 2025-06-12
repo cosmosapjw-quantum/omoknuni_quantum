@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import logging
 
 from .wave_mcts import WaveMCTS, WaveMCTSConfig
+from .optimized_wave_mcts import OptimizedWaveMCTS
 from .cached_game_interface import CachedGameInterface, CacheConfig
 from .game_interface import GameInterface, GameType
 from ..neural_networks.evaluator_pool import EvaluatorPool
@@ -75,6 +76,9 @@ class MCTSConfig:
     
     # Game type
     game_type: GameType = GameType.GOMOKU
+    
+    # Performance optimization
+    use_optimized_implementation: bool = True  # Use OptimizedWaveMCTS for better CPU/GPU parallelization
 
 
 class MCTS:
@@ -154,8 +158,12 @@ class MCTS:
             quantum_config=config.quantum_config if config.enable_quantum else None
         )
         
-        # Create wave MCTS
-        self.wave_mcts = WaveMCTS(wave_config, self.cached_game, self.evaluator_pool)
+        # Create wave MCTS - use optimized implementation if requested
+        if config.use_optimized_implementation and config.device == 'cuda':
+            logger.info("Using OptimizedWaveMCTS for better CPU/GPU parallelization")
+            self.wave_mcts = OptimizedWaveMCTS(wave_config, self.cached_game, self.evaluator_pool)
+        else:
+            self.wave_mcts = WaveMCTS(wave_config, self.cached_game, self.evaluator_pool)
         
         # Statistics
         self.stats = {

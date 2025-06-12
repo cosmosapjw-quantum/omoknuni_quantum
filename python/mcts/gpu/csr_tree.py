@@ -98,7 +98,8 @@ class CSRTree:
         # Start with 0 nodes - root will be added explicitly
         self.num_nodes = 0
         self.num_edges = 0
-        self.max_nodes = config.max_nodes
+        # Remove artificial node limit - use dynamic growth
+        self.max_nodes = config.max_nodes if config.max_nodes > 0 else float('inf')
         self.max_edges = config.max_edges
         
         # Initialize storage
@@ -125,8 +126,18 @@ class CSRTree:
         try:
             from .unified_kernels import get_unified_kernels
             self.batch_ops = get_unified_kernels(self.device)
-        except ImportError:
+            import os
+            pid = os.getpid()
+            logger.info(f"[PID {pid}] CSRTree initialized:")
+            logger.info(f"[PID {pid}]   Device: {self.device}")
+            logger.info(f"[PID {pid}]   Batch ops available: {self.batch_ops is not None}")
+            if self.batch_ops:
+                logger.info(f"[PID {pid}]   Batch ops use_cuda: {self.batch_ops.use_cuda}")
+        except ImportError as e:
             self.batch_ops = None
+            import os
+            pid = os.getpid()
+            logger.warning(f"[PID {pid}] Failed to import unified kernels: {e}")
         
         # Flag for deferred row pointer updates
         self._needs_row_ptr_update = False

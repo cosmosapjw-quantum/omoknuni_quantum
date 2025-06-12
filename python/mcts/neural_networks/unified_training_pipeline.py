@@ -29,6 +29,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm, trange
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 
 # Import only essential components at module level
 from mcts.utils.config_system import (
@@ -200,7 +201,7 @@ class UnifiedTrainingPipeline:
             input_height=self.config.game.board_size,
             input_width=self.config.game.board_size,
             num_actions=action_size,
-            input_channels=network_config.input_channels,
+            input_channels=20,  # Always use enhanced representation with 20 channels
             num_res_blocks=network_config.num_res_blocks,
             num_filters=network_config.num_filters,
             value_head_hidden_size=network_config.value_head_hidden_size
@@ -326,38 +327,91 @@ class UnifiedTrainingPipeline:
         return examples
     
     def _parallel_self_play(self, evaluator) -> List[GameExample]:
-        """Run self-play games in parallel"""
-        from mcts.utils.safe_multiprocessing import serialize_state_dict_for_multiprocessing
+        """Run self-play games in parallel using GPU service architecture"""
+        import multiprocessing as mp
+        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
+        from .self_play_module import _play_game_worker_wrapper
         
         examples = []
         
-        # Serialize model state dict for safe multiprocessing
-        logger.info("Serializing model state dict for multiprocessing...")
-        model_state_dict = serialize_state_dict_for_multiprocessing(self.model.state_dict())
+        # Create GPU evaluator service in main process
+        gpu_service = GPUEvaluatorService(
+            model=self.model,
+            device=self.config.mcts.device,  # GPU for neural network
+            batch_size=256,
+            batch_timeout=0.01
+        )
         
-        with ProcessPoolExecutor(max_workers=self.config.training.num_workers) as executor:
-            # Submit all games
-            futures = []
+        # Start the service
+        gpu_service.start()
+        logger.info(f"GPU evaluation service started on device: {self.config.mcts.device}")
+        
+        try:
+            # Get the request and response queues for workers
+            request_queue, response_queue = gpu_service.get_queues()
+            
+            # Get action space size
+            from mcts.core.game_interface import GameInterface, GameType
+            game_type = GameType[self.config.game.game_type.upper()]
+            game_interface = GameInterface(game_type, self.config.game.board_size)
+            initial_state = game_interface.create_initial_state()
+            action_size = game_interface.get_action_space_size(initial_state)
+            
+            logger.info(f"Starting {self.config.training.num_workers} worker processes")
+            
+            # Use Process directly for better control
+            processes = []
+            result_queues = []
+            
             for game_idx in range(self.config.training.num_games_per_iteration):
-                future = executor.submit(
-                    play_self_play_game_wrapper,
-                    self.config,
-                    model_state_dict,
-                    game_idx,
-                    self.iteration
+                # Create result queue for this game
+                result_queue = mp.Queue()
+                result_queues.append(result_queue)
+                
+                # Create process
+                p = mp.Process(
+                    target=_play_game_worker_wrapper,
+                    args=(self.config, request_queue, response_queue,
+                          action_size, game_idx, self.iteration, result_queue)
                 )
-                futures.append(future)
+                p.start()
+                processes.append(p)
             
             # Collect results with progress bar
-            with tqdm(total=len(futures), desc="Self-play games", unit="game") as pbar:
-                for future in as_completed(futures):
-                    try:
-                        game_examples = future.result()
-                        examples.extend(game_examples)
-                        pbar.update(1)
-                    except Exception as e:
-                        logger.error(f"Self-play game failed: {e}")
-                        pbar.update(1)
+            with tqdm(total=self.config.training.num_games_per_iteration, 
+                     desc="Self-play games", unit="game") as pbar:
+                completed = 0
+                
+                # Wait for all games to complete
+                while completed < self.config.training.num_games_per_iteration:
+                    for i, (p, result_queue) in enumerate(zip(processes, result_queues)):
+                        if p is not None and not p.is_alive():
+                            # Process finished
+                            p.join()
+                            processes[i] = None  # Mark as collected
+                            
+                            # Get result
+                            try:
+                                if not result_queue.empty():
+                                    game_examples = result_queue.get_nowait()
+                                    examples.extend(game_examples)
+                                    logger.debug(f"Collected {len(game_examples)} examples from game {i}")
+                                else:
+                                    logger.warning(f"Game {i} finished but no result in queue")
+                            except Exception as e:
+                                logger.error(f"Failed to get result from game {i}: {e}")
+                            
+                            completed += 1
+                            pbar.update(1)
+                    
+                    # Small sleep to avoid busy waiting
+                    if completed < self.config.training.num_games_per_iteration:
+                        time.sleep(0.01)
+                        
+        finally:
+            # Stop the GPU service
+            gpu_service.stop()
+            logger.info("GPU evaluation service stopped")
         
         return examples
     
@@ -811,132 +865,10 @@ class UnifiedTrainingPipeline:
             json.dump(tournament_results, f, indent=2)
 
 
-# Wrapper function for multiprocessing
-def play_self_play_game_wrapper(config: AlphaZeroConfig, model_state_dict: Dict,
-                               game_idx: int, iteration: int) -> List[GameExample]:
-    """Wrapper function for parallel self-play"""
-    import os
-    import sys
-    import logging
-    
-    # Set up logging for debugging
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-    
-    
-    # Disable CUDA in worker processes
-    os.environ['CUDA_VISIBLE_DEVICES'] = ''
-    
-    # Import here to avoid circular imports in multiprocessing
-    from mcts.core.mcts import MCTS, MCTSConfig
-    from mcts.core.evaluator import AlphaZeroEvaluator
-    from mcts.core.game_interface import GameInterface, GameType
-    from mcts.neural_networks.nn_model import create_model
-    from mcts.utils.safe_multiprocessing import deserialize_state_dict_from_multiprocessing
-    
-    # Deserialize model state dict
-    model_state_dict = deserialize_state_dict_from_multiprocessing(model_state_dict)
-    
-    # Force CPU device for workers
-    import torch
-    device = torch.device('cpu')
-    
-    # Recreate model
-    game_type = GameType[config.game.game_type.upper()]
-    game_interface = GameInterface(game_type, config.game.board_size)
-    
-    # Get action space size
-    initial_state = game_interface.create_initial_state()
-    action_size = game_interface.get_action_space_size(initial_state)
-    
-    model = create_model(
-        game_type=config.game.game_type,
-        input_height=config.game.board_size,
-        input_width=config.game.board_size,
-        num_actions=action_size,
-        input_channels=config.network.input_channels,
-        num_res_blocks=config.network.num_res_blocks,
-        num_filters=config.network.num_filters
-    )
-    model.load_state_dict(model_state_dict)
-    model = model.to(device)
-    model.eval()
-    
-    # Create evaluator
-    from mcts.core.evaluator import AlphaZeroEvaluator
-    evaluator = AlphaZeroEvaluator(
-        model=model,
-        device=str(device)  # Use CPU device in workers
-    )
-    
-    # Create MCTS
-    mcts_config = MCTSConfig(
-        num_simulations=config.mcts.num_simulations,
-        c_puct=config.mcts.c_puct,
-        temperature=1.0,
-        dirichlet_alpha=config.mcts.dirichlet_alpha,
-        dirichlet_epsilon=config.mcts.dirichlet_epsilon,
-        device=str(device),  # Use CPU device in workers
-        game_type=game_type,
-        # Use smaller wave sizes for CPU
-        min_wave_size=32,
-        max_wave_size=64,
-        adaptive_wave_sizing=False,
-        # Reduce memory usage on CPU
-        memory_pool_size_mb=128,
-        max_tree_nodes=50000
-    )
-    
-    
-    mcts = MCTS(mcts_config, evaluator)
-    
-    # Play game
-    examples = []
-    state = game_interface.create_initial_state()
-    game_id = f"iter{iteration}_game{game_idx}"
-    
-    for move_num in range(config.training.max_moves_per_game):
-        # Get action probabilities
-        temperature = 1.0 if move_num < config.mcts.temperature_threshold else 0.0
-        
-        # Get full policy for storage
-        policy = mcts.get_action_probabilities(state, temperature=temperature)
-        
-        
-        # Get only valid actions and their probabilities for sampling
-        valid_actions, valid_probs = mcts.get_valid_actions_and_probabilities(state, temperature=temperature)
-        
-        if not valid_actions:
-            # This should never happen in a properly implemented game
-            raise ValueError(f"No valid actions available at move {move_num}")
-        
-        # Sample action from valid moves only
-        action = np.random.choice(valid_actions, p=valid_probs)
-        
-        # Store example
-        canonical_state = game_interface.get_canonical_form(state)
-        examples.append(GameExample(
-            state=canonical_state,
-            policy=policy,
-            value=0,
-            game_id=game_id,
-            move_number=move_num
-        ))
-        
-        # Apply action
-        state = game_interface.get_next_state(state, action)
-        
-        # Update MCTS tree root for tree reuse
-        mcts.update_root(action)
-        
-        # Check terminal
-        if game_interface.is_terminal(state):
-            outcome = game_interface.get_value(state)
-            for i, example in enumerate(examples):
-                example.value = outcome * ((-1) ** (i % 2))
-            break
-    
-    return examples
+# Old wrapper function removed - now using GPU service architecture from self_play_module
+# The old play_self_play_game_wrapper function has been removed.
+# Workers now use RemoteEvaluator to communicate with GPU service for neural network evaluation
+# while using CPU for tree operations to avoid GPU memory exhaustion.
 
 
 if __name__ == "__main__":

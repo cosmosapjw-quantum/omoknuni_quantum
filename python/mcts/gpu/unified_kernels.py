@@ -33,31 +33,42 @@ def _load_kernels():
         
         for path in kernel_paths:
             if path.exists():
-                # Load the module directly instead of using torch.ops
-                import importlib.util
-                spec = importlib.util.spec_from_file_location('mcts_cuda_kernels', str(path))
-                _UNIFIED_KERNELS = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(_UNIFIED_KERNELS)
-                _KERNELS_AVAILABLE = True
-                logger.debug(f"Loaded CUDA kernels from {path}")
-                break
-                
+                try:
+                    # Try importing as a module first (preferred method)
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location('mcts_cuda_kernels', str(path))
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    _UNIFIED_KERNELS = module
+                    _KERNELS_AVAILABLE = True
+                    logger.info(f"Successfully loaded CUDA kernels from {path}")
+                    logger.debug(f"Available kernel functions: {[attr for attr in dir(module) if not attr.startswith('_')]}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to load kernels from {path}: {e}")
+                    
         if not _KERNELS_AVAILABLE and torch.cuda.is_available():
-            # Try JIT compilation as fallback
-            try:
-                from torch.utils.cpp_extension import load
-                _UNIFIED_KERNELS = load(
-                    name='unified_cuda_kernels',
-                    sources=[str(Path(__file__).parent / "unified_cuda_kernels.cu")],
-                    verbose=False
-                )
+            # Try loading via torch.ops if kernels were registered there
+            if hasattr(torch.ops, 'mcts_cuda_kernels'):
+                logger.info("Using CUDA kernels from torch.ops.mcts_cuda_kernels")
+                _UNIFIED_KERNELS = torch.ops.mcts_cuda_kernels
                 _KERNELS_AVAILABLE = True
-                logger.debug("JIT compiled CUDA kernels")
-            except Exception as e:
-                logger.debug(f"JIT compilation failed: {e}")
+            else:
+                # Try JIT compilation as last resort
+                try:
+                    from torch.utils.cpp_extension import load
+                    _UNIFIED_KERNELS = load(
+                        name='unified_cuda_kernels',
+                        sources=[str(Path(__file__).parent / "unified_cuda_kernels.cu")],
+                        verbose=False
+                    )
+                    _KERNELS_AVAILABLE = True
+                    logger.info("JIT compiled CUDA kernels")
+                except Exception as e:
+                    logger.warning(f"JIT compilation failed: {e}")
                 
     except Exception as e:
-        logger.debug(f"Failed to load CUDA kernels: {e}")
+        logger.error(f"Failed to load CUDA kernels: {e}")
     
     return _KERNELS_AVAILABLE
 
@@ -78,7 +89,16 @@ class UnifiedGPUKernels:
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.use_cuda = self.device.type == 'cuda' and _load_kernels()
         
-        # Logging removed for performance
+        # Debug logging to track kernel usage
+        import os
+        pid = os.getpid()
+        logger.info(f"[PID {pid}] UnifiedGPUKernels initialized:")
+        logger.info(f"[PID {pid}]   Device: {self.device}")
+        logger.info(f"[PID {pid}]   CUDA kernels loaded: {self.use_cuda}")
+        logger.info(f"[PID {pid}]   _UNIFIED_KERNELS: {_UNIFIED_KERNELS is not None}")
+        if _UNIFIED_KERNELS is not None:
+            available_funcs = [attr for attr in dir(_UNIFIED_KERNELS) if not attr.startswith('_') and callable(getattr(_UNIFIED_KERNELS, attr))]
+            logger.info(f"[PID {pid}]   Available functions: {available_funcs}")
             
         # Performance statistics
         self.stats = {
@@ -122,6 +142,15 @@ class UnifiedGPUKernels:
         # Get parent visits
         parent_visits = visit_counts[node_indices]
         
+        # Debug logging for first few calls
+        if self.stats['ucb_calls'] <= 5:
+            import os
+            pid = os.getpid()
+            logger.info(f"[PID {pid}] batch_ucb_selection call #{self.stats['ucb_calls']}:")
+            logger.info(f"[PID {pid}]   Batch size: {len(node_indices)}")
+            logger.info(f"[PID {pid}]   use_cuda: {self.use_cuda}")
+            logger.info(f"[PID {pid}]   _UNIFIED_KERNELS: {_UNIFIED_KERNELS is not None}")
+        
         if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
                 # Prepare Q-values - ensure float32 for CUDA kernel
@@ -164,15 +193,22 @@ class UnifiedGPUKernels:
                 
                 if valid_indices.numel() > 0:
                     # Vectorized computation of start indices
-                    starts = row_ptr[node_indices[valid_indices]]
-                    edge_positions = starts + actions[valid_indices]
-                    selected_actions[valid_indices] = edge_actions[edge_positions]
+                    # Ensure all indices are int32 to match CUDA kernel output
+                    node_indices_int32 = node_indices.int()
+                    starts = row_ptr[node_indices_int32[valid_indices]]
+                    edge_positions = (starts + actions[valid_indices]).long()  # Convert to long for indexing
+                    selected_actions[valid_indices] = edge_actions[edge_positions].int()
                     selected_scores[valid_indices] = scores[valid_indices]
                     
                 return selected_actions, selected_scores
                 
             except Exception as e:
-                pass  # Silently fall back
+                import os
+                pid = os.getpid()
+                logger.warning(f"[PID {pid}] CUDA kernel batched_ucb_selection failed: {e}. Falling back to PyTorch implementation.")
+                if self.stats['ucb_calls'] <= 5:
+                    import traceback
+                    logger.warning(f"[PID {pid}] Traceback:\n{traceback.format_exc()}")
         
         # PyTorch fallback with proper tie-breaking
         return self._ucb_selection_pytorch(
@@ -266,18 +302,9 @@ class UnifiedGPUKernels:
         """
         self.stats['backup_calls'] += 1
         
-        if self.use_cuda:
+        if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
-                # Try different kernel namespaces
-                kernel_func = None
-                if hasattr(torch.ops, 'custom_cuda_ops') and hasattr(torch.ops.custom_cuda_ops, 'parallel_backup'):
-                    kernel_func = torch.ops.custom_cuda_ops.parallel_backup
-                elif hasattr(torch.ops, 'unified_cuda_kernels') and hasattr(torch.ops.unified_cuda_kernels, 'parallel_backup'):
-                    kernel_func = torch.ops.unified_cuda_kernels.parallel_backup
-                elif hasattr(torch.ops, 'mcts_cuda_kernels') and hasattr(torch.ops.mcts_cuda_kernels, 'parallel_backup'):
-                    kernel_func = torch.ops.mcts_cuda_kernels.parallel_backup
-                
-                if kernel_func:
+                if hasattr(_UNIFIED_KERNELS, 'parallel_backup'):
                     # Ensure correct types for CUDA kernel
                     paths_int = paths.int()
                     values_float = values.float()
@@ -286,7 +313,7 @@ class UnifiedGPUKernels:
                     visit_counts_int = visit_counts.int()
                     
                     # Call CUDA kernel (modifies in-place)
-                    value_sums_updated = kernel_func(
+                    value_sums_updated = _UNIFIED_KERNELS.parallel_backup(
                         paths_int, values_float, path_lengths_int, 
                         value_sums_float, visit_counts_int
                     )
@@ -301,8 +328,10 @@ class UnifiedGPUKernels:
                         visit_counts.copy_(visit_counts_int.to(visit_counts.dtype))
                         
                     return visit_counts, value_sums
+                else:
+                    logger.warning("CUDA kernel parallel_backup not found in loaded module")
             except Exception as e:
-                logger.debug(f"CUDA backup failed, using fallback: {e}")
+                logger.warning(f"CUDA kernel parallel_backup failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         batch_size, max_depth = paths.shape
@@ -354,24 +383,17 @@ class UnifiedGPUKernels:
         """
         self.stats['quantum_calls'] += 1
         
-        if self.use_cuda:
+        if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
-                # Try different kernel namespaces
-                kernel_func = None
-                if hasattr(torch.ops, 'custom_cuda_ops') and hasattr(torch.ops.custom_cuda_ops, 'quantum_interference'):
-                    kernel_func = torch.ops.custom_cuda_ops.quantum_interference
-                elif hasattr(torch.ops, 'unified_cuda_kernels') and hasattr(torch.ops.unified_cuda_kernels, 'quantum_interference'):
-                    kernel_func = torch.ops.unified_cuda_kernels.quantum_interference
-                elif hasattr(torch.ops, 'mcts_cuda_kernels') and hasattr(torch.ops.mcts_cuda_kernels, 'quantum_interference'):
-                    kernel_func = torch.ops.mcts_cuda_kernels.quantum_interference
-                
-                if kernel_func:
-                    return kernel_func(
+                if hasattr(_UNIFIED_KERNELS, 'quantum_interference'):
+                    return _UNIFIED_KERNELS.quantum_interference(
                         q_values, visit_counts, priors, phases,
                         c_puct, hbar_eff, lambda_qft
                     )
+                else:
+                    logger.warning("CUDA kernel quantum_interference not found in loaded module")
             except Exception as e:
-                logger.debug(f"CUDA quantum kernel failed, using fallback: {e}")
+                logger.warning(f"CUDA kernel quantum_interference failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         # Calculate parent visits
@@ -453,17 +475,17 @@ class UnifiedGPUKernels:
             similarities: Pairwise similarities [batch_size, batch_size]
             new_scores: Scores with interference applied [batch_size]
         """
-        if self.use_cuda:
+        if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
-                # Try different kernel namespaces
-                kernel_func = None
-                if hasattr(torch.ops, 'mcts_cuda_kernels') and hasattr(torch.ops.mcts_cuda_kernels, 'fused_minhash_interference'):
-                    kernel_func = torch.ops.mcts_cuda_kernels.fused_minhash_interference
-                
-                if kernel_func:
-                    return kernel_func(paths, scores, num_hashes)
+                if hasattr(_UNIFIED_KERNELS, 'fused_minhash_interference'):
+                    # Fix dtype issue: CUDA kernel expects Int (int32) but paths might be Long (int64)
+                    paths_int32 = paths.int()  # Convert Long to Int32
+                    scores_float32 = scores.float()  # Ensure float32
+                    return _UNIFIED_KERNELS.fused_minhash_interference(paths_int32, scores_float32, num_hashes)
+                else:
+                    logger.warning("CUDA kernel fused_minhash_interference not found in loaded module")
             except Exception as e:
-                logger.debug(f"CUDA minhash kernel failed, using fallback: {e}")
+                logger.warning(f"CUDA kernel fused_minhash_interference failed: {e}. Falling back to PyTorch implementation.")
         
         # Optimized PyTorch implementation
         batch_size = paths.shape[0]
@@ -525,17 +547,18 @@ class UnifiedGPUKernels:
             uncertainty: Uncertainty estimates [batch_size, num_actions]
             phases: Applied phases [batch_size, num_actions]
         """
-        if self.use_cuda:
+        if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
-                # Try different kernel namespaces
-                kernel_func = None
-                if hasattr(torch.ops, 'mcts_cuda_kernels') and hasattr(torch.ops.mcts_cuda_kernels, 'phase_kicked_policy'):
-                    kernel_func = torch.ops.mcts_cuda_kernels.phase_kicked_policy
-                
-                if kernel_func:
-                    return kernel_func(priors, visits, values, kick_strength)
+                if hasattr(_UNIFIED_KERNELS, 'phase_kicked_policy'):
+                    # Fix dtype issue: CUDA kernel expects Int (int32) but visits might be Float
+                    priors_float32 = priors.float()  # Ensure float32
+                    visits_int32 = visits.int()  # Convert to Int32 (the kernel expects visit counts as integers)
+                    values_float32 = values.float()  # Ensure float32
+                    return _UNIFIED_KERNELS.phase_kicked_policy(priors_float32, visits_int32, values_float32, kick_strength)
+                else:
+                    logger.warning("CUDA kernel phase_kicked_policy not found in loaded module")
             except Exception as e:
-                logger.debug(f"CUDA phase kick kernel failed, using fallback: {e}")
+                logger.warning(f"CUDA kernel phase_kicked_policy failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         # Estimate uncertainty (inverse sqrt of visits)

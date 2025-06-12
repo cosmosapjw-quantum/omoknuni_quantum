@@ -18,9 +18,10 @@ def safe_create_model(game_type: str, **kwargs):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     
-    # Disable CUDA if in worker process
-    if 'CUDA_VISIBLE_DEVICES' not in os.environ:
-        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    # Workers can use CUDA for tree operations
+    # Only disable CUDA if explicitly requested
+    # if 'CUDA_VISIBLE_DEVICES' not in os.environ:
+    #     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     
     # Import here to ensure clean import in worker
     from mcts.neural_networks.nn_model import create_model
@@ -69,7 +70,8 @@ def worker_create_and_load_model(serialized_state_dict: Dict[str, Any],
         logger.debug(f"[Worker {worker_id}] Starting safe model creation")
         
         # Ensure clean environment
-        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+        # Workers can use CUDA for tree operations
+        # os.environ['CUDA_VISIBLE_DEVICES'] = ''
         os.environ['OMP_NUM_THREADS'] = '1'  # Prevent OpenMP issues
         
         # Import modules in worker

@@ -20,8 +20,8 @@ __global__ void find_expansion_nodes_kernel(
     const bool* __restrict__ valid_path_mask,  // Which paths are valid
     int* __restrict__ expansion_nodes,         // Output: nodes needing expansion
     int* __restrict__ expansion_count,         // Output: number of nodes to expand
-    const int wave_size,
-    const int max_children,
+    const int64_t wave_size,
+    const int64_t max_children,
     const int num_nodes
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -124,7 +124,7 @@ __global__ void batched_ucb_selection_kernel(
     const int* __restrict__ col_indices,
     int* __restrict__ selected_actions,
     float* __restrict__ selected_scores,
-    const int num_nodes,
+    const int64_t num_nodes,
     const float c_puct
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -593,8 +593,8 @@ std::tuple<torch::Tensor, torch::Tensor> find_expansion_nodes_cuda(
     torch::Tensor children,
     torch::Tensor visit_counts,
     torch::Tensor valid_path_mask,
-    int wave_size,
-    int max_children,
+    int64_t wave_size,
+    int64_t max_children,
     int num_nodes
 ) {
     auto expansion_nodes = torch::zeros({wave_size}, 
@@ -759,7 +759,7 @@ __global__ void phase_kicked_policy_kernel(
     const int batch_size,
     const int num_actions,
     const float kick_strength,
-    const unsigned int seed
+    const int64_t seed
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= batch_size * num_actions) return;
@@ -859,7 +859,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> phase_kicked_policy_cuda
     const int blocks = (total_elements + threads - 1) / threads;
     
     // Random seed for phase generation
-    unsigned int seed = time(nullptr);
+    int64_t seed = time(nullptr);
     
     phase_kicked_policy_kernel<<<blocks, threads>>>(
         priors.data_ptr<float>(),

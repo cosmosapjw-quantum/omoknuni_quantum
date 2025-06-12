@@ -171,6 +171,8 @@ class AlphaZeroNetwork(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
+        # Store for multiprocessing
+        self._init_kwargs = {'config': config}
         
         # Initial convolution
         self.initial_conv = nn.Conv2d(

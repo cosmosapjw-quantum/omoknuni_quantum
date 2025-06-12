@@ -21,7 +21,27 @@ from ..quantum.path_integral import PathIntegral, PathIntegralConfig
 from ..quantum.quantum_features import QuantumMCTS as QuantumFeatures, QuantumConfig as QuantumMCTSConfig
 from ..utils.tensor_pool import get_tensor_pool
 
+# Initialize CUDA operations
 logger = logging.getLogger(__name__)
+
+# Try to import CUDA kernels directly
+try:
+    import os
+    # Get the absolute path to the CUDA kernels
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kernel_path = os.path.join(os.path.dirname(current_dir), 'gpu', 'mcts_cuda_kernels.cpython-312-x86_64-linux-gnu.so')
+    
+    if os.path.exists(kernel_path):
+        torch.ops.load_library(kernel_path)
+        import mcts.gpu.mcts_cuda_kernels as cuda_kernels_module
+        cuda_ops_available = True
+        logger.info("CUDA kernels loaded successfully for Wave MCTS")
+    else:
+        raise FileNotFoundError(f"CUDA kernel not found at {kernel_path}")
+except Exception as e:
+    cuda_kernels_module = None
+    cuda_ops_available = False
+    logger.info(f"CUDA kernels not available: {e}")
 
 @dataclass
 class WaveMCTSConfig:
@@ -156,10 +176,11 @@ class WavePipeline:
             current_nodes = self.buffer.current_nodes[active_indices]
             
             # Batched UCB selection using custom CUDA kernel
-            if hasattr(torch.ops, 'custom_cuda_ops'):
-                # Use fused kernel for selection
+            if cuda_kernels_module is not None and hasattr(cuda_kernels_module, 'batched_ucb_selection'):
+                # Use CUDA kernel for selection
+                logger.debug("Using CUDA kernel for batched UCB selection")
+                # Note: This would need the CSR tree format - for now use the tree method
                 selected_children, _ = self.tree.batch_select_ucb_optimized(current_nodes, c_puct=self.config.c_puct)
-            
             else:
                 selected_children, _ = self.tree.batch_select_ucb_optimized(current_nodes, c_puct=self.config.c_puct)
             
@@ -245,11 +266,12 @@ class WavePipeline:
         current_nodes = self.buffer.current_nodes[:wave_size]
         
         # Try to use GPU kernel for finding expansion nodes
-        if (hasattr(torch.ops, 'mcts_cuda_kernels') and 
-            hasattr(torch.ops.mcts_cuda_kernels, 'find_expansion_nodes') and
+        if (cuda_kernels_module is not None and 
+            hasattr(cuda_kernels_module, 'find_expansion_nodes') and
             self.tree.device.type == 'cuda'):
             # Use GPU kernel
-            expansion_nodes, expansion_count = torch.ops.mcts_cuda_kernels.find_expansion_nodes(
+            logger.debug("Using CUDA kernel for find_expansion_nodes")
+            expansion_nodes, expansion_count = cuda_kernels_module.find_expansion_nodes(
                 current_nodes,
                 self.tree.children,
                 self.tree.visit_counts,
@@ -369,7 +391,7 @@ class WavePipeline:
             
             for future in as_completed(futures):
                 idx, features = future.result()
-                features_batch[idx] = torch.from_numpy(features)
+                features_batch[idx] = torch.from_numpy(features).float()
         
         # BATCH NEURAL NETWORK EVALUATION
         with torch.no_grad():
@@ -377,8 +399,8 @@ class WavePipeline:
         
         # FAST EXPANSION using batch legal move processing
         # Try to use GPU kernel for batch legal move processing if available
-        if (hasattr(torch.ops, 'mcts_cuda_kernels') and 
-            hasattr(torch.ops.mcts_cuda_kernels, 'batch_process_legal_moves') and
+        if (cuda_kernels_module is not None and 
+            hasattr(cuda_kernels_module, 'batch_process_legal_moves') and
             self.tree.device.type == 'cuda' and
             hasattr(self.game_interface, 'get_board_size')):
             
@@ -400,28 +422,35 @@ class WavePipeline:
             normalized_priors = torch.zeros((num_nodes, board_size), dtype=torch.float32, device=self.tree.device)
             num_legal_moves = torch.zeros(num_nodes, dtype=torch.int32, device=self.tree.device)
             
-            # Call GPU kernel
-            torch.ops.mcts_cuda_kernels.batch_process_legal_moves(
-                board_states,
-                policies_batch,
-                legal_move_masks,
-                normalized_priors,
-                num_legal_moves,
-                num_nodes,
-                board_size
+            # Ensure policies_batch is float32
+            if policies_batch.dtype != torch.float32:
+                policies_batch = policies_batch.float()
+            
+            # Call GPU kernel with correct arguments
+            normalized_priors, legal_move_indices, num_legal_moves = cuda_kernels_module.batch_process_legal_moves(
+                policies_batch,  # raw_policies
+                board_states,    # board_states
+                num_nodes,       # num_states
+                board_size       # action_size
             )
             
             # Convert results to expansion data
             expansion_data = []
             for i, node_id in enumerate(nodes_with_states):
                 if num_legal_moves[i] > 0:
-                    legal_indices = torch.where(legal_move_masks[i])[0]
-                    priors = normalized_priors[i][legal_indices]
-                    expansion_data.append((
-                        node_id,
-                        legal_indices.cpu().tolist(),
-                        priors.cpu().tolist()
-                    ))
+                    # Extract legal moves for this state
+                    start_idx = i * board_size
+                    end_idx = start_idx + num_legal_moves[i].item()
+                    legal_indices = legal_move_indices[start_idx:end_idx]
+                    legal_indices = legal_indices[legal_indices >= 0]  # Filter valid indices
+                    
+                    if len(legal_indices) > 0:
+                        priors = normalized_priors[i][legal_indices]
+                        expansion_data.append((
+                            node_id,
+                            legal_indices.cpu().tolist(),
+                            priors.cpu().tolist()
+                        ))
         else:
             # Fallback to CPU version with optimized batch processing
             expansion_data = []
@@ -615,8 +644,8 @@ class WavePipeline:
         # No need to wait - called after evaluation
             
         # Use custom CUDA kernel for parallel backup if available and on CUDA device
-        if (hasattr(torch.ops, 'custom_cuda_ops') and 
-            hasattr(torch.ops.custom_cuda_ops, 'parallel_backup') and 
+        if (cuda_kernels_module is not None and 
+            hasattr(cuda_kernels_module, 'parallel_backup') and 
             self.tree.device.type == 'cuda'):
             # Convert all tensors to float32 for CUDA kernel compatibility
             values_for_kernel = self.buffer.values[:wave_size].float()
@@ -628,7 +657,7 @@ class WavePipeline:
                 value_sums_float32 = self.tree.value_sums.float()
                 visit_counts_int32 = self.tree.visit_counts.int()
                 
-                torch.ops.custom_cuda_ops.parallel_backup(
+                cuda_kernels_module.parallel_backup(
                     paths_for_kernel,
                     values_for_kernel,
                     path_lengths_for_kernel,
@@ -640,7 +669,7 @@ class WavePipeline:
                 self.tree.value_sums.copy_(value_sums_float32.to(self.tree.value_sums.dtype))
                 self.tree.visit_counts.copy_(visit_counts_int32.to(self.tree.visit_counts.dtype))
             else:
-                torch.ops.custom_cuda_ops.parallel_backup(
+                cuda_kernels_module.parallel_backup(
                     paths_for_kernel,
                     values_for_kernel,
                     path_lengths_for_kernel,
