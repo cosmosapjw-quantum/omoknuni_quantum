@@ -5,9 +5,11 @@ enabling massive parallelization of state operations without CPU-GPU transfers.
 """
 
 import torch
+import numpy as np
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass
 from enum import IntEnum
+import alphazero_py
 
 
 class GameType(IntEnum):
@@ -115,6 +117,12 @@ class GPUGameStates:
         self.move_history_size = 8
         self.move_history = torch.full((capacity, self.move_history_size), -1, 
                                       dtype=torch.int16, device=device)
+        
+        # Full move history for exact state reconstruction
+        # Max game length: Chess ~200, Go ~400, Gomoku ~225
+        max_game_length = 500 if self.game_type == GameType.GO else 250
+        self.full_move_history = torch.full((capacity, max_game_length), -1,
+                                           dtype=torch.int16, device=device)
     
     def allocate_states(self, num_states: int) -> torch.Tensor:
         """Allocate new states and return their indices
@@ -235,6 +243,7 @@ class GPUGameStates:
         self.is_terminal[clone_indices] = self.is_terminal[parent_mapping]
         self.winner[clone_indices] = self.winner[parent_mapping]
         self.move_history[clone_indices] = self.move_history[parent_mapping]
+        self.full_move_history[clone_indices] = self.full_move_history[parent_mapping]
         
         # Copy game-specific state
         if self.game_type == GameType.CHESS:
@@ -321,9 +330,14 @@ class GPUGameStates:
             # Vectorized board update
             self.boards[state_indices, rows, cols] = current_players
             
-            # Update move history
+            # Update move history (rolling buffer for NN features)
             self.move_history[state_indices] = torch.roll(self.move_history[state_indices], -1, dims=1)
             self.move_history[state_indices, -1] = actions.to(torch.int16)
+            
+            # Store in full move history at current move count position
+            move_counts = self.move_count[state_indices]
+            batch_indices = torch.arange(len(state_indices), device=self.device)
+            self.full_move_history[batch_indices, move_counts] = actions.to(torch.int16)
             
             # Switch players
             self.current_player[state_indices] = 3 - current_players  # 1->2, 2->1
@@ -371,9 +385,13 @@ class GPUGameStates:
             state_indices: State indices to get features for
             
         Returns:
-            Feature tensor ready for neural network
+            Feature tensor ready for neural network (20 channels for enhanced representation)
         """
         batch_size = len(state_indices)
+        
+        # Use enhanced 20-channel representation if available
+        if hasattr(self, '_use_enhanced_features') and self._use_enhanced_features:
+            return self._get_enhanced_nn_features(state_indices)
         
         if self.game_type == GameType.GOMOKU:
             # Create feature planes: current player stones, opponent stones, empty
@@ -419,6 +437,21 @@ class GPUGameStates:
             
         return features
     
+    def get_nn_features_batch(self, state_indices: torch.Tensor) -> torch.Tensor:
+        """Alias for get_nn_features for consistency with V3 API"""
+        return self.get_nn_features(state_indices)
+    
+    def get_feature_planes(self) -> int:
+        """Get number of feature planes for the current game type"""
+        if hasattr(self, '_use_enhanced_features') and self._use_enhanced_features:
+            return 20  # Enhanced representation
+        if self.game_type == GameType.GOMOKU:
+            return 4  # current player, opponent, empty, current player constant
+        elif self.game_type == GameType.GO:
+            return 5  # black, white, empty, ko, current player
+        else:  # Chess
+            return 12  # 6 piece types x 2 colors
+    
     def get_state_info(self, state_idx: int) -> Dict[str, Any]:
         """Get human-readable state information for debugging"""
         info = {
@@ -438,3 +471,133 @@ class GPUGameStates:
             info['captured'] = self.captured[state_idx].tolist()
             
         return info
+    
+    def enable_enhanced_features(self):
+        """Enable 20-channel enhanced feature representation for all games"""
+        self._use_enhanced_features = True
+        self._cpp_states_cache = {}
+        self._cpp_states_pool = []  # Pool of reusable states
+    
+    def _get_enhanced_nn_features(self, state_indices: torch.Tensor) -> torch.Tensor:
+        """
+        Get 20-channel enhanced neural network features using C++ implementation
+        
+        Channel layout (same for all games - Chess, Go, Gomoku):
+        0: Current board state
+        1: Current player indicator
+        2-17: Previous 8 moves for each player (16 channels)
+        18-19: Attack/defense planes
+        
+        Args:
+            state_indices: State indices to get features for
+            
+        Returns:
+            Feature tensor of shape (batch_size, 20, board_size, board_size)
+        """
+        batch_size = len(state_indices)
+        
+        # Create tensor to hold all features
+        features = torch.zeros((batch_size, 20, self.board_size, self.board_size), 
+                             device=self.device, dtype=torch.float32)
+        
+        # Process each state
+        for i, state_idx in enumerate(state_indices):
+            idx = state_idx.item()
+            
+            # Get or create C++ state
+            cpp_state = self._get_cpp_state(idx)
+            
+            # Get enhanced tensor representation from C++
+            enhanced_tensor = cpp_state.get_enhanced_tensor_representation()
+            
+            # Convert numpy array to torch tensor and copy to GPU
+            features[i] = torch.from_numpy(enhanced_tensor).to(self.device)
+        
+        return features
+    
+    def _get_cpp_state(self, state_idx: int):
+        """Get or create C++ game state for given index using exact reconstruction"""
+        
+        # Check cache first
+        if hasattr(self, '_cpp_states_cache') and state_idx in self._cpp_states_cache:
+            return self._cpp_states_cache[state_idx]
+        
+        # Initialize cache if needed
+        if not hasattr(self, '_cpp_states_cache'):
+            self._cpp_states_cache = {}
+            self._cpp_states_pool = []
+        
+        # Get move history for this state
+        move_count = self.move_count[state_idx].item()
+        
+        if hasattr(self, 'full_move_history') and move_count > 0:
+            # Build move list from full history
+            moves = []
+            for m in range(move_count):
+                move = self.full_move_history[state_idx, m].item()
+                if move >= 0:
+                    moves.append(move)
+            
+            # Create state from moves using the exact C++ game logic
+            # Map Python integer enum to C++ enum
+            if self.game_type == GameType.CHESS:
+                cpp_game_type = alphazero_py.GameType.CHESS
+            elif self.game_type == GameType.GO:
+                cpp_game_type = alphazero_py.GameType.GO
+            elif self.game_type == GameType.GOMOKU:
+                cpp_game_type = alphazero_py.GameType.GOMOKU
+            else:
+                raise ValueError(f"Unknown game type: {self.game_type}")
+            
+            # Convert moves to string format expected by createGameFromMoves
+            move_strings = []
+            
+            # Get a temporary state to convert moves to strings
+            if self._cpp_states_pool:
+                temp_state = self._cpp_states_pool.pop()
+            else:
+                temp_state = alphazero_py.create_game(cpp_game_type)
+            
+            # Reset temp state to initial position
+            temp_initial = alphazero_py.create_game(cpp_game_type)
+            temp_state.copy_from(temp_initial)
+            
+            # Convert each move to string
+            for move in moves:
+                move_str = temp_state.action_to_string(move)
+                move_strings.append(move_str)
+                if temp_state.is_legal_move(move):
+                    temp_state.make_move(move)
+            
+            # Return temp state to pool
+            self._cpp_states_pool.append(temp_state)
+            
+            # Create state from move string
+            moves_str = " ".join(move_strings)
+            cpp_state = alphazero_py.create_game_from_moves(cpp_game_type, moves_str)
+            
+        else:
+            # No move history - create initial state
+            # Map Python integer enum to C++ enum
+            if self.game_type == GameType.CHESS:
+                cpp_game_type = alphazero_py.GameType.CHESS
+            elif self.game_type == GameType.GO:
+                cpp_game_type = alphazero_py.GameType.GO
+            elif self.game_type == GameType.GOMOKU:
+                cpp_game_type = alphazero_py.GameType.GOMOKU
+            else:
+                raise ValueError(f"Unknown game type: {self.game_type}")
+            
+            cpp_state = alphazero_py.create_game(cpp_game_type)
+        
+        # Cache the state
+        self._cpp_states_cache[state_idx] = cpp_state
+        
+        return cpp_state
+    
+    def clear_enhanced_cache(self):
+        """Clear the C++ states cache and pool"""
+        if hasattr(self, '_cpp_states_cache'):
+            self._cpp_states_cache.clear()
+        if hasattr(self, '_cpp_states_pool'):
+            self._cpp_states_pool.clear()

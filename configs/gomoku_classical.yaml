@@ -3,7 +3,7 @@
 
 experiment_name: gomoku_classical
 seed: 42
-log_level: DEBUG
+log_level: INFO
 num_iterations: 300
 
 game:

@@ -46,9 +46,38 @@ py::array_t<float> tensorToNumpy(const std::vector<std::vector<std::vector<float
     return array;
 }
 
+// Game registration helper
+void registerGames() {
+    static bool registered = false;
+    if (!registered) {
+        // Register Chess
+        core::GameRegistry::instance().registerGame(
+            core::GameType::CHESS,
+            []() { return std::make_unique<games::chess::ChessState>(); }
+        );
+        
+        // Register Go
+        core::GameRegistry::instance().registerGame(
+            core::GameType::GO,
+            []() { return std::make_unique<games::go::GoState>(); }
+        );
+        
+        // Register Gomoku
+        core::GameRegistry::instance().registerGame(
+            core::GameType::GOMOKU,
+            []() { return std::make_unique<games::gomoku::GomokuState>(); }
+        );
+        
+        registered = true;
+    }
+}
+
 // Module definition
 PYBIND11_MODULE(alphazero_py, m) {
     m.doc() = "AlphaZero Python bindings - Game Logic Only";
+    
+    // Register games on module import
+    registerGames();
     
     // Game types
     py::enum_<core::GameType>(m, "GameType")
@@ -88,7 +117,8 @@ PYBIND11_MODULE(alphazero_py, m) {
         .def("string_to_action", &core::IGameState::stringToAction)
         .def("to_string", &core::IGameState::toString)
         .def("get_move_history", &core::IGameState::getMoveHistory)
-        .def("clone", &core::IGameState::clone);
+        .def("clone", &core::IGameState::clone)
+        .def("copy_from", &core::IGameState::copyFrom);
     
     // Game factory
     m.def("create_game", [](core::GameType type) {

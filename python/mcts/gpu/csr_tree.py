@@ -1263,3 +1263,129 @@ class CSRTree:
         # Update row pointers if needed
         if self._needs_row_ptr_update:
             self._rebuild_row_pointers()
+    
+    def add_children_batch_gpu(self, parent_idx: int, actions: torch.Tensor, priors: torch.Tensor) -> torch.Tensor:
+        """GPU-optimized batch child addition - returns tensor of child indices"""
+        num_children = len(actions)
+        
+        # Check capacity
+        if self.max_nodes != float('inf') and self.num_nodes + num_children > self.max_nodes:
+            raise RuntimeError(f"Tree full: {self.num_nodes + num_children} > {self.max_nodes}")
+        
+        # Grow storage if needed
+        while self.num_nodes + num_children > len(self.visit_counts):
+            self._grow_node_storage()
+            
+        if self.num_edges + num_children > self.edge_capacity:
+            self._grow_edge_storage(self.num_edges + num_children)
+        
+        # Allocate child indices
+        start_idx = self.num_nodes
+        child_indices = torch.arange(start_idx, start_idx + num_children, device=self.device, dtype=torch.int32)
+        
+        # Vectorized node initialization
+        self.visit_counts[child_indices] = 0
+        self.value_sums[child_indices] = 0.0
+        self.node_priors[child_indices] = priors
+        self.parent_indices[child_indices] = parent_idx
+        self.parent_actions[child_indices] = actions
+        self.flags[child_indices] = 0
+        self.phases[child_indices] = 0.0
+        
+        # Add to CSR structure
+        start_edge = self.num_edges
+        edge_indices = torch.arange(start_edge, start_edge + num_children, device=self.device)
+        self.col_indices[edge_indices] = child_indices
+        self.edge_actions[edge_indices] = actions
+        self.edge_priors[edge_indices] = priors
+        
+        # Update counts
+        self.num_nodes += num_children
+        self.num_edges += num_children
+        
+        # Update atomic counters
+        self.node_counter[0] = self.num_nodes
+        self.edge_counter[0] = self.num_edges
+        
+        # Mark for row pointer update
+        self._needs_row_ptr_update = True
+        
+        # Update children lookup table
+        parent_children = self.children[parent_idx]
+        empty_mask = parent_children == -1
+        empty_indices = torch.where(empty_mask)[0]
+        
+        if len(empty_indices) >= num_children:
+            self.children[parent_idx, empty_indices[:num_children]] = child_indices
+        else:
+            if len(empty_indices) > 0:
+                self.children[parent_idx, empty_indices] = child_indices[:len(empty_indices)]
+        
+        return child_indices
+    
+    def select_children_ucb_batch(self, node_indices: torch.Tensor, c_puct: float, 
+                                 active_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Batch UCB selection for all nodes - returns (selected_children, valid_mask)"""
+        batch_size = len(node_indices)
+        device = node_indices.device
+        
+        # Initialize outputs
+        selected_children = torch.full((batch_size,), -1, dtype=torch.int32, device=device)
+        valid_mask = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        
+        # Process only active nodes
+        if not active_mask.any():
+            return selected_children, valid_mask
+            
+        active_nodes = node_indices[active_mask]
+        
+        # Get children for active nodes
+        children_batch, actions_batch, priors_batch = self.batch_get_children(active_nodes)
+        
+        # For each active node, compute UCB and select best child
+        for i, node_idx in enumerate(active_nodes):
+            children = children_batch[i]
+            valid_children = children[children >= 0]
+            
+            if len(valid_children) == 0:
+                continue
+                
+            # Compute UCB scores
+            q_values = self.value_sums[valid_children] / (self.visit_counts[valid_children] + 1e-8)
+            sqrt_parent_visits = torch.sqrt(self.visit_counts[node_idx].float())
+            
+            ucb_scores = q_values + c_puct * priors_batch[i][:len(valid_children)] * \
+                        sqrt_parent_visits / (1 + self.visit_counts[valid_children].float())
+            
+            # Select best child
+            best_idx = ucb_scores.argmax()
+            active_idx = active_mask.nonzero()[0][i]
+            selected_children[active_idx] = valid_children[best_idx]
+            valid_mask[active_idx] = True
+            
+        return selected_children, valid_mask
+    
+    def apply_virtual_loss_batch(self, node_indices: torch.Tensor):
+        """Apply virtual loss to multiple nodes"""
+        if self.config.enable_virtual_loss:
+            valid_mask = node_indices >= 0
+            if valid_mask.any():
+                valid_nodes = node_indices[valid_mask]
+                self.visit_counts[valid_nodes] += 1
+                self.value_sums[valid_nodes] += self.config.virtual_loss_value
+    
+    def remove_virtual_loss_batch(self, node_indices: torch.Tensor):
+        """Remove virtual loss from multiple nodes"""
+        if self.config.enable_virtual_loss:
+            valid_mask = node_indices >= 0
+            if valid_mask.any():
+                valid_nodes = node_indices[valid_mask]
+                self.visit_counts[valid_nodes] -= 1
+                self.value_sums[valid_nodes] -= self.config.virtual_loss_value
+    
+    def set_expanded_batch(self, node_indices: torch.Tensor):
+        """Mark multiple nodes as expanded"""
+        valid_mask = node_indices >= 0
+        if valid_mask.any():
+            valid_nodes = node_indices[valid_mask]
+            self.flags[valid_nodes] |= 2  # Set expanded flag

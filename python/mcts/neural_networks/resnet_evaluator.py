@@ -166,13 +166,19 @@ class ResNetEvaluator(Evaluator):
         # Ensure value is in [-1, 1]
         values = torch.tanh(value_logits).squeeze(-1)
         
-        # Convert to numpy
-        policies_np = policies.cpu().numpy()
-        values_np = values.cpu().numpy()
-        
-        self.eval_count += batch_size
-        
-        return policies_np, values_np
+        # Convert to numpy (keep on GPU if requested)
+        if hasattr(self, '_return_torch_tensors') and self._return_torch_tensors:
+            # Return torch tensors for GPU-based MCTS
+            self.eval_count += batch_size
+            return policies, values
+        else:
+            # Convert to numpy for compatibility
+            policies_np = policies.cpu().numpy()
+            values_np = values.cpu().numpy()
+            
+            self.eval_count += batch_size
+            
+            return policies_np, values_np
     
     def save_checkpoint(self, path: str, additional_info: Optional[Dict[str, Any]] = None):
         """

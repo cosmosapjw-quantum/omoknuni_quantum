@@ -158,6 +158,8 @@ class QuantumMCTS:
         is_batched = q_values.dim() > 1
         batch_size = q_values.shape[0] if is_batched else 1
         
+        logger.debug(f"Quantum selection called: batch_size={batch_size}, shape={q_values.shape}, is_batched={is_batched}")
+        
         # Standard UCB computation (always needed)
         if parent_visits is None:
             parent_visits = visit_counts.sum(dim=-1, keepdim=True) if is_batched else visit_counts.sum()
@@ -172,6 +174,7 @@ class QuantumMCTS:
         
         # Apply quantum only for sufficient batch size
         if batch_size < self.config.min_wave_size:
+            logger.debug(f"Quantum: Batch size {batch_size} < min_wave_size {self.config.min_wave_size}, using classical")
             return q_values + exploration
         
         # Update stats

@@ -50,8 +50,7 @@ except ImportError:
     print("⚠️  pandas not available - CSV export will be disabled")
 
 # MCTS imports
-from mcts.core.mcts import MCTS, MCTSConfig
-from mcts.core.unified_mcts import UnifiedMCTS, UnifiedMCTSConfig
+from mcts.core.optimized_mcts import MCTS, MCTSConfig
 from mcts.gpu.gpu_game_states import GameType
 import alphazero_py
 
@@ -337,30 +336,24 @@ class InstrumentedMCTS:
     def _instrument_mcts(self):
         """Add profiling instrumentation to MCTS methods"""
         try:
-            # Get the actual engine (UnifiedMCTS)
-            if hasattr(self.mcts, 'unified_mcts'):
-                engine = self.mcts.unified_mcts
-            elif hasattr(self.mcts, '_select_batch'):
-                engine = self.mcts
-            else:
-                # This is the wrapper MCTS, can't instrument phases
-                logger.warning("Cannot instrument MCTS phases - no access to UnifiedMCTS")
-                self.instrumentation_enabled = False
-                return
-                
-            # Check if methods exist
-            required_methods = ['_select_batch', '_expand_batch', '_evaluate_batch', '_backup_batch']
+            # The new optimized MCTS has different method names
+            engine = self.mcts
+            
+            # Check if methods exist - new names in optimized implementation
+            required_methods = ['_select_batch_vectorized', '_expand_batch_vectorized', 
+                              '_evaluate_batch_vectorized', '_backup_batch_vectorized']
+            
             for method in required_methods:
                 if not hasattr(engine, method):
-                    logger.warning(f"Method {method} not found - disabling instrumentation")
+                    logger.warning(f"Method {method} not found - trying basic profiling")
                     self.instrumentation_enabled = False
                     return
             
             # Instrument the core search phases
-            original_select = engine._select_batch
-            original_expand = engine._expand_batch  
-            original_evaluate = engine._evaluate_batch
-            original_backup = engine._backup_batch
+            original_select = engine._select_batch_vectorized
+            original_expand = engine._expand_batch_vectorized  
+            original_evaluate = engine._evaluate_batch_vectorized
+            original_backup = engine._backup_batch_vectorized
             
             def instrumented_select(wave_size):
                 return self._profile_phase('selection', original_select, wave_size)
@@ -371,14 +364,14 @@ class InstrumentedMCTS:
             def instrumented_evaluate(nodes):
                 return self._profile_phase('evaluation', original_evaluate, nodes)
                 
-            def instrumented_backup(paths, values):
-                return self._profile_phase('backup', original_backup, paths, values)
+            def instrumented_backup(paths, path_lengths, values):
+                return self._profile_phase('backup', original_backup, paths, path_lengths, values)
             
             # Replace methods
-            engine._select_batch = instrumented_select
-            engine._expand_batch = instrumented_expand
-            engine._evaluate_batch = instrumented_evaluate
-            engine._backup_batch = instrumented_backup
+            engine._select_batch_vectorized = instrumented_select
+            engine._expand_batch_vectorized = instrumented_expand
+            engine._evaluate_batch_vectorized = instrumented_evaluate
+            engine._backup_batch_vectorized = instrumented_backup
             
             self.instrumentation_enabled = True
             logger.info("MCTS instrumentation enabled successfully")
@@ -534,10 +527,19 @@ class InstrumentedMCTS:
             bottleneck_phase, peak_memory, avg_memory, tree_stats
         )
         
+        # Convert config to dict, handling any non-serializable fields
+        config_dict = {}
+        for field in self.config.__dataclass_fields__:
+            value = getattr(self.config, field)
+            if hasattr(value, '__dict__'):
+                config_dict[field] = str(value)
+            else:
+                config_dict[field] = value
+        
         return MCTSProfile(
-            config=asdict(self.config),
+            config=config_dict,
             num_simulations=num_simulations,
-            wave_size=self.config.wave_size,
+            wave_size=self.config.max_wave_size,
             total_time_ms=total_time_ms,
             simulations_per_second=simulations_per_second,
             phases=self.phase_profiles.copy(),
@@ -704,8 +706,13 @@ class MCTSBenchmarkSuite:
                     num_simulations=num_sims,
                     device='cuda',
                     game_type=GameType.GOMOKU,
-                    wave_size=wave_size,
-                    board_size=15
+                    min_wave_size=wave_size,
+                    max_wave_size=wave_size,
+                    adaptive_wave_sizing=False,  # Critical for performance
+                    board_size=15,
+                    use_mixed_precision=True,
+                    use_cuda_graphs=True,
+                    use_tensor_cores=True
                 )
                 
                 # Run benchmark
@@ -746,7 +753,9 @@ class MCTSBenchmarkSuite:
         
         # Warmup runs
         for _ in range(self.config.warmup_iterations):
-            instrumented_mcts.mcts.search(game_state, min(1000, num_simulations // 10))
+            # Initialize MCTS properly before search
+            warmup_mcts = MCTS(mcts_config, evaluator)
+            warmup_mcts.search(game_state, min(1000, num_simulations // 10))
         
         # Measurement runs
         profiles = []
@@ -988,11 +997,15 @@ def main():
     if args.quick:
         config = ProfilingConfig(
             simulation_counts=[1000, 5000, 10000],
-            wave_sizes=[3072, 3648, 4096],  # Optimal range for RTX 3060 Ti
+            wave_sizes=[3072],  # Optimal for RTX 3060 Ti
             measurement_iterations=3
         )
     else:
-        config = ProfilingConfig()
+        config = ProfilingConfig(
+            simulation_counts=[1000, 5000, 10000, 25000, 50000, 100000],
+            wave_sizes=[3072],  # Fixed optimal wave size
+            measurement_iterations=5
+        )
     
     if args.output_dir:
         config.output_dir = args.output_dir

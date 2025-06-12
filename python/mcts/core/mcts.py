@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import logging
 
 from .unified_mcts import UnifiedMCTS, UnifiedMCTSConfig
+from .optimized_mcts import MCTS as OptimizedMCTS, MCTSConfig as OptimizedMCTSConfig
 from .game_interface import GameInterface, GameType as LegacyGameType
 from ..gpu.gpu_game_states import GameType
 from ..neural_networks.evaluator_pool import EvaluatorPool
@@ -74,7 +75,11 @@ class MCTSConfig:
 
 
 class MCTS:
-    """Optimized MCTS achieving 80k-200k simulations/second"""
+    """Optimized MCTS achieving 80k-200k simulations/second
+    
+    This wrapper automatically selects the best implementation based on
+    the use_optimized_implementation flag in the config.
+    """
     
     def __init__(
         self,
@@ -92,12 +97,49 @@ class MCTS:
         self.config = config
         self.device = torch.device(config.device)
         
-        # Convert config to UnifiedMCTSConfig
-        unified_config = UnifiedMCTSConfig(
-            num_simulations=config.num_simulations,
-            c_puct=config.c_puct,
-            temperature=config.temperature,
-            dirichlet_alpha=config.dirichlet_alpha,
+        # Use optimized implementation for best performance
+        if config.use_optimized_implementation:
+            # Convert to OptimizedMCTSConfig
+            optimized_config = OptimizedMCTSConfig(
+                num_simulations=config.num_simulations,
+                c_puct=config.c_puct,
+                temperature=config.temperature,
+                dirichlet_alpha=config.dirichlet_alpha,
+                dirichlet_epsilon=config.dirichlet_epsilon,
+                wave_size=config.wave_size or 8192,  # Default to 8192 for RTX 3060 Ti
+                min_wave_size=config.min_wave_size,
+                max_wave_size=config.max_wave_size,
+                adaptive_wave_sizing=False,  # Always false for best performance
+                device=config.device,
+                game_type=config.game_type,
+                board_size=config.board_size,
+                enable_quantum=config.enable_quantum,
+                quantum_config=config.quantum_config,
+                enable_virtual_loss=config.enable_virtual_loss,
+                virtual_loss_value=config.virtual_loss_value,
+                state_pool_size=1000000,  # 1M states for high performance
+                initial_children_per_expansion=10,
+                max_children_per_node=100,
+                progressive_expansion_threshold=5
+            )
+            
+            # Wrap evaluator if needed
+            if isinstance(evaluator, EvaluatorPool):
+                wrapped_evaluator = SimpleEvaluatorWrapper(evaluator)
+            else:
+                wrapped_evaluator = evaluator
+                
+            # Create optimized MCTS
+            self.unified_mcts = OptimizedMCTS(optimized_config, wrapped_evaluator)
+            logger.info("Using OptimizedMCTS implementation for maximum performance")
+            
+        else:
+            # Use original UnifiedMCTS
+            unified_config = UnifiedMCTSConfig(
+                num_simulations=config.num_simulations,
+                c_puct=config.c_puct,
+                temperature=config.temperature,
+                dirichlet_alpha=config.dirichlet_alpha,
             dirichlet_epsilon=config.dirichlet_epsilon,
             wave_size=config.wave_size,
             min_wave_size=config.min_wave_size,
@@ -109,18 +151,31 @@ class MCTS:
             quantum_config=config.quantum_config,
             enable_virtual_loss=config.enable_virtual_loss,
             virtual_loss_value=config.virtual_loss_value
-        )
-        
-        # Setup evaluator if needed
-        if not isinstance(evaluator, EvaluatorPool):
-            # Wrap single evaluator
-            self.evaluator = SimpleEvaluatorWrapper(evaluator, config.device)
-        else:
-            self.evaluator = evaluator
+            )
             
-        # Create unified MCTS
-        self.unified_mcts = UnifiedMCTS(unified_config, self.evaluator)
+            # Setup evaluator if needed
+            if not isinstance(evaluator, EvaluatorPool):
+                # Wrap single evaluator
+                self.evaluator = SimpleEvaluatorWrapper(evaluator, config.device)
+            else:
+                self.evaluator = evaluator
+                
+            # Create unified MCTS
+            self.unified_mcts = UnifiedMCTS(unified_config, self.evaluator)
         
+        # Create game interface if needed (for cached_game compatibility)
+        if game_interface is None:
+            # Map GameType enum to legacy GameType
+            legacy_game_type = LegacyGameType.GOMOKU
+            if config.game_type == GameType.CHESS:
+                legacy_game_type = LegacyGameType.CHESS
+            elif config.game_type == GameType.GO:
+                legacy_game_type = LegacyGameType.GO
+                
+            self.cached_game = GameInterface(legacy_game_type, board_size=config.board_size)
+        else:
+            self.cached_game = game_interface
+            
         # Statistics
         self.stats = {
             'total_searches': 0,
