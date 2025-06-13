@@ -610,16 +610,23 @@ class AlphaZeroEvaluator(Evaluator):
                 log_policies = torch.log(policies + 1e-8) / temperature
                 policies = torch.softmax(log_policies, dim=1)
             
-            # Convert to numpy
-            policies_np = policies.cpu().numpy()
-            values_np = values.cpu().numpy().squeeze(-1)
-            
-            # Ensure values are in [-1, 1] range
-            values_np = np.tanh(values_np)
-            
-            self.eval_count += len(states)
-            
-            return policies_np, values_np
+            # Convert to numpy (keep on GPU if requested)
+            if hasattr(self, '_return_torch_tensors') and self._return_torch_tensors:
+                # Return torch tensors for GPU-based MCTS
+                values = torch.tanh(values.squeeze(-1))  # Ensure values are in [-1, 1] range
+                self.eval_count += len(states)
+                return policies, values
+            else:
+                # Convert to numpy for compatibility
+                policies_np = policies.cpu().numpy()
+                values_np = values.cpu().numpy().squeeze(-1)
+                
+                # Ensure values are in [-1, 1] range
+                values_np = np.tanh(values_np)
+                
+                self.eval_count += len(states)
+                
+                return policies_np, values_np
     
     def save_checkpoint(self, path: str):
         """Save model checkpoint"""

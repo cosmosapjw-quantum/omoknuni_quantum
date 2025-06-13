@@ -272,7 +272,7 @@ class MixedPrecisionWrapper(BaseGameModel):
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass with mixed precision"""
         if self.enabled:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 policy, value = self.base_model(x)
                 # Ensure FP32 output
                 return policy.float(), value.float()

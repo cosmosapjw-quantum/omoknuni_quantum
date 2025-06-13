@@ -182,7 +182,7 @@ class QuantumMCTS:
         self.stats['total_selections'] += batch_size
         
         # Vectorized quantum corrections with mixed precision and bounds checking
-        with torch.cuda.amp.autocast(enabled=self.config.use_mixed_precision and self.device.type == 'cuda'):
+        with torch.amp.autocast('cuda', enabled=self.config.use_mixed_precision and self.device.type == 'cuda'):
             try:
                 # Validate tensor shapes before quantum operations
                 if q_values.shape != visit_counts.shape or q_values.shape != priors.shape:

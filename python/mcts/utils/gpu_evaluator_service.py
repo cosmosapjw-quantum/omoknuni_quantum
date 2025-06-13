@@ -71,10 +71,17 @@ class GPUEvaluatorService:
         self.shutdown_event = mp.Event()
         self.consumers = []
         
-        logger.info(f"[GPU Service] Initialized with device: {device}, batch_size: {batch_size}")
+        logger.debug(f"[GPU Service] Initialized with device: {device}, batch_size: {batch_size}")
     
     def start(self):
         """Start the consumer processes"""
+        # Ensure spawn method for CUDA
+        import multiprocessing as mp
+        try:
+            mp.set_start_method('spawn', force=True)
+        except RuntimeError:
+            pass  # Already set
+            
         # CRITICAL: Move model to CPU before getting state dict
         self.model.cpu()
         cpu_state_dict = self.model.state_dict()
@@ -103,7 +110,7 @@ class GPUEvaluatorService:
                 num_actions = self.model.config.num_actions
         
         for i in range(self.num_consumers):
-            consumer = Process(
+            consumer = mp.Process(
                 target=_gpu_consumer_process,
                 args=(i, cpu_state_dict, model_class, model_kwargs,
                       self.device, self.batch_size, self.batch_timeout,
@@ -113,11 +120,11 @@ class GPUEvaluatorService:
             consumer.start()
             self.consumers.append(consumer)
             
-        logger.info(f"[GPU Service] Started {self.num_consumers} consumer processes")
+        logger.debug(f"[GPU Service] Started {self.num_consumers} consumer processes")
     
     def stop(self):
         """Stop all consumer processes"""
-        logger.info("[GPU Service] Stopping consumers...")
+        logger.debug("[GPU Service] Stopping consumers...")
         self.shutdown_event.set()
         
         # Send poison pills to unblock consumers
@@ -134,7 +141,7 @@ class GPUEvaluatorService:
                 logger.warning(f"[GPU Service] Force terminating consumer")
                 consumer.terminate()
                 
-        logger.info("[GPU Service] All consumers stopped")
+        logger.debug("[GPU Service] All consumers stopped")
     
     def get_queues(self) -> Tuple[Queue, Queue]:
         """Get request and response queues for workers"""
@@ -151,9 +158,7 @@ def _gpu_consumer_process(consumer_id: int, model_state_dict: Dict,
     import os
     import sys
     
-    # Set up process
-    print(f"[GPU Consumer {consumer_id}] Starting, PID: {os.getpid()}", file=sys.stderr)
-    print(f"[GPU Consumer {consumer_id}] CUDA available: {torch.cuda.is_available()}", file=sys.stderr)
+    # GPU consumer process starting
     
     try:
         # Recreate model with error handling
@@ -165,7 +170,7 @@ def _gpu_consumer_process(consumer_id: int, model_state_dict: Dict,
             model.load_state_dict(model_state_dict)
         except Exception as e:
             # Fallback: create model with explicit dimensions
-            print(f"[GPU Consumer {consumer_id}] Model creation failed: {e}, using fallback", file=sys.stderr)
+            logger.debug(f"[GPU Consumer {consumer_id}] Model creation failed: {e}, using fallback")
             from mcts.neural_networks.nn_model import AlphaZeroNetwork, ModelConfig
             config = ModelConfig(
                 input_channels=input_channels,
@@ -183,7 +188,7 @@ def _gpu_consumer_process(consumer_id: int, model_state_dict: Dict,
         model.to(device_obj)
         model.eval()
         
-        logger.info(f"[GPU Consumer {consumer_id}] Model loaded on {device}")
+        logger.debug(f"[GPU Consumer {consumer_id}] Model loaded on {device}")
         
         # Batch collection
         batch_requests: List[Tuple[EvaluationRequest, float]] = []  # (request, timestamp)

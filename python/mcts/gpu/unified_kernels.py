@@ -29,7 +29,7 @@ def _load_kernels():
             import mcts.gpu.unified_cuda_kernels as unified_module
             _UNIFIED_KERNELS = unified_module
             _KERNELS_AVAILABLE = True
-            logger.info("Successfully imported unified_cuda_kernels module")
+            logger.debug("Successfully imported unified_cuda_kernels module")
             funcs = [attr for attr in dir(unified_module) if not attr.startswith('_') and callable(getattr(unified_module, attr))]
             logger.debug(f"Available kernel functions: {funcs}")
             return True
@@ -104,16 +104,7 @@ class UnifiedGPUKernels:
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.use_cuda = self.device.type == 'cuda' and _load_kernels()
         
-        # Debug logging to track kernel usage
-        import os
-        pid = os.getpid()
-        logger.info(f"[PID {pid}] UnifiedGPUKernels initialized:")
-        logger.info(f"[PID {pid}]   Device: {self.device}")
-        logger.info(f"[PID {pid}]   CUDA kernels loaded: {self.use_cuda}")
-        logger.info(f"[PID {pid}]   _UNIFIED_KERNELS: {_UNIFIED_KERNELS is not None}")
-        if _UNIFIED_KERNELS is not None:
-            available_funcs = [attr for attr in dir(_UNIFIED_KERNELS) if not attr.startswith('_') and callable(getattr(_UNIFIED_KERNELS, attr))]
-            logger.info(f"[PID {pid}]   Available functions: {available_funcs}")
+        # Initialization complete
             
         # Performance statistics
         self.stats = {
@@ -164,13 +155,6 @@ class UnifiedGPUKernels:
         # Get parent visits
         parent_visits = visit_counts[node_indices]
         
-        # Debug logging for first few calls
-        if self.stats['ucb_calls'] <= 5:
-            pid = os.getpid()
-            logger.info(f"[PID {pid}] batch_ucb_selection call #{self.stats['ucb_calls']}:")
-            logger.info(f"[PID {pid}]   Batch size: {len(node_indices)}")
-            logger.info(f"[PID {pid}]   use_cuda: {self.use_cuda}")
-            logger.info(f"[PID {pid}]   _UNIFIED_KERNELS: {_UNIFIED_KERNELS is not None}")
         
         if self.use_cuda and _UNIFIED_KERNELS is not None:
             try:
@@ -252,11 +236,7 @@ class UnifiedGPUKernels:
                 return selected_actions, selected_scores
                 
             except Exception as e:
-                pid = os.getpid()
-                logger.warning(f"[PID {pid}] CUDA kernel batched_ucb_selection failed: {e}. Falling back to PyTorch implementation.")
-                if self.stats['ucb_calls'] <= 5:
-                    import traceback
-                    logger.warning(f"[PID {pid}] Traceback:\n{traceback.format_exc()}")
+                logger.debug(f"CUDA kernel batched_ucb_selection failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback with proper tie-breaking
         return self._ucb_selection_pytorch(
@@ -379,7 +359,7 @@ class UnifiedGPUKernels:
                 else:
                     logger.warning("CUDA kernel parallel_backup not found in loaded module")
             except Exception as e:
-                logger.warning(f"CUDA kernel parallel_backup failed: {e}. Falling back to PyTorch implementation.")
+                logger.debug(f"CUDA kernel parallel_backup failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         batch_size, max_depth = paths.shape
@@ -441,7 +421,7 @@ class UnifiedGPUKernels:
                 else:
                     logger.warning("CUDA kernel quantum_interference not found in loaded module")
             except Exception as e:
-                logger.warning(f"CUDA kernel quantum_interference failed: {e}. Falling back to PyTorch implementation.")
+                logger.debug(f"CUDA kernel quantum_interference failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         # Calculate parent visits
@@ -533,7 +513,7 @@ class UnifiedGPUKernels:
                 else:
                     logger.warning("CUDA kernel fused_minhash_interference not found in loaded module")
             except Exception as e:
-                logger.warning(f"CUDA kernel fused_minhash_interference failed: {e}. Falling back to PyTorch implementation.")
+                logger.debug(f"CUDA kernel fused_minhash_interference failed: {e}. Falling back to PyTorch implementation.")
         
         # Optimized PyTorch implementation
         batch_size = paths.shape[0]
@@ -606,7 +586,7 @@ class UnifiedGPUKernels:
                 else:
                     logger.warning("CUDA kernel phase_kicked_policy not found in loaded module")
             except Exception as e:
-                logger.warning(f"CUDA kernel phase_kicked_policy failed: {e}. Falling back to PyTorch implementation.")
+                logger.debug(f"CUDA kernel phase_kicked_policy failed: {e}. Falling back to PyTorch implementation.")
         
         # PyTorch fallback
         # Estimate uncertainty (inverse sqrt of visits)

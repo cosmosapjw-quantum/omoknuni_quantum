@@ -53,7 +53,7 @@ class MCTSConfig:
     
     # Virtual loss for leaf parallelization
     enable_virtual_loss: bool = True
-    virtual_loss_value: float = -1.0
+    virtual_loss: float = 3.0  # Positive value (will be negated when applied)
     
     # Game type
     game_type: GameType = GameType.GOMOKU
@@ -115,7 +115,7 @@ class MCTS:
                 enable_quantum=config.enable_quantum,
                 quantum_config=config.quantum_config,
                 enable_virtual_loss=config.enable_virtual_loss,
-                virtual_loss_value=config.virtual_loss_value
+                virtual_loss_value=-abs(config.virtual_loss)  # Ensure negative value
             )
             
             # Wrap evaluator if needed
@@ -126,7 +126,7 @@ class MCTS:
                 
             # Create optimized MCTS
             self.unified_mcts = OptimizedMCTS(optimized_config, wrapped_evaluator)
-            logger.info("Using OptimizedMCTS implementation for maximum performance")
+            logger.debug("Using OptimizedMCTS implementation for maximum performance")
             
         else:
             # Use original UnifiedMCTS
@@ -145,7 +145,7 @@ class MCTS:
             enable_quantum=config.enable_quantum,
             quantum_config=config.quantum_config,
             enable_virtual_loss=config.enable_virtual_loss,
-            virtual_loss_value=config.virtual_loss_value
+            virtual_loss_value=-abs(config.virtual_loss)  # Ensure negative value
             )
             
             # Setup evaluator if needed
@@ -473,8 +473,8 @@ class MCTS:
         
     def reset_tree(self):
         """Reset the search tree for a new game or position"""
-        if hasattr(self.wave_mcts, 'reset_tree'):
-            self.wave_mcts.reset_tree()
+        if hasattr(self.unified_mcts, 'reset_tree'):
+            self.unified_mcts.reset_tree()
         logger.debug("Reset search tree")
         
     def run_benchmark(self, state: Any, duration: float = 10.0) -> Dict[str, Any]:
@@ -546,7 +546,7 @@ class MCTS:
     
     def shutdown(self):
         """Shutdown MCTS and clean up resources"""
-        logger.info("Shutting down MCTS...")
+        logger.debug("Shutting down MCTS...")
         
         # Shutdown evaluator if it has shutdown method
         if hasattr(self, 'evaluator') and hasattr(self.evaluator, 'shutdown'):

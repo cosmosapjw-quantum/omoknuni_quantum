@@ -6,6 +6,7 @@ This module handles parallel self-play game generation with progress tracking.
 import logging
 import numpy as np
 import time
+import queue
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -97,7 +98,15 @@ class SelfPlayManager:
         from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
         import multiprocessing as mp
         
-        logger.info(f"[SELF-PLAY] Starting parallel self-play with {num_workers} workers using GPU evaluation service")
+        # Get resource allocation from config (already adjusted for hardware)
+        allocation = getattr(self.config, '_resource_allocation', None)
+        if allocation is None:
+            # Fallback: calculate allocation if not already done
+            hardware = self.config.detect_hardware()
+            allocation = self.config.calculate_resource_allocation(hardware, num_workers)
+            self.config._resource_allocation = allocation
+        
+        logger.info(f"[SELF-PLAY] Starting parallel self-play with {num_workers} workers")
         
         # Set up multiprocessing start method
         try:
@@ -118,7 +127,7 @@ class SelfPlayManager:
         
         # Start the service
         gpu_service.start()
-        logger.info(f"[SELF-PLAY] GPU evaluation service started on device: {self.config.mcts.device}")
+        logger.debug(f"[SELF-PLAY] GPU evaluation service started on device: {self.config.mcts.device}")
         
         try:
             # Get the request and response queues for workers
@@ -128,69 +137,91 @@ class SelfPlayManager:
             initial_state = self.game_interface.create_initial_state()
             action_size = self.game_interface.get_action_space_size(initial_state)
             
-            logger.info(f"[SELF-PLAY] Starting {num_workers} worker processes")
+            logger.debug(f"[SELF-PLAY] Starting {num_workers} worker processes")
             
             # Use Process directly instead of ProcessPoolExecutor
             processes = []
             result_queues = []
             
-            # Limit concurrent workers to prevent memory issues
-            max_concurrent = min(num_workers, 6)  # Limit to 6 concurrent workers
+            # Use hardware-aware concurrent worker limit
+            max_concurrent = allocation['max_concurrent_workers']
             games_per_batch = max_concurrent
             
-            for batch_start in range(0, num_games, games_per_batch):
-                batch_end = min(batch_start + games_per_batch, num_games)
-                batch_processes = []
-                batch_queues = []
-                
-                for game_idx in range(batch_start, batch_end):
-                    # Create result queue for this game
-                    result_queue = mp.Queue()
-                    result_queues.append(result_queue)
-                    batch_queues.append(result_queue)
-                    
-                    # Create process
-                    p = mp.Process(
-                        target=_play_game_worker_wrapper,
-                        args=(self.config, request_queue, response_queue,
-                              action_size, game_idx, iteration, result_queue)
-                    )
-                    p.start()
-                    processes.append(p)
-                    batch_processes.append(p)
-                    logger.debug(f"[SELF-PLAY] Started process for game {game_idx}")
-                
-                # Wait for this batch to complete before starting next
-                for p, q in zip(batch_processes, batch_queues):
-                    p.join(timeout=300)  # 5 minute timeout per game
-                    if p.is_alive():
-                        logger.warning(f"[SELF-PLAY] Process timed out, terminating")
-                        p.terminate()
-                        p.join()
-                        q.put([])  # Empty result for failed game
+            logger.debug(f"[SELF-PLAY] Processing games in batches of {games_per_batch}")
             
-            # Collect results with progress bar
+            # Progress bar setup
             disable_progress = logger.level > logging.INFO
             
             with tqdm(total=num_games, desc="Self-play games", unit="game",
                      disable=disable_progress) as pbar:
-                # Collect all results from queues
-                for i, result_queue in enumerate(result_queues):
-                    try:
-                        game_examples = result_queue.get(timeout=10)  # 10 second timeout
-                        if game_examples:  # Only extend if not empty
-                            examples.extend(game_examples)
-                            logger.debug(f"[SELF-PLAY] Collected {len(game_examples)} examples from game {i}")
-                        else:
-                            logger.warning(f"[SELF-PLAY] Game {i} returned empty examples")
-                    except Exception as e:
-                        logger.error(f"[SELF-PLAY] Failed to get result from game {i}: {e}")
-                    pbar.update(1)
+                
+                for batch_start in range(0, num_games, games_per_batch):
+                    batch_end = min(batch_start + games_per_batch, num_games)
+                    batch_processes = []
+                    batch_queues = []
+                    
+                    # Start processes for this batch
+                    for game_idx in range(batch_start, batch_end):
+                        # Create result queue for this game
+                        result_queue = mp.Queue()
+                        result_queues.append(result_queue)
+                        batch_queues.append(result_queue)
+                        
+                        # Create process with hardware-aware resource allocation
+                        p = mp.Process(
+                            target=_play_game_worker_wrapper,
+                            args=(self.config, request_queue, response_queue,
+                                  action_size, game_idx, iteration, result_queue,
+                                  allocation)
+                        )
+                        p.start()
+                        processes.append(p)
+                        batch_processes.append(p)
+                        logger.debug(f"[SELF-PLAY] Started process for game {game_idx}")
+                    
+                    # Collect results from this batch as they complete
+                    logger.debug(f"[SELF-PLAY] Collecting results from batch of {len(batch_processes)} games...")
+                    
+                    for idx, (p, q) in enumerate(zip(batch_processes, batch_queues)):
+                        game_idx = batch_start + idx
+                        try:
+                            # First check if process is still alive
+                            if p.is_alive():
+                                # Wait for result with timeout
+                                game_examples = q.get(timeout=300)  # 5 minute timeout
+                            else:
+                                # Process already finished, get result immediately
+                                game_examples = q.get(timeout=10)
+                            
+                            if game_examples:
+                                examples.extend(game_examples)
+                                logger.debug(f"[SELF-PLAY] Collected {len(game_examples)} examples from game {game_idx}")
+                            else:
+                                logger.warning(f"[SELF-PLAY] Game {game_idx} returned empty examples")
+                                
+                        except queue.Empty:
+                            logger.error(f"[SELF-PLAY] Timeout waiting for result from game {game_idx}")
+                            if p.is_alive():
+                                logger.warning(f"[SELF-PLAY] Terminating stuck process for game {game_idx}")
+                                p.terminate()
+                                
+                        except Exception as e:
+                            logger.error(f"[SELF-PLAY] Failed to get result from game {game_idx}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            
+                        finally:
+                            # Ensure process is terminated
+                            if p.is_alive():
+                                p.terminate()
+                            p.join(timeout=5)
+                            pbar.update(1)
+            
                             
         finally:
             # Stop the GPU service
             gpu_service.stop()
-            logger.info("[SELF-PLAY] GPU evaluation service stopped")
+            logger.debug("[SELF-PLAY] GPU evaluation service stopped")
         
         return examples
     
@@ -311,7 +342,8 @@ class SelfPlayManager:
 
     def _create_mcts(self, evaluator: Any):
         """Create MCTS instance with quantum features if enabled"""
-        from mcts.core.mcts import MCTS, MCTSConfig
+        # Use optimized MCTS directly as requested
+        from mcts.core.optimized_mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         
@@ -345,8 +377,12 @@ class SelfPlayManager:
             enable_quantum=self.config.mcts.enable_quantum,
             quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
             
-            # Enable debug logging from global config
-            enable_debug_logging=(self.config.log_level == "DEBUG")
+            # Virtual loss for parallel exploration
+            enable_virtual_loss=True,
+            virtual_loss=self.config.mcts.virtual_loss,
+            # Debug options
+            enable_debug_logging=(self.config.log_level == "DEBUG"),
+            profile_gpu_kernels=False  # Don't profile in main process MCTS
         )
         
         # Create MCTS with quantum features if enabled
@@ -371,26 +407,23 @@ def _play_game_worker(config, model_state_dict: Dict,
     import os
     import sys
     
-    # Print early debug info before any imports
-    print(f"[WORKER {game_idx}] Starting worker process", file=sys.stderr)
-    print(f"[WORKER {game_idx}] PID: {os.getpid()}", file=sys.stderr)
+    # Worker startup (minimal output)
     
     # Workers CAN use GPU for tree operations (custom CUDA kernels)
     # Only neural network evaluation goes through the service
     # Don't disable CUDA entirely - just avoid creating models on GPU in workers
     
-    print(f"[WORKER {game_idx}] GPU available for MCTS tree operations", file=sys.stderr)
-    
     try:
         # Import torch first to check CUDA state
         import torch
-        print(f"[WORKER {game_idx}] Torch imported, CUDA available: {torch.cuda.is_available()}", file=sys.stderr)
+        # Torch imported, CUDA availability checked
         print(f"[WORKER {game_idx}] CUDA device count: {torch.cuda.device_count()}", file=sys.stderr)
         
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
         from mcts.neural_networks.nn_model import create_model
-        from mcts.core.mcts import MCTS, MCTSConfig
+        # Use optimized MCTS directly as requested
+        from mcts.core.optimized_mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         
@@ -398,21 +431,19 @@ def _play_game_worker(config, model_state_dict: Dict,
         logging.basicConfig(level=getattr(logging, config.log_level))
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[WORKER {game_idx}] Worker process started successfully")
-        logger.info(f"[WORKER {game_idx}] Config device: {config.mcts.device}")
-        logger.info(f"[WORKER {game_idx}] Serialized state dict keys: {len(model_state_dict)}")
+        logger.debug(f"[WORKER {game_idx}] Worker started - device: {config.mcts.device}, model params: {len(model_state_dict)}")
         
         # Deserialize the state dict from numpy format
         from mcts.utils.safe_multiprocessing import deserialize_state_dict_from_multiprocessing
         
-        logger.info(f"[WORKER {game_idx}] Deserializing state dict from numpy format...")
+        logger.debug(f"[WORKER {game_idx}] Deserializing state dict from numpy format...")
         model_state_dict = deserialize_state_dict_from_multiprocessing(model_state_dict)
-        logger.info(f"[WORKER {game_idx}] Deserialized {len(model_state_dict)} parameters")
+        logger.debug(f"[WORKER {game_idx}] Deserialized {len(model_state_dict)} parameters")
         
         # Force CPU for workers to avoid CUDA multiprocessing issues
         # Workers can still use CPU effectively for self-play
         device = torch.device('cpu')
-        logger.info(f"[WORKER {game_idx}] Using CPU device for all operations")
+        logger.debug(f"[WORKER {game_idx}] Using CPU device for all operations")
         
         # Create game interface
         game_type = GameType[config.game.game_type.upper()]
@@ -553,11 +584,13 @@ def _play_game_worker(config, model_state_dict: Dict,
 
 
 def _play_game_worker_wrapper(config, request_queue, response_queue, action_size: int,
-                             game_idx: int, iteration: int, result_queue) -> None:
+                             game_idx: int, iteration: int, result_queue,
+                             allocation) -> None:
     """Wrapper that puts results in a queue instead of returning them"""
     try:
         results = _play_game_worker_with_gpu_service(
-            config, request_queue, response_queue, action_size, game_idx, iteration
+            config, request_queue, response_queue, action_size, game_idx, iteration,
+            allocation
         )
         result_queue.put(results)
     except Exception as e:
@@ -569,30 +602,35 @@ def _play_game_worker_wrapper(config, request_queue, response_queue, action_size
 
 
 def _play_game_worker_with_gpu_service(config, request_queue, response_queue, action_size: int,
-                                      game_idx: int, iteration: int) -> List[Any]:
+                                      game_idx: int, iteration: int,
+                                      allocation) -> List[Any]:
     """Worker function for parallel self-play using GPU evaluation service"""
     import os
     import sys
     
-    # Print early debug info
-    print(f"[WORKER {game_idx}] Starting worker process", file=sys.stderr)
-    print(f"[WORKER {game_idx}] PID: {os.getpid()}", file=sys.stderr)
+    # Worker startup with hardware allocation
     
     # CRITICAL: Limit CUDA memory for workers to prevent OOM
     # Workers use GPU for MCTS tree operations but not for models
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+    max_split_mb = min(512, allocation.get('gpu_memory_per_worker_mb', 512)) if allocation.get('gpu_memory_per_worker_mb', 0) > 0 else 512
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = f'max_split_size_mb:{max_split_mb}'
     
     try:
         import torch
-        print(f"[WORKER {game_idx}] Torch imported, CUDA available: {torch.cuda.is_available()}", file=sys.stderr)
+        # Torch imported, CUDA availability checked
         
-        # Set memory fraction for worker processes
-        if torch.cuda.is_available():
-            torch.cuda.set_per_process_memory_fraction(0.1)  # 10% per worker
+        # Set memory fraction for worker processes based on allocation
+        if torch.cuda.is_available() and allocation.get('gpu_memory_fraction', 0) > 0:
+            # Use the calculated fraction for this worker
+            worker_fraction = allocation['gpu_memory_fraction'] / allocation['num_workers']
+            torch.cuda.set_per_process_memory_fraction(worker_fraction)
+            # CUDA memory fraction set silently
         
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
-        from mcts.core.mcts import MCTS, MCTSConfig
+        # Use optimized MCTS directly as requested
+        from mcts.core.optimized_mcts import MCTS, MCTSConfig
+        from mcts.gpu.gpu_game_states import GameType as GPUGameType
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         from mcts.utils.gpu_evaluator_service import RemoteEvaluator
@@ -601,43 +639,77 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         logging.basicConfig(level=getattr(logging, config.log_level))
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[WORKER {game_idx}] Worker process started successfully")
-        logger.info(f"[WORKER {game_idx}] Will use GPU service for evaluations")
+        logger.debug(f"[WORKER {game_idx}] Worker started - using GPU service for evaluations")
         
         # Debug CUDA availability
-        logger.info(f"[WORKER {game_idx}] torch.cuda.is_available(): {torch.cuda.is_available()}")
-        logger.info(f"[WORKER {game_idx}] torch.cuda.device_count(): {torch.cuda.device_count()}")
-        logger.info(f"[WORKER {game_idx}] CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+        logger.debug(f"[WORKER {game_idx}] CUDA available: {torch.cuda.is_available()}, devices: {torch.cuda.device_count()}")
         
         # Create game interface
         game_type = GameType[config.game.game_type.upper()]
         game_interface = GameInterface(game_type, config.game.board_size)
         
         # Create remote evaluator that sends requests to GPU service
-        evaluator = RemoteEvaluator(request_queue, response_queue, action_size, worker_id=game_idx)
-        logger.info(f"[WORKER {game_idx}] Created remote evaluator")
+        remote_evaluator = RemoteEvaluator(request_queue, response_queue, action_size, worker_id=game_idx)
+        
+        # Wrap evaluator to return torch tensors for optimized MCTS
+        class TensorEvaluator:
+            def __init__(self, evaluator, device):
+                self.evaluator = evaluator
+                self.device = device
+                self._return_torch_tensors = True  # Signal that we return tensors
+            
+            def evaluate(self, state, legal_mask=None, temperature=1.0):
+                policy, value = self.evaluator.evaluate(state, legal_mask, temperature)
+                # Convert numpy to torch tensors
+                policy_tensor = torch.from_numpy(policy).float().to(self.device)
+                value_tensor = torch.tensor(value, dtype=torch.float32, device=self.device)
+                return policy_tensor, value_tensor
+            
+            def evaluate_batch(self, states, legal_masks=None, temperature=1.0):
+                policies, values = self.evaluator.evaluate_batch(states, legal_masks, temperature)
+                # Convert numpy to torch tensors
+                policies_tensor = torch.from_numpy(policies).float().to(self.device)
+                values_tensor = torch.from_numpy(values).float().to(self.device)
+                return policies_tensor, values_tensor
+        
+        # Determine device for tensors
+        tensor_device = 'cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu'
+        evaluator = TensorEvaluator(remote_evaluator, tensor_device)
+        logger.debug(f"[WORKER {game_idx}] Created tensor evaluator wrapper")
         
         # Create MCTS
         # Workers CAN use GPU for tree operations (custom CUDA kernels)
         # Only neural network evaluation goes through the service
+            
+        # Game type conversion happens silently
+        
         mcts_config = MCTSConfig(
             num_simulations=config.mcts.num_simulations,
             c_puct=config.mcts.c_puct,
             temperature=1.0,  # Will be adjusted during play
-            device='cuda' if torch.cuda.is_available() else 'cpu',  # Use GPU for tree operations
-            game_type=game_type,
+            # Use hardware-aware device selection
+            device='cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu',
+            game_type=GPUGameType[game_type.name],  # Convert to GPU game type enum
             min_wave_size=config.mcts.min_wave_size,
             max_wave_size=config.mcts.max_wave_size,
             adaptive_wave_sizing=config.mcts.adaptive_wave_sizing,
-            use_optimized_implementation=True,  # Use optimized implementation
-            memory_pool_size_mb=256,  # Reduced to prevent OOM with multiple workers
+            # use_optimized_implementation=True,  # This parameter doesn't exist in MCTSConfig
+            # Dynamic memory pool based on hardware allocation
+            memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
             use_mixed_precision=True,
             use_cuda_graphs=False,  # Disable CUDA graphs in workers to save memory
             use_tensor_cores=True,
-            max_tree_nodes=100000,  # Limit tree size per worker
+            # Dynamic tree size based on available memory
+            max_tree_nodes=min(100000, config.mcts.max_tree_nodes // allocation.get('num_workers', 1)),
             dirichlet_epsilon=0.25,  # Add exploration noise to root
             dirichlet_alpha=0.3,  # Dirichlet noise parameter
-            enable_debug_logging=False
+            board_size=config.game.board_size,  # Add missing board_size parameter
+            # Quantum features
+            enable_quantum=config.mcts.enable_quantum,
+            quantum_config=None,  # Will be created if needed
+            # Debug options - disable for workers
+            enable_debug_logging=False,
+            profile_gpu_kernels=False
         )
         
         # Create MCTS with quantum features if enabled
@@ -653,31 +725,24 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         else:
             mcts = MCTS(mcts_config, evaluator)
         
-        # Optimize MCTS for hardware (enables GPU kernels, mixed precision, etc.)
-        try:
-            mcts.optimize_for_hardware()
-        except Exception as e:
-            logger.warning(f"[WORKER {game_idx}] Failed to optimize MCTS: {e}")
-        logger.info(f"[WORKER {game_idx}] MCTS optimized for hardware")
-        logger.info(f"[WORKER {game_idx}] MCTS device: {mcts_config.device}")
-        logger.info(f"[WORKER {game_idx}] CUDA available: {torch.cuda.is_available()}")
+        # Initialize MCTS internals if needed
+        if hasattr(mcts, 'initialize') and callable(mcts.initialize):
+            try:
+                mcts.initialize()
+                logger.debug(f"[WORKER {game_idx}] MCTS initialized successfully")
+            except Exception as e:
+                logger.warning(f"[WORKER {game_idx}] Failed to initialize MCTS: {e}")
         
-        # Check CUDA kernel availability in detail
-        if hasattr(mcts, 'wave_mcts'):
-            logger.info(f"[WORKER {game_idx}] Wave MCTS type: {type(mcts.wave_mcts).__name__}")
-            
-            # Check if CUDA ops are loaded
-            import mcts.core.wave_mcts as wave_mcts_module
-            logger.info(f"[WORKER {game_idx}] cuda_kernels_module: {wave_mcts_module.cuda_kernels_module is not None}")
-            logger.info(f"[WORKER {game_idx}] cuda_ops_available: {wave_mcts_module.cuda_ops_available}")
-            
-            # Check tree device
-            if hasattr(mcts.wave_mcts, 'tree'):
-                logger.info(f"[WORKER {game_idx}] Tree device: {mcts.wave_mcts.tree.device}")
-                if hasattr(mcts.wave_mcts.tree, 'batch_ops'):
-                    logger.info(f"[WORKER {game_idx}] Tree batch_ops available: {mcts.wave_mcts.tree.batch_ops is not None}")
-                    if mcts.wave_mcts.tree.batch_ops:
-                        logger.info(f"[WORKER {game_idx}] Tree batch_ops use_cuda: {mcts.wave_mcts.tree.batch_ops.use_cuda}")
+        # Optimize MCTS for hardware (enables GPU kernels, mixed precision, etc.)
+        if hasattr(mcts, 'optimize_for_hardware'):
+            try:
+                mcts.optimize_for_hardware()
+                logger.debug(f"[WORKER {game_idx}] MCTS optimized for hardware")
+            except Exception as e:
+                logger.warning(f"[WORKER {game_idx}] Failed to optimize MCTS: {e}")
+        logger.debug(f"[WORKER {game_idx}] MCTS configured - device: {mcts_config.device}, memory: {mcts_config.memory_pool_size_mb}MB")
+        
+        # CUDA kernel checks happen silently
         
         # Play game
         examples = []
@@ -745,7 +810,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                     example.value = outcome * ((-1) ** (i % 2))
                 break
         
-        logger.info(f"[WORKER {game_idx}] Game completed with {len(examples)} moves")
+        logger.debug(f"[WORKER {game_idx}] Game completed with {len(examples)} moves")
         
         # Clean up GPU memory before returning
         if torch.cuda.is_available():
@@ -761,19 +826,4 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         raise
 
 
-def _play_game_worker_wrapper(config, request_queue, response_queue,
-                             action_size: int, game_idx: int, iteration: int,
-                             result_queue):
-    """Wrapper function for parallel self-play with GPU service"""
-    try:
-        # Call the actual worker function
-        examples = _play_game_worker_with_gpu_service(
-            config, request_queue, response_queue, action_size,
-            game_idx, iteration
-        )
-        # Put result in queue
-        result_queue.put(examples)
-    except Exception as e:
-        # Put empty result on error to avoid hanging
-        result_queue.put([])
-        raise
+# Remove duplicate function definition

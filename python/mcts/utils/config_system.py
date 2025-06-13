@@ -7,11 +7,54 @@ MCTS, neural networks, training, arena, and quantum features.
 import os
 import yaml
 import logging
-from dataclasses import dataclass, field, asdict
-from typing import Dict, Any, Optional, List, Union
+import psutil
+import platform
+import torch
+from dataclasses import dataclass, field, asdict, fields
+from typing import Dict, Any, Optional, List, Union, get_origin, get_args
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+def convert_field_value(value: Any, field_type: type) -> Any:
+    """Convert a value to the appropriate type based on field annotation"""
+    # Handle None values
+    if value is None:
+        return None
+        
+    # Handle string 'null' values from YAML
+    if isinstance(value, str) and value.lower() in ('null', 'none', '~'):
+        return None
+    
+    # Get the origin and args for generic types (Optional, Union, etc)
+    origin = get_origin(field_type)
+    args = get_args(field_type)
+    
+    # Handle Optional[T] which is Union[T, None]
+    if origin is Union:
+        # For Optional[T], try to convert to the non-None type
+        non_none_types = [arg for arg in args if arg is not type(None)]
+        if non_none_types:
+            return convert_field_value(value, non_none_types[0])
+    
+    # Handle basic types
+    if field_type == float:
+        return float(value)
+    elif field_type == int:
+        return int(value)
+    elif field_type == bool:
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        else:
+            return bool(value)
+    elif field_type == QuantumLevel:
+        if isinstance(value, str):
+            return QuantumLevel(value)
+        else:
+            return value
+    else:
+        return value
 
 
 class QuantumLevel(Enum):
@@ -105,10 +148,16 @@ class MCTSFullConfig:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MCTSFullConfig':
-        """Create from dictionary, handling enums"""
-        if 'quantum_level' in data and isinstance(data['quantum_level'], str):
-            data['quantum_level'] = QuantumLevel(data['quantum_level'])
-        return cls(**data)
+        """Create from dictionary, handling enums and type conversion"""
+        # Convert string values to proper types
+        converted_data = {}
+        for field in fields(cls):
+            field_name = field.name
+            if field_name in data:
+                value = data[field_name]
+                converted_data[field_name] = convert_field_value(value, field.type)
+            
+        return cls(**converted_data)
 
 
 @dataclass
@@ -141,7 +190,15 @@ class NeuralNetworkConfig:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'NeuralNetworkConfig':
-        return cls(**data)
+        # Convert string values to proper types
+        converted_data = {}
+        for field in fields(cls):
+            field_name = field.name
+            if field_name in data:
+                value = data[field_name]
+                converted_data[field_name] = convert_field_value(value, field.type)
+            
+        return cls(**converted_data)
 
 
 @dataclass
@@ -217,7 +274,15 @@ class TrainingFullConfig:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TrainingFullConfig':
-        return cls(**data)
+        # Convert string values to proper types
+        converted_data = {}
+        for field in fields(cls):
+            field_name = field.name
+            if field_name in data:
+                value = data[field_name]
+                converted_data[field_name] = convert_field_value(value, field.type)
+            
+        return cls(**converted_data)
 
 
 @dataclass
@@ -265,7 +330,15 @@ class ArenaFullConfig:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ArenaFullConfig':
-        return cls(**data)
+        # Convert string values to proper types
+        converted_data = {}
+        for field in fields(cls):
+            field_name = field.name
+            if field_name in data:
+                value = data[field_name]
+                converted_data[field_name] = convert_field_value(value, field.type)
+            
+        return cls(**converted_data)
 
 
 @dataclass
@@ -293,7 +366,15 @@ class GameConfig:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'GameConfig':
-        return cls(**data)
+        # Convert string values to proper types
+        converted_data = {}
+        for field in fields(cls):
+            field_name = field.name
+            if field_name in data:
+                value = data[field_name]
+                converted_data[field_name] = convert_field_value(value, field.type)
+            
+        return cls(**converted_data)
 
 
 @dataclass
@@ -310,6 +391,10 @@ class AlphaZeroConfig:
     seed: int = 42
     log_level: str = "INFO"
     num_iterations: int = 1000
+    
+    # Hardware auto-detection
+    auto_detect_hardware: bool = True
+    hardware_info: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert entire config to dictionary"""
@@ -348,12 +433,17 @@ class AlphaZeroConfig:
         logger.info(f"Configuration saved to {path}")
     
     @classmethod
-    def load(cls, path: str) -> 'AlphaZeroConfig':
+    def load(cls, path: str, auto_adjust_hardware: bool = True) -> 'AlphaZeroConfig':
         """Load configuration from YAML file"""
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         config = cls.from_dict(data)
         logger.info(f"Configuration loaded from {path}")
+        
+        # Auto-detect and adjust for hardware if enabled
+        if auto_adjust_hardware and config.auto_detect_hardware:
+            config.adjust_for_hardware()
+        
         return config
     
     def validate(self) -> List[str]:
@@ -392,6 +482,136 @@ class AlphaZeroConfig:
             warnings.append(f"Gomoku board size {self.game.board_size} may be too small")
         
         return warnings
+    
+    def detect_hardware(self) -> Dict[str, Any]:
+        """Detect system hardware specifications"""
+        # CPU information
+        cpu_count = os.cpu_count() or 1
+        cpu_cores_physical = psutil.cpu_count(logical=False) or cpu_count // 2
+        cpu_threads = psutil.cpu_count(logical=True) or cpu_count
+        
+        # Memory information
+        mem = psutil.virtual_memory()
+        total_ram_gb = mem.total / (1024**3)
+        available_ram_gb = mem.available / (1024**3)
+        
+        # GPU information
+        gpu_available = torch.cuda.is_available()
+        gpu_count = 0
+        gpu_memory_mb = 0
+        gpu_name = "None"
+        
+        if gpu_available:
+            gpu_count = torch.cuda.device_count()
+            gpu_props = torch.cuda.get_device_properties(0)
+            gpu_name = gpu_props.name
+            gpu_memory_mb = gpu_props.total_memory // (1024*1024)
+        
+        hardware_info = {
+            'cpu_count': cpu_count,
+            'cpu_cores_physical': cpu_cores_physical,
+            'cpu_threads': cpu_threads,
+            'total_ram_gb': total_ram_gb,
+            'available_ram_gb': available_ram_gb,
+            'gpu_available': gpu_available,
+            'gpu_count': gpu_count,
+            'gpu_name': gpu_name,
+            'gpu_memory_mb': gpu_memory_mb,
+            'os_name': f"{platform.system()} {platform.release()}",
+            'python_version': platform.python_version()
+        }
+        
+        self.hardware_info = hardware_info
+        return hardware_info
+    
+    def calculate_resource_allocation(self, hardware: Dict[str, Any], 
+                                    target_workers: Optional[int] = None) -> Dict[str, Any]:
+        """Calculate optimal resource allocation based on hardware"""
+        # Worker allocation
+        if target_workers is None:
+            if hardware['gpu_available']:
+                num_workers = min(
+                    hardware['cpu_cores_physical'],
+                    max(1, hardware['cpu_threads'] // 2),
+                    12
+                )
+            else:
+                num_workers = min(hardware['cpu_cores_physical'] // 2, 4)
+        else:
+            num_workers = target_workers
+        
+        # Memory calculations
+        if hardware['gpu_available']:
+            gpu_reserved_mb = 2048
+            gpu_available_mb = hardware['gpu_memory_mb'] - gpu_reserved_mb
+            gpu_memory_per_worker_mb = max(128, gpu_available_mb // num_workers)
+            max_concurrent_by_gpu = gpu_available_mb // 256
+            use_gpu_for_workers = num_workers <= 4
+            gpu_memory_fraction = min(0.8, gpu_memory_per_worker_mb * num_workers / hardware['gpu_memory_mb'])
+        else:
+            gpu_memory_per_worker_mb = 0
+            max_concurrent_by_gpu = num_workers
+            use_gpu_for_workers = False
+            gpu_memory_fraction = 0.0
+        
+        # RAM calculations
+        ram_reserved_gb = 4
+        ram_available_gb = max(1, hardware['total_ram_gb'] - ram_reserved_gb)
+        ram_per_worker_gb = 1.5
+        max_concurrent_by_ram = int(ram_available_gb / ram_per_worker_gb)
+        
+        # Final limits
+        max_concurrent_workers = min(num_workers, max_concurrent_by_gpu, max_concurrent_by_ram, 8)
+        memory_per_worker_mb = min(2048, int(hardware['total_ram_gb'] * 1024 - 4096) // num_workers)
+        
+        return {
+            'num_workers': num_workers,
+            'max_concurrent_workers': max_concurrent_workers,
+            'memory_per_worker_mb': memory_per_worker_mb,
+            'gpu_memory_per_worker_mb': gpu_memory_per_worker_mb,
+            'gpu_memory_fraction': gpu_memory_fraction,
+            'use_gpu_for_workers': use_gpu_for_workers
+        }
+    
+    def adjust_for_hardware(self, target_workers: Optional[int] = None):
+        """Adjust configuration based on detected hardware"""
+        hardware = self.detect_hardware()
+        allocation = self.calculate_resource_allocation(hardware, target_workers or self.training.num_workers)
+        
+        logger.info(f"Detected hardware: {hardware['cpu_cores_physical']} CPU cores, "
+                   f"{hardware['total_ram_gb']:.1f}GB RAM")
+        if hardware['gpu_available']:
+            logger.info(f"GPU: {hardware['gpu_name']} ({hardware['gpu_memory_mb']}MB)")
+        
+        # Apply adjustments
+        self.training.num_workers = allocation['num_workers']
+        self.training.dataloader_workers = min(hardware['cpu_threads'] // 4, 8)
+        self.training.pin_memory = hardware['gpu_available'] and hardware['total_ram_gb'] >= 16
+        
+        # Adjust MCTS settings based on GPU
+        if hardware['gpu_available']:
+            if hardware['gpu_memory_mb'] >= 8192:
+                self.mcts.memory_pool_size_mb = 2048
+                self.mcts.max_tree_nodes = 500000
+                self.training.batch_size = 512
+            elif hardware['gpu_memory_mb'] >= 6144:
+                self.mcts.memory_pool_size_mb = 1536
+                self.mcts.max_tree_nodes = 300000
+                self.training.batch_size = 256
+            else:
+                self.mcts.memory_pool_size_mb = 1024
+                self.mcts.max_tree_nodes = 200000
+                self.training.batch_size = 128
+        else:
+            self.mcts.memory_pool_size_mb = 512
+            self.mcts.max_tree_nodes = 100000
+            self.training.batch_size = 64
+        
+        # Store allocation info for workers
+        self._resource_allocation = allocation
+        
+        logger.info(f"Adjusted config: {allocation['num_workers']} workers, "
+                   f"{self.mcts.memory_pool_size_mb}MB memory pool")
 
 
 def create_default_config(game_type: str = "gomoku") -> AlphaZeroConfig:
@@ -451,4 +671,10 @@ def merge_configs(base: AlphaZeroConfig, override: Dict[str, Any]) -> AlphaZeroC
         return result
     
     merged_dict = deep_merge(base_dict, override)
-    return AlphaZeroConfig.from_dict(merged_dict)
+    config = AlphaZeroConfig.from_dict(merged_dict)
+    
+    # Re-adjust for hardware if auto-detect is enabled
+    if config.auto_detect_hardware:
+        config.adjust_for_hardware()
+    
+    return config

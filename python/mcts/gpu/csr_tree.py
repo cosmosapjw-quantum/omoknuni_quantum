@@ -126,13 +126,7 @@ class CSRTree:
         try:
             from .unified_kernels import get_unified_kernels
             self.batch_ops = get_unified_kernels(self.device)
-            import os
-            pid = os.getpid()
-            logger.info(f"[PID {pid}] CSRTree initialized:")
-            logger.info(f"[PID {pid}]   Device: {self.device}")
-            logger.info(f"[PID {pid}]   Batch ops available: {self.batch_ops is not None}")
-            if self.batch_ops:
-                logger.info(f"[PID {pid}]   Batch ops use_cuda: {self.batch_ops.use_cuda}")
+            # CSRTree initialized successfully
         except ImportError as e:
             self.batch_ops = None
             import os

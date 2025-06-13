@@ -196,7 +196,7 @@ class UnifiedTrainingPipeline:
         initial_state = self.game_interface.create_initial_state()
         action_size = self.game_interface.get_action_space_size(initial_state)
         
-        return create_model(
+        model = create_model(
             game_type=self.config.game.game_type,
             input_height=self.config.game.board_size,
             input_width=self.config.game.board_size,
@@ -206,6 +206,11 @@ class UnifiedTrainingPipeline:
             num_filters=network_config.num_filters,
             value_head_hidden_size=network_config.value_head_hidden_size
         )
+        
+        # Move model to device
+        model = model.to(self.config.mcts.device)
+        
+        return model
     
     def _create_optimizer(self):
         """Create optimizer based on configuration"""
@@ -278,7 +283,9 @@ class UnifiedTrainingPipeline:
             c_puct=self.config.arena.c_puct,
             temperature=self.config.arena.temperature,
             temperature_threshold=self.config.mcts.temperature_threshold,  # Use configurable threshold
-            device=self.config.mcts.device
+            timeout_seconds=int(self.config.arena.time_limit_seconds) if self.config.arena.time_limit_seconds else 300,
+            device=self.config.mcts.device,
+            save_game_records=self.config.arena.save_game_records
         )
         
         return ArenaManager(self.config, arena_config)
@@ -342,6 +349,9 @@ class UnifiedTrainingPipeline:
             device=self.config.mcts.device
         )
         
+        # Configure evaluator to return torch tensors for GPU operations
+        evaluator._return_torch_tensors = True
+        
         # Use multiprocessing for parallel self-play
         if self.config.training.num_workers > 1:
             examples = self._parallel_self_play(evaluator)
@@ -357,89 +367,22 @@ class UnifiedTrainingPipeline:
     def _parallel_self_play(self, evaluator) -> List[GameExample]:
         """Run self-play games in parallel using GPU service architecture"""
         import multiprocessing as mp
-        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
-        from .self_play_module import _play_game_worker_wrapper
+        from .self_play_module import SelfPlayManager
         
-        examples = []
-        
-        # Create GPU evaluator service in main process
-        gpu_service = GPUEvaluatorService(
-            model=self.model,
-            device=self.config.mcts.device,  # GPU for neural network
-            batch_size=256,
-            batch_timeout=0.01
-        )
-        
-        # Start the service
-        gpu_service.start()
-        logger.info(f"GPU evaluation service started on device: {self.config.mcts.device}")
-        
+        # Ensure spawn method for CUDA compatibility
         try:
-            # Get the request and response queues for workers
-            request_queue, response_queue = gpu_service.get_queues()
-            
-            # Get action space size
-            from mcts.core.game_interface import GameInterface, GameType
-            game_type = GameType[self.config.game.game_type.upper()]
-            game_interface = GameInterface(game_type, self.config.game.board_size)
-            initial_state = game_interface.create_initial_state()
-            action_size = game_interface.get_action_space_size(initial_state)
-            
-            logger.info(f"Starting {self.config.training.num_workers} worker processes")
-            
-            # Use Process directly for better control
-            processes = []
-            result_queues = []
-            
-            for game_idx in range(self.config.training.num_games_per_iteration):
-                # Create result queue for this game
-                result_queue = mp.Queue()
-                result_queues.append(result_queue)
-                
-                # Create process
-                p = mp.Process(
-                    target=_play_game_worker_wrapper,
-                    args=(self.config, request_queue, response_queue,
-                          action_size, game_idx, self.iteration, result_queue)
-                )
-                p.start()
-                processes.append(p)
-            
-            # Collect results with progress bar
-            with tqdm(total=self.config.training.num_games_per_iteration, 
-                     desc="Self-play games", unit="game") as pbar:
-                completed = 0
-                
-                # Wait for all games to complete
-                while completed < self.config.training.num_games_per_iteration:
-                    for i, (p, result_queue) in enumerate(zip(processes, result_queues)):
-                        if p is not None and not p.is_alive():
-                            # Process finished
-                            p.join()
-                            processes[i] = None  # Mark as collected
-                            
-                            # Get result
-                            try:
-                                if not result_queue.empty():
-                                    game_examples = result_queue.get_nowait()
-                                    examples.extend(game_examples)
-                                    logger.debug(f"Collected {len(game_examples)} examples from game {i}")
-                                else:
-                                    logger.warning(f"Game {i} finished but no result in queue")
-                            except Exception as e:
-                                logger.error(f"Failed to get result from game {i}: {e}")
-                            
-                            completed += 1
-                            pbar.update(1)
-                    
-                    # Small sleep to avoid busy waiting
-                    if completed < self.config.training.num_games_per_iteration:
-                        time.sleep(0.01)
-                        
-        finally:
-            # Stop the GPU service
-            gpu_service.stop()
-            logger.info("GPU evaluation service stopped")
+            mp.set_start_method('spawn', force=True)
+        except RuntimeError:
+            pass  # Already set
+        
+        # Use self-play manager
+        self_play_manager = SelfPlayManager(self.config)
+        examples = self_play_manager.generate_games(
+            self.model, 
+            self.iteration,
+            num_games=self.config.training.num_games_per_iteration,
+            num_workers=self.config.training.num_workers
+        )
         
         return examples
     
@@ -467,6 +410,15 @@ class UnifiedTrainingPipeline:
         """Play a single self-play game"""
         from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
+        from mcts.gpu.gpu_game_states import GameType as GPUGameType
+        
+        # Convert game_interface.GameType to gpu_game_states.GameType
+        game_type_mapping = {
+            'CHESS': GPUGameType.CHESS,
+            'GO': GPUGameType.GO,
+            'GOMOKU': GPUGameType.GOMOKU
+        }
+        gpu_game_type = game_type_mapping[self.game_type.name]
         
         # Create MCTS configuration from full config
         mcts_config = MCTSConfig(
@@ -491,16 +443,18 @@ class UnifiedTrainingPipeline:
             
             # Game and device configuration
             device=self.config.mcts.device,
-            game_type=self.game_type,
+            game_type=gpu_game_type,
             board_size=self.config.game.board_size,
             
             # Enable quantum features if configured
             enable_quantum=self.config.mcts.enable_quantum,
             quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
             
-            # Enable debug logging from global config
-            enable_debug_logging=(self.config.log_level == "DEBUG")
+            # Virtual loss for parallel exploration
+            enable_virtual_loss=True,
+            virtual_loss=self.config.mcts.virtual_loss
         )
+        
         
         # Create MCTS with quantum features if enabled
         if self.config.mcts.enable_quantum and self.config.mcts.quantum_level != QuantumLevel.CLASSICAL:
@@ -623,7 +577,7 @@ class UnifiedTrainingPipeline:
                     
                     # Mixed precision training
                     if self.config.training.mixed_precision:
-                        with torch.cuda.amp.autocast():
+                        with torch.amp.autocast('cuda', dtype=torch.float16):
                             # Forward pass
                             pred_policies, pred_values = self.model(states)
                             pred_values = pred_values.squeeze()

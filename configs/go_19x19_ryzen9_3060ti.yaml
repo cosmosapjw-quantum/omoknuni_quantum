@@ -1,0 +1,150 @@
+# Optimized Go 19x19 Configuration for RTX 3060 Ti (8GB VRAM) on Ryzen 9 5900X
+# Conservative settings for Go's large board and complexity
+
+experiment_name: go_19x19_ryzen9_3060ti_optimized
+seed: 42
+log_level: INFO
+num_iterations: 300
+
+game:
+  game_type: go
+  board_size: 19
+  go_komi: 7.5
+  go_use_superko: true
+
+mcts:
+  # Core MCTS parameters - optimized for Go complexity
+  num_simulations: 3200  # High simulations for Go strategy
+  c_puct: 1.2
+  dirichlet_alpha: 0.03  # Lower for 19x19 board
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 50  # Later temperature reduction for Go
+  temperature_final: 0.1
+  
+  # Performance optimization - RTX 3060 Ti
+  min_wave_size: 2048      # Reduced for Go's memory needs
+  max_wave_size: 2048      # Fixed smaller size
+  adaptive_wave_sizing: false
+  batch_size: 256         # Smaller batch for 19x19 features
+  
+  # Virtual loss
+  virtual_loss: 3.0
+  
+  # Memory settings - Very conservative for 19x19 Go
+  memory_pool_size_mb: 1536   # 1.5GB only
+  max_tree_nodes: 300000      # Limited for Go's branching
+  tree_reuse: true
+  tree_reuse_fraction: 0.3  # Less reuse for Go
+  
+  # GPU optimization
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Quantum features - disabled
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device settings
+  device: cuda
+  wave_num_pipelines: 3  # Less pipelines for memory
+  num_threads: 8
+
+network:
+  # Go-specific network architecture
+  model_type: resnet
+  input_channels: 20  # Enhanced features
+  num_res_blocks: 40  # Deep network for Go
+  num_filters: 256
+  value_head_hidden_size: 512
+  policy_head_filters: 2
+  
+  # Go-specific additions
+  use_squeeze_excitation: true  # SE blocks for Go
+  se_ratio: 16
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.997
+  l2_regularization: 0.0002  # Higher regularization
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Training parameters - very conservative for 19x19
+  batch_size: 128  # Small batch for large board
+  learning_rate: 0.01
+  learning_rate_schedule: cosine
+  lr_warmup_steps: 2000  # Long warmup
+  lr_decay_steps: 200
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.00001
+  
+  # Optimizer
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  weight_decay: 0.0002
+  
+  # Gradient handling
+  gradient_accumulation_steps: 8  # High accumulation
+  max_grad_norm: 5.0
+  
+  # Training loop
+  num_epochs: 10
+  checkpoint_interval: 25  # More frequent checkpoints
+  validation_interval: 10
+  
+  # Self-play - Limited for Go complexity
+  num_games_per_iteration: 100  # Fewer games
+  num_workers: 8  # Less workers to avoid memory issues
+  games_per_worker: 13
+  max_moves_per_game: 400  # Long Go games
+  resign_threshold: -0.95
+  resign_check_moves: 30
+  
+  # Data handling
+  window_size: 200000  # Smaller window
+  augment_data: true  # 8-fold symmetry
+  shuffle_buffer_size: 10000  # Smaller buffer
+  dataloader_workers: 6
+  pin_memory: true
+  persistent_workers: true
+  
+  # Mixed precision
+  mixed_precision: true
+  
+  # Paths
+  save_dir: checkpoints_go
+  tensorboard_dir: runs_go
+  data_dir: self_play_data_go
+
+arena:
+  # Evaluation settings - limited for Go
+  num_games: 60  # Few games due to length
+  num_workers: 4  # Limited parallelism
+  games_per_worker: 15
+  win_threshold: 0.55
+  
+  # Game settings
+  temperature: 0.1
+  mcts_simulations: 1600  # High quality evaluation
+  c_puct: 1.2
+  max_moves: 400
+  randomize_start_player: false  # Black always first in Go
+  
+  # ELO tracking
+  elo_k_factor: 16.0  # Lower K for Go
+  elo_initial_rating: 1500.0
+  update_elo: true
+  
+  # Logging
+  save_game_records: true  # Save SGF
+  save_arena_logs: true
+  arena_log_dir: arena_logs_go
+  elo_save_path: elo_ratings_go.json

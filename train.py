@@ -7,6 +7,10 @@ Run from the project root directory.
 import sys
 import os
 import multiprocessing
+import warnings
+
+# Suppress multiprocessing resource tracker warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='multiprocessing.resource_tracker')
 
 # Set multiprocessing start method to 'spawn' for CUDA compatibility
 multiprocessing.set_start_method('spawn', force=True)
@@ -28,7 +32,7 @@ def main():
     parser.add_argument("--config", type=str, help="Path to YAML config file")
     parser.add_argument("--game", type=str, default="gomoku", choices=["chess", "go", "gomoku"],
                         help="Game type (if not using config file)")
-    parser.add_argument("--iterations", type=int, default=100, help="Number of training iterations")
+    parser.add_argument("--iterations", type=int, help="Number of training iterations (overrides config)")
     parser.add_argument("--experiment", type=str, help="Experiment name")
     parser.add_argument("--resume", type=str, help="Resume from checkpoint")
     parser.add_argument("--workers", type=int, help="Number of parallel workers")
@@ -53,8 +57,11 @@ def main():
         config.training.num_workers = args.workers or 4
         config.training.num_games_per_iteration = args.games_per_iter or 100
         config.training.validation_interval = 10
+        config.num_iterations = 100  # Default if not using config file
     
-    # Override with command line args
+    # Override with command line args (these take priority over config file)
+    if args.iterations is not None:
+        config.num_iterations = args.iterations
     if args.workers:
         config.training.num_workers = args.workers
         config.arena.num_workers = args.workers
@@ -65,6 +72,7 @@ def main():
     print(f"Experiment: {config.experiment_name}")
     print(f"Workers: {config.training.num_workers}")
     print(f"Games per iteration: {config.training.num_games_per_iteration}")
+    print(f"Number of iterations: {config.num_iterations}")
     print(f"Device: {config.mcts.device}")
     print("-" * 60)
     
@@ -72,7 +80,7 @@ def main():
     pipeline = UnifiedTrainingPipeline(config, resume_from=args.resume)
     
     try:
-        pipeline.train(num_iterations=args.iterations)
+        pipeline.train(num_iterations=config.num_iterations)
     except KeyboardInterrupt:
         print("\nTraining interrupted. Saving checkpoint...")
         pipeline.save_checkpoint()

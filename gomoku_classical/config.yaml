@@ -1,18 +1,14 @@
-# Gomoku Classical Configuration
-# Basic AlphaZero training without quantum features
-
-experiment_name: gomoku_classical
-seed: 42
-log_level: INFO
-num_iterations: 100
-
 game:
   game_type: gomoku
   board_size: 15
+  go_komi: 7.5
+  go_rules: chinese
+  go_superko: true
   gomoku_use_renju: false
   gomoku_use_omok: false
   gomoku_use_pro_long_opening: false
-
+  chess_960: false
+  chess_starting_fen: null
 mcts:
   num_simulations: 800
   c_puct: 1.0
@@ -21,48 +17,32 @@ mcts:
   temperature: 1.0
   temperature_threshold: 30
   temperature_final: 0.1
-  
-  # Performance optimizatio
-  min_wave_size: 3072      # Optimal for 80k+ sims/sec
-  max_wave_size: 3072      # Fixed size for best performance
-  adaptive_wave_sizing: false  # CRITICAL: Must be false
-  batch_size: 1024 
+  min_wave_size: 3072
+  max_wave_size: 3072
+  adaptive_wave_sizing: false
+  batch_size: 512
   virtual_loss: 3.0
-  
-  # Memory and optimization
-  memory_pool_size_mb: 2048   # Reduced to 2GB for safety
-  max_tree_nodes: 500000      # Reduced to fit in VRAM comfortably
+  memory_pool_size_mb: 1536
+  max_tree_nodes: 300000
   tree_reuse: true
   tree_reuse_fraction: 0.5
-  
-  # GPU optimization - RTX 3060 Ti
   use_cuda_graphs: true
-  use_mixed_precision: true   # FP16 for tensor cores
-  use_tensor_cores: true      # Utilize 4864 CUDA cores
+  use_mixed_precision: true
+  use_tensor_cores: true
   compile_mode: reduce-overhead
-  
-  # Quantum features - disabled for classical
   quantum_level: classical
   enable_quantum: false
-  
-  # Quantum physics parameters (unused when classical)
   quantum_coupling: 0.1
   quantum_temperature: 1.0
   decoherence_rate: 0.01
   measurement_noise: 0.0
-  
-  # Path integral parameters (unused when classical)
   path_integral_steps: 10
   path_integral_beta: 1.0
   use_wick_rotation: true
-  
-  # Interference parameters (unused when classical)
   interference_alpha: 0.05
   interference_method: minhash
   minhash_size: 64
   phase_kick_strength: 0.1
-  
-  # Wave MCTS parameters
   wave_min_size: 256
   wave_max_size: 2048
   wave_adaptive_sizing: true
@@ -72,140 +52,101 @@ mcts:
   wave_async_expansion: true
   wave_prefetch_evaluations: true
   wave_memory_pool_mb: 1024
-  
-  # CSR Tree parameters
   csr_max_actions: 10
   csr_use_sparse_operations: true
-  
-  # Interference thresholds
   interference_threshold: 0.1
   constructive_interference_factor: 0.1
   destructive_interference_factor: 0.05
-  
-  # Device configuration
   device: cuda
   num_threads: 20
-
 network:
-  # Smaller network for Gomoku
   model_type: resnet
   input_channels: 20
   num_res_blocks: 10
   num_filters: 128
   value_head_hidden_size: 256
   policy_head_filters: 2
-  
-  # Regularization
   dropout_rate: 0.1
   batch_norm: true
   batch_norm_momentum: 0.997
   l2_regularization: 0.0001
-  
-  # Activation
   activation: relu
+  leaky_relu_alpha: 0.01
   weight_init: he_normal
-
+  bias_init: 0.0
 training:
-  # Training parameters optimized for RTX 3060 Ti + Ryzen 9 5900X
-  batch_size: 512  # Optimal for 8GB VRAM with mixed precision
+  batch_size: 256
   learning_rate: 0.01
-  learning_rate_schedule: cosine  # Better for longer training
+  learning_rate_schedule: cosine
   lr_decay_steps: 50
   lr_decay_rate: 0.1
-  min_learning_rate: 0.00001
-  
-  # Optimization
+  min_learning_rate: 1.0e-05
   optimizer: adam
   adam_beta1: 0.9
   adam_beta2: 0.999
-  adam_epsilon: 1e-8
+  adam_epsilon: 1.0e-08
   sgd_momentum: 0.9
   sgd_nesterov: true
   weight_decay: 0.0001
-  
-  # Gradient handling
   gradient_accumulation_steps: 1
   max_grad_norm: 5.0
   gradient_clip_value: null
-  
-  # Tournament settings for final evaluation
   final_tournament_enabled: true
   final_tournament_model_selection_step: 10
   final_tournament_max_models: 10
-  
-  # Training loop
   num_epochs: 10
   checkpoint_interval: 50
   validation_interval: 10
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
-  
-  # Self-play - Utilizing 12 cores/24 threads
-  num_games_per_iteration: 120
+  num_games_per_iteration: 100
   num_workers: 8
-  games_per_worker: 15 
+  games_per_worker: 25
   max_moves_per_game: 225
   resign_threshold: -0.95
   resign_check_moves: 10
-  
-  # Data handling - Optimized for 64GB RAM
-  window_size: 500000  # Large buffer with ample RAM
+  window_size: 500000
   sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 20000  # Larger shuffle buffer
-  dataloader_workers: 8  # Utilize CPU threads
+  shuffle_buffer_size: 20000
+  dataloader_workers: 6
   pin_memory: true
-  persistent_workers: true  # Keep workers alive
-  
-  # Mixed precision
   mixed_precision: true
   amp_opt_level: O1
   loss_scale: dynamic
   static_loss_scale: 1.0
-  
-  # Evaluation
   eval_temperature: 0.1
   eval_num_games: 20
-  
-  # Paths
   save_dir: checkpoints
   tensorboard_dir: runs
   data_dir: self_play_data
-
 arena:
-  # Battle settings - Utilizing multi-core CPU
   num_games: 120
   num_workers: 8
   games_per_worker: 15
   win_threshold: 0.55
   statistical_significance: true
   confidence_level: 0.95
-  
-  # Game settings
   temperature: 0.1
-  mcts_simulations: 800  # Increased for better evaluation
+  mcts_simulations: 800
   c_puct: 1.0
   max_moves: 225
   time_limit_seconds: null
   randomize_start_player: true
-  
-  # ELO settings
   elo_k_factor: 32.0
-  elo_initial_rating: 0.0
+  elo_initial_rating: 1500.0
   elo_anchor_rating: 0.0
   update_elo: true
-  
-  # Random policy evaluation
   eval_vs_random_interval: 1
   eval_vs_random_games: 20
   min_win_rate_vs_random: 0.95
-  
-  # Tournament settings
   tournament_rounds: 1
   tournament_games_per_pair: 10
-  
-  # Data saving
   save_game_records: false
   save_arena_logs: true
   arena_log_dir: arena_logs
   elo_save_path: elo_ratings.json
+experiment_name: gomoku_classical
+seed: 42
+log_level: INFO
+num_iterations: 100

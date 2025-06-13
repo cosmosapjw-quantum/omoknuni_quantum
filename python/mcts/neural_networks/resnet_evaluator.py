@@ -139,7 +139,7 @@ class ResNetEvaluator(Evaluator):
         # Forward pass
         with torch.no_grad():
             if self.use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     policy_logits, value_logits = self.model(states_tensor)
                     policy_logits = policy_logits.float()
                     value_logits = value_logits.float()

@@ -624,7 +624,7 @@ class WavePipeline:
                 features_batch[idx] = torch.from_numpy(features)
         
         # BATCH NEURAL NETWORK EVALUATION
-        with torch.cuda.amp.autocast() if self.tree.device.type == 'cuda' else torch.no_grad():
+        with torch.amp.autocast('cuda') if self.tree.device.type == 'cuda' else torch.no_grad():
             values, policies, _ = self.evaluator_pool.evaluate_batch(features_batch)
         
         # VECTORIZED RESULT STORAGE

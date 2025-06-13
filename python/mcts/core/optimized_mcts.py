@@ -64,7 +64,8 @@ class MCTSConfig:
             )
         return self.quantum_config
     enable_virtual_loss: bool = True
-    virtual_loss_value: float = -3.0
+    virtual_loss: float = 3.0  # Positive value (will be negated when applied)
+    virtual_loss_value: float = -3.0  # Deprecated - use virtual_loss
     
     # Memory configuration
     memory_pool_size_mb: int = 2048
@@ -98,6 +99,10 @@ class MCTS:
         self.device = torch.device(config.device)
         self.evaluator = evaluator
         
+        # Configure evaluator to return torch tensors for GPU operations
+        if hasattr(evaluator, '_return_torch_tensors'):
+            evaluator._return_torch_tensors = True
+        
         # Performance tracking
         self.stats = defaultdict(float)
         self.kernel_timings = defaultdict(float) if config.profile_gpu_kernels else None
@@ -116,7 +121,7 @@ class MCTS:
             max_edges=config.max_tree_nodes * config.max_children_per_node,
             device=config.device,
             enable_virtual_loss=config.enable_virtual_loss,
-            virtual_loss_value=config.virtual_loss_value,
+            virtual_loss_value=-abs(config.virtual_loss if hasattr(config, 'virtual_loss') else config.virtual_loss_value),
             batch_size=config.max_wave_size,
             enable_batched_ops=True
         )
@@ -130,6 +135,9 @@ class MCTS:
             device=config.device
         )
         self.game_states = GPUGameStates(game_config)
+        
+        # Enable enhanced 20-channel features for neural network compatibility
+        self.game_states.enable_enhanced_features()
         
         # Pre-allocate all buffers
         self._allocate_buffers()
