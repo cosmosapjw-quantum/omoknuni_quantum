@@ -1,7 +1,0 @@
-core_tests 1 0.0124711
-chess_tests 1 0.00539687
-go_tests 1 0.0525403
-gomoku_tests 1 0.0298828
-attack_defense_tests 1 0.019036
-all_tests 1 0.148416
----

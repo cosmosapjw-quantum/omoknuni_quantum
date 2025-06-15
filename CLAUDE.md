@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the AlphaZero (Omoknuni) project - a high-performance game AI engine implementing vectorized MCTS with quantum-inspired enhancements. It combines a C++17 game engine with Python AI components for Chess, Go, and Gomoku.
 
+**Current Performance**: 168,000+ simulations/second on RTX 3060 Ti (achieved and validated)
+
 ## Build Commands
 
 ```bash
@@ -71,7 +73,7 @@ ctest --output-on-failure
 
 ### Performance Optimization Tips
 - **Critical**: Set `adaptive_wave_sizing=False` and `max_wave_size=3072` for best performance
-- Use `MCTS` class from `mcts.core.optimized_mcts`
+- Use `MCTS` class from `mcts.core.mcts`
 - Enable CUDA and Triton kernels by compiling with `python compile_kernels.py`
 - Recommended config for RTX 3060 Ti (8GB VRAM):
   ```python
@@ -115,7 +117,7 @@ ucb_scores = quantum_mcts.apply_quantum_to_selection(
 ```
 
 ### Documentation
-See `docs/quantum-mcts-complete-guide.md` for comprehensive documentation covering:
+See `docs/quantum-mcts-guide.md` for comprehensive documentation covering:
 - Mathematical foundations (QFT formulation)
 - Implementation architecture
 - Performance optimization
@@ -126,7 +128,7 @@ See `docs/quantum-mcts-complete-guide.md` for comprehensive documentation coveri
 - `mcts/quantum/quantum_features.py` - Main production implementation
 - `mcts/quantum/qft_engine.py` - Optimized QFT computations
 - `mcts/quantum/path_integral.py` - Path integral formulation
-- `docs/quantum-mcts-complete-guide.md` - Complete documentation
+- `docs/quantum-mcts-guide.md` - Complete documentation
 
 ## High-Performance MCTS Usage
 

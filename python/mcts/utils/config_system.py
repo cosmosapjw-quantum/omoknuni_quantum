@@ -281,6 +281,12 @@ class TrainingFullConfig:
             if field_name in data:
                 value = data[field_name]
                 converted_data[field_name] = convert_field_value(value, field.type)
+        
+        # Auto-calculate games_per_worker if not provided
+        if 'games_per_worker' not in converted_data and 'num_games_per_iteration' in converted_data and 'num_workers' in converted_data:
+            num_games = converted_data['num_games_per_iteration']
+            num_workers = converted_data['num_workers']
+            converted_data['games_per_worker'] = (num_games + num_workers - 1) // num_workers  # Round up
             
         return cls(**converted_data)
 
@@ -337,6 +343,12 @@ class ArenaFullConfig:
             if field_name in data:
                 value = data[field_name]
                 converted_data[field_name] = convert_field_value(value, field.type)
+        
+        # Auto-calculate games_per_worker if not provided
+        if 'games_per_worker' not in converted_data and 'num_games' in converted_data and 'num_workers' in converted_data:
+            num_games = converted_data['num_games']
+            num_workers = converted_data['num_workers']
+            converted_data['games_per_worker'] = (num_games + num_workers - 1) // num_workers  # Round up
             
         return cls(**converted_data)
 

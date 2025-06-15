@@ -26,9 +26,9 @@ mcts:
   
   # Performance optimization - RTX 3060 Ti with 8GB VRAM
   # Optimal wave size for RTX 3060 Ti (based on CLAUDE.md recommendations)
-  wave_min_size: 3072      # Optimal for 80k+ sims/sec
-  wave_max_size: 3072      # Fixed size for best performance
-  wave_adaptive_sizing: false  # CRITICAL: Must be false for max performance
+  min_wave_size: 3072      # Optimal for 80k+ sims/sec
+  max_wave_size: 3072      # Fixed size for best performance
+  adaptive_wave_sizing: false  # CRITICAL: Must be false for max performance
   batch_size: 512         # Increased for better GPU utilization
   
   # Virtual loss for leaf parallelization
@@ -52,7 +52,6 @@ mcts:
   
   # Device settings
   device: cuda
-  wave_num_pipelines: 4  # Increased for better parallelism
   num_threads: 8  # Utilize more CPU threads for data preparation
 
 network:
@@ -96,7 +95,7 @@ training:
   # Training loop
   num_epochs: 10
   checkpoint_interval: 50
-  validation_interval: 10
+  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play - Utilizing 12 cores/24 threads
   num_games_per_iteration: 200  # Full utilization
@@ -121,7 +120,7 @@ arena:
   # Evaluation settings - Utilizing multi-core CPU
   num_games: 120  # Full evaluation set
   num_workers: 8  # Parallel evaluation games
-  games_per_worker: 15
+  # games_per_worker: auto-calculated based on num_games / num_workers
   win_threshold: 0.55
   
   # Game settings for evaluation
@@ -133,7 +132,7 @@ arena:
   
   # ELO tracking
   elo_k_factor: 32.0
-  elo_initial_rating: 1500.0
+  elo_initial_rating: 0.0  # Standard ELO starting rating
   elo_anchor_rating: 0.0
   update_elo: true
   

@@ -18,9 +18,9 @@ mcts:
   dirichlet_epsilon: 0.25
   
   # Small batches for testing
-  wave_min_size: 64
-  wave_max_size: 128
-  wave_adaptive_sizing: false
+  min_wave_size: 64
+  max_wave_size: 128
+  adaptive_wave_sizing: false
   batch_size: 64
   
   # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
@@ -39,7 +39,7 @@ mcts:
   # Device - still use all threads for testing
   device: cuda
   use_mixed_precision: false  # Disable for debugging
-  wave_num_pipelines: 3
+  num_threads: 12
 
 network:
   # Tiny network for testing
@@ -55,7 +55,7 @@ training:
   learning_rate: 0.01
   num_epochs: 2
   checkpoint_interval: 2
-  validation_interval: 1
+  validation_interval: 1  # Arena evaluation every epoch
   
   # Few self-play games - use 4 workers for faster testing
   num_games_per_iteration: 12
@@ -73,7 +73,11 @@ arena:
   # Quick evaluation - parallel for speed
   num_games: 12
   num_workers: 4
-  games_per_worker: 3
+  # games_per_worker: auto-calculated based on num_games / num_workers
+  
+  # ELO tracking
+  elo_initial_rating: 0.0  # Standard ELO starting rating
+  # games_per_worker: auto-calculated based on num_games / num_workers
   win_threshold: 0.5
   
   # Fast games

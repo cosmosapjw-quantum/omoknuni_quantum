@@ -77,11 +77,11 @@ class SelfPlayManager:
             device=self.config.mcts.device
         )
         
-        # Progress bar setup
+        # Progress bar setup with proper positioning
         disable_progress = logger.level > logging.INFO
         
         with tqdm(total=num_games, desc="Self-play games", unit="game",
-                 disable=disable_progress) as pbar:
+                 disable=disable_progress, position=2, leave=False) as pbar:
             for game_idx in range(num_games):
                 game_examples = self._play_single_game(
                     model, evaluator, game_idx, iteration
@@ -153,7 +153,7 @@ class SelfPlayManager:
             disable_progress = logger.level > logging.INFO
             
             with tqdm(total=num_games, desc="Self-play games", unit="game",
-                     disable=disable_progress) as pbar:
+                     disable=disable_progress, position=2, leave=False) as pbar:
                 
                 for batch_start in range(0, num_games, games_per_batch):
                     batch_end = min(batch_start + games_per_batch, num_games)
@@ -178,7 +178,7 @@ class SelfPlayManager:
                         processes.append(p)
                         batch_processes.append(p)
                         logger.debug(f"[SELF-PLAY] Started process for game {game_idx}")
-                    
+                
                     # Collect results from this batch as they complete
                     logger.debug(f"[SELF-PLAY] Collecting results from batch of {len(batch_processes)} games...")
                     
@@ -217,11 +217,12 @@ class SelfPlayManager:
                             p.join(timeout=5)
                             pbar.update(1)
             
-                            
+                        
         finally:
             # Stop the GPU service
             gpu_service.stop()
             logger.debug("[SELF-PLAY] GPU evaluation service stopped")
+            # Progress bar closed automatically by context manager
         
         return examples
     
@@ -342,8 +343,8 @@ class SelfPlayManager:
 
     def _create_mcts(self, evaluator: Any):
         """Create MCTS instance with quantum features if enabled"""
-        # Use optimized MCTS directly as requested
-        from mcts.core.optimized_mcts import MCTS, MCTSConfig
+        # Use unified MCTS module
+        from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         

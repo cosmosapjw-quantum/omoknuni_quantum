@@ -22,9 +22,9 @@ mcts:
   temperature_final: 0.1
   
   # Performance optimization - RTX 3060 Ti
-  wave_min_size: 2048
-  wave_max_size: 3072
-  wave_adaptive_sizing: false
+  min_wave_size: 2048
+  max_wave_size: 3072
+  adaptive_wave_sizing: false
   batch_size: 384
   
   # Virtual loss for leaf parallelization
@@ -48,7 +48,7 @@ mcts:
   
   # Device - Ryzen 9 5900X
   device: cuda
-  wave_num_pipelines: 3
+  num_threads: 24
 
 network:
   # Standard chess network architecture
@@ -91,7 +91,7 @@ training:
   # Training loop
   num_epochs: 10
   checkpoint_interval: 100
-  validation_interval: 20
+  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play settings - 12 cores
   num_games_per_iteration: 300  # 25 per worker
@@ -116,7 +116,7 @@ arena:
   # Evaluation settings - 12 cores
   num_games: 120
   num_workers: 12
-  games_per_worker: 10
+  # games_per_worker: auto-calculated based on num_games / num_workers
   win_threshold: 0.55
   
   # Game settings
@@ -127,7 +127,7 @@ arena:
   
   # ELO tracking
   elo_k_factor: 32.0
-  elo_initial_rating: 1500.0
+  elo_initial_rating: 0.0  # Standard ELO starting rating
   elo_anchor_rating: 0.0
   update_elo: true
   

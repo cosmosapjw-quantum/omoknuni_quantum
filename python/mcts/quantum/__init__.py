@@ -1,24 +1,27 @@
 """Quantum-inspired MCTS enhancements"""
 
-from .interference import InterferenceEngine
-from .phase_policy import PhaseKickedPolicy, PhaseConfig
-from .path_integral import PathIntegral, PathIntegralConfig
-from .quantum_features import create_quantum_mcts
-from .quantum_parallelism import create_quantum_parallel_evaluator
-from .state_pool import QuantumStatePool, create_state_pool
-from .quantum_csr_tree import create_quantum_csr_tree
-from .wave_compression import create_wave_compressor
+from .quantum_features import (
+    QuantumFeatures,
+    QuantumConfig,
+    create_quantum_mcts,
+    QuantumLevel
+)
+from .qft_engine import QFTEngine
+from .path_integral import PathIntegralMCTS
+from .rg_flow import RGFlowEngine
+from .quantum_darwinism import QuantumDarwinismFilter
+from .decoherence import DecoherenceModel
+from .interference_gpu import InterferenceGPU
 
 __all__ = [
-    "InterferenceEngine",
-    "PhaseKickedPolicy",
-    "PhaseConfig",
-    "PathIntegral",
-    "PathIntegralConfig",
+    "QuantumFeatures",
+    "QuantumConfig", 
     "create_quantum_mcts",
-    "create_quantum_parallel_evaluator",
-    "QuantumStatePool",
-    "create_state_pool",
-    "create_quantum_csr_tree",
-    "create_wave_compressor",
+    "QuantumLevel",
+    "QFTEngine",
+    "PathIntegralMCTS",
+    "RGFlowEngine",
+    "QuantumDarwinismFilter",
+    "DecoherenceModel",
+    "InterferenceGPU",
 ]

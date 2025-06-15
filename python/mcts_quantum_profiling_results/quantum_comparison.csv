@@ -1,4 +1,0 @@
-wave_size,num_simulations,tree_level_sims_per_sec,tree_level_time_ms,tree_level_memory_mb,tree_level_bottleneck,tree_level_quantum_calls,tree_level_total_calls,one_loop_sims_per_sec,one_loop_time_ms,one_loop_memory_mb,one_loop_bottleneck,one_loop_quantum_calls,one_loop_total_calls
-3072,1000,42150.91393133091,23.72427799855359,2836.259765625,selection,5,5,38885.78385124929,25.71633900515735,2840.4775390625,selection,11,11
-3072,5000,113732.22180894291,43.96291499870131,2852.16015625,selection,21,21,109144.8425054732,45.810685005562846,2849.169921875,selection,30,30
-3072,10000,115055.00625133292,86.91494899539975,2852.84033203125,selection,45,45,113513.10002363894,88.09555899642874,2850.2119140625,selection,60,60

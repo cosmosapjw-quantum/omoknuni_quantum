@@ -24,9 +24,9 @@ mcts:
   temperature_final: 0.1
   
   # Performance optimization - adjusted for one-loop overhead
-  wave_min_size: 1536  # Lower for one-loop overhead
-  wave_max_size: 2560  # Slightly reduced
-  wave_adaptive_sizing: false
+  min_wave_size: 1536  # Lower for one-loop overhead
+  max_wave_size: 2560  # Slightly reduced
+  adaptive_wave_sizing: false
   batch_size: 320  # Balanced for quantum overhead
   
   # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
@@ -67,7 +67,7 @@ mcts:
   
   # Device - Ryzen 9 5900X
   device: cuda
-  wave_num_pipelines: 3
+  num_threads: 24
 
 network:
   # Slightly larger network for quantum features
@@ -110,7 +110,7 @@ training:
   # Training loop
   num_epochs: 10
   checkpoint_interval: 50
-  validation_interval: 10
+  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play with full quantum - 12 cores
   num_games_per_iteration: 100
@@ -132,7 +132,7 @@ arena:
   # Evaluation settings - 12 cores
   num_games: 180  # More games for statistical significance
   num_workers: 12
-  games_per_worker: 15
+  # games_per_worker: auto-calculated based on num_games / num_workers
   win_threshold: 0.55
   statistical_significance: true
   confidence_level: 0.95
@@ -145,7 +145,7 @@ arena:
   
   # ELO tracking
   elo_k_factor: 32.0
-  elo_initial_rating: 1500.0
+  elo_initial_rating: 0.0  # Standard ELO starting rating
   elo_anchor_rating: 0.0
   update_elo: true
   

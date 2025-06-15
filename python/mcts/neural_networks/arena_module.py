@@ -63,9 +63,13 @@ class ELOTracker:
         s1 = (wins + 0.5 * draws) / total_games
         s2 = (losses + 0.5 * draws) / total_games
         
-        # Update ratings
-        self.ratings[player1] = r1 + self.k_factor * total_games * (s1 - e1)
-        self.ratings[player2] = r2 + self.k_factor * total_games * (s2 - e2)
+        # Update ratings (but keep "random" fixed at 0 as anchor)
+        # Standard ELO formula: new_rating = old_rating + K * (actual_score - expected_score)
+        # Note: We do NOT multiply by total_games - K factor already accounts for match weight
+        if player1 != "random":
+            self.ratings[player1] = r1 + self.k_factor * (s1 - e1)
+        if player2 != "random":
+            self.ratings[player2] = r2 + self.k_factor * (s2 - e2)
         
         # Record history
         self.game_history.append({
@@ -126,45 +130,68 @@ class ArenaManager:
         )
         self.elo_tracker = ELOTracker(k_factor=config.arena.elo_k_factor)
     
-    def compare_models(self, model1: torch.nn.Module, model2: torch.nn.Module,
+    def compare_models(self, model1, model2,
                       model1_name: str = "model1", model2_name: str = "model2",
-                      num_games: Optional[int] = None) -> Tuple[int, int, int]:
-        """Compare two models in arena battles
+                      num_games: Optional[int] = None, silent: bool = False) -> Tuple[int, int, int]:
+        """Compare two models/evaluators in arena battles
         
+        Args:
+            model1: First model (torch.nn.Module) or evaluator
+            model2: Second model (torch.nn.Module) or evaluator  
+            model1_name: Name for logging
+            model2_name: Name for logging
+            num_games: Number of games to play
+            silent: If True, suppress progress bars and logging
+            
         Returns:
             Tuple of (wins, draws, losses) from model1's perspective
         """
         num_games = num_games or self.arena_config.num_games
         
-        logger.info(f"Arena: {model1_name} vs {model2_name} ({num_games} games)")
+        if not silent:
+            logger.info(f"Arena: {model1_name} vs {model2_name} ({num_games} games)")
         
-        if self.arena_config.num_workers <= 1:
-            return self._sequential_arena(model1, model2, num_games)
+        # Check if we're dealing with evaluators or models
+        from mcts.core.evaluator import Evaluator
+        is_evaluator1 = isinstance(model1, Evaluator)
+        is_evaluator2 = isinstance(model2, Evaluator)
+        
+        if self.arena_config.num_workers <= 1 or is_evaluator1 or is_evaluator2:
+            # Use sequential for evaluators (can't pickle them easily)
+            return self._sequential_arena(model1, model2, num_games, silent)
         else:
             return self._parallel_arena(model1, model2, num_games)
     
-    def _sequential_arena(self, model1: torch.nn.Module, model2: torch.nn.Module,
-                         num_games: int) -> Tuple[int, int, int]:
+    def _sequential_arena(self, model1, model2,
+                         num_games: int, silent: bool = False) -> Tuple[int, int, int]:
         """Run arena games sequentially"""
-        from mcts.core.evaluator import AlphaZeroEvaluator
+        from mcts.core.evaluator import AlphaZeroEvaluator, Evaluator
         
         wins, draws, losses = 0, 0, 0
         
-        # Create evaluators
-        evaluator1 = AlphaZeroEvaluator(
-            model=model1,
-            device=self.arena_config.device
-        )
-        evaluator2 = AlphaZeroEvaluator(
-            model=model2,
-            device=self.arena_config.device
-        )
+        # Create evaluators if needed
+        if isinstance(model1, Evaluator):
+            evaluator1 = model1
+        else:
+            evaluator1 = AlphaZeroEvaluator(
+                model=model1,
+                device=self.arena_config.device
+            )
+            
+        if isinstance(model2, Evaluator):
+            evaluator2 = model2
+        else:
+            evaluator2 = AlphaZeroEvaluator(
+                model=model2,
+                device=self.arena_config.device
+            )
         
         # Progress bar
-        disable_progress = logger.level > logging.INFO or not self.arena_config.use_progress_bar
+        disable_progress = silent or logger.level > logging.INFO or not self.arena_config.use_progress_bar
         
+        # Arena progress at position 4 to avoid overlap with other progress bars
         with tqdm(total=num_games, desc="Arena games", unit="game",
-                 disable=disable_progress) as pbar:
+                 disable=disable_progress, position=4, leave=False) as pbar:
             for game_idx in range(num_games):
                 # Alternate who plays first
                 if game_idx % 2 == 0:
@@ -227,8 +254,9 @@ class ArenaManager:
             # Collect results
             disable_progress = logger.level > logging.INFO or not self.arena_config.use_progress_bar
             
+            # Arena progress at position 4 to avoid overlap with other progress bars
             with tqdm(total=len(futures), desc="Arena games", unit="game",
-                     disable=disable_progress) as pbar:
+                     disable=disable_progress, position=4, leave=False) as pbar:
                 for future, should_invert in futures:
                     try:
                         result = future.result(timeout=self.arena_config.timeout_seconds)
@@ -326,12 +354,21 @@ class ArenaManager:
         """Create MCTS instance for arena"""
         from mcts.core.mcts import MCTS, MCTSConfig
         
+        # Use wave size settings from main config to ensure consistency
         mcts_config = MCTSConfig(
             num_simulations=self.arena_config.mcts_simulations,
             c_puct=self.arena_config.c_puct,
             temperature=0.0,
             device=self.arena_config.device,
-            game_type=self.game_type
+            game_type=self.game_type,
+            # Wave size settings from main config
+            min_wave_size=self.config.mcts.min_wave_size,
+            max_wave_size=self.config.mcts.max_wave_size,
+            adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
+            # Other performance settings
+            use_mixed_precision=self.config.mcts.use_mixed_precision,
+            use_cuda_graphs=self.config.mcts.use_cuda_graphs,
+            use_tensor_cores=self.config.mcts.use_tensor_cores
         )
         
         return MCTS(mcts_config, evaluator)

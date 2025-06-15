@@ -137,7 +137,7 @@ class UnifiedTrainingPipeline:
         self.optimizer = self._create_optimizer()
         self.scheduler = self._create_scheduler()
         
-        # Loss functions
+        # Loss functions (will be moved to device automatically when needed)
         self.policy_loss_fn = nn.CrossEntropyLoss()
         self.value_loss_fn = nn.MSELoss()
         
@@ -155,7 +155,9 @@ class UnifiedTrainingPipeline:
     
     def _setup_directories(self):
         """Create necessary directories"""
-        self.experiment_dir = Path(self.config.experiment_name)
+        # Save training data in the parent directory (outside python folder)
+        parent_dir = Path(__file__).parent.parent.parent.parent  # Go up to omoknuni_quantum
+        self.experiment_dir = parent_dir / "experiments" / self.config.experiment_name
         self.checkpoint_dir = self.experiment_dir / "checkpoints"
         self.best_model_dir = self.experiment_dir / "best_models"
         self.arena_log_dir = self.experiment_dir / self.config.arena.arena_log_dir
@@ -210,7 +212,19 @@ class UnifiedTrainingPipeline:
         # Move model to device
         model = model.to(self.config.mcts.device)
         
+        # Mixed precision training uses FP32 model with FP16 computations
+        # PyTorch's autocast handles the conversions automatically
+        
+        # Debug: Verify model is on correct device
+        logger.info(f"Model device: {next(model.parameters()).device}")
+        logger.info(f"Target device: {self.config.mcts.device}")
+        
         return model
+    
+    def _get_action_size(self):
+        """Get action space size for the game"""
+        initial_state = self.game_interface.create_initial_state()
+        return self.game_interface.get_action_space_size(initial_state)
     
     def _create_optimizer(self):
         """Create optimizer based on configuration"""
@@ -298,39 +312,58 @@ class UnifiedTrainingPipeline:
         """
         logger.info(f"Starting training for {num_iterations} iterations")
         
-        # Use trange for iteration progress
+        # Use trange for iteration progress with clean formatting
+        print()  # Initial newline for clean start
         for i in trange(num_iterations, desc="Training iterations", 
-                       initial=self.iteration, unit="iter"):
+                       initial=self.iteration, unit="iter", position=0, leave=True):
             self.iteration += 1
             iteration_start = time.time()
             
+            # Print clean header with proper spacing
+            tqdm.write(f"\n\n{'='*80}")
+            tqdm.write(f"ITERATION {self.iteration}")
+            tqdm.write(f"{'='*80}\n")
+            
             # Phase 1: Self-play data generation
-            logger.info(f"\n{'='*60}")
-            logger.info(f"Iteration {self.iteration}: Generating self-play data")
+            tqdm.write("[1/4] Generating self-play data...")
+            self_play_start = time.time()
             self_play_examples = self.generate_self_play_data()
+            self_play_time = time.time() - self_play_start
             
             # Add to replay buffer
             self.replay_buffer.add(self_play_examples)
-            logger.info(f"Replay buffer size: {len(self.replay_buffer)}")
+            tqdm.write(f"      Generated {len(self_play_examples)} examples in {self_play_time:.1f}s")
+            tqdm.write(f"      Replay buffer size: {len(self.replay_buffer)}")
             
-            # Phase 2: Neural network training
-            logger.info(f"Iteration {self.iteration}: Training neural network")
+            # Phase 2: Neural network training  
+            tqdm.write("\n[2/4] Training neural network...")
+            train_start = time.time()
             train_stats = self.train_neural_network()
+            train_time = time.time() - train_start
+            tqdm.write(f"      Training completed in {train_time:.1f}s")
+            tqdm.write(f"      Loss: {train_stats['loss']:.4f}, P-Loss: {train_stats['policy_loss']:.4f}, V-Loss: {train_stats['value_loss']:.4f}")
             
-            # Phase 3: Arena evaluation (if enabled)
-            accepted = True
-            if self.iteration % self.config.training.validation_interval == 0:
-                logger.info(f"Iteration {self.iteration}: Evaluating model in arena")
-                accepted = self.evaluate_model()
+            # Phase 3: Arena evaluation (every epoch for better tracking)
+            tqdm.write("\n[3/4] Arena evaluation...")
+            arena_start = time.time()
+            accepted = self.evaluate_model_with_elo()
+            arena_time = time.time() - arena_start
+            tqdm.write(f"      Arena completed in {arena_time:.1f}s")
             
-            # Save checkpoint
+            # Phase 4: Save checkpoint if needed
             if self.iteration % self.config.training.checkpoint_interval == 0:
+                tqdm.write("\n[4/4] Saving checkpoint...")
                 self.save_checkpoint()
+                tqdm.write("      Checkpoint saved.")
             
-            # Log iteration summary
+            # Summary
             iteration_time = time.time() - iteration_start
-            logger.info(f"Iteration {self.iteration} completed in {iteration_time:.1f}s")
-            logger.info(f"Training stats: {train_stats}")
+            tqdm.write(f"\n{'='*80}")
+            tqdm.write(f"Iteration {self.iteration} Summary:")
+            tqdm.write(f"  Total time: {iteration_time:.1f}s")
+            tqdm.write(f"  Self-play: {self_play_time:.1f}s, Training: {train_time:.1f}s, Arena: {arena_time:.1f}s")
+            tqdm.write(f"  Model accepted: {accepted}")
+            tqdm.write(f"{'='*80}")
             
         logger.info("Training completed!")
         
@@ -546,6 +579,9 @@ class UnifiedTrainingPipeline:
         if len(self.replay_buffer) < self.config.training.batch_size:
             return {"loss": 0, "policy_loss": 0, "value_loss": 0}
         
+        # Ensure model is on correct device (it may have been moved during self-play)
+        self.model = self.model.to(self.config.mcts.device)
+        
         # Create data loader
         dataloader = DataLoader(
             self.replay_buffer,
@@ -567,8 +603,9 @@ class UnifiedTrainingPipeline:
             epoch_desc = f"Training epoch {epoch+1}/{self.config.training.num_epochs}"
             
             # Use tqdm for batch progress
+            # Use tqdm for batch progress with position parameter to avoid overlap
             with tqdm(dataloader, desc=epoch_desc, unit="batch", 
-                     disable=logger.level > logging.INFO) as pbar:
+                     position=1, leave=False) as pbar:
                 for batch_idx, (states, target_policies, target_values) in enumerate(pbar):
                     # Move to device
                     states = states.to(self.config.mcts.device)
@@ -646,75 +683,140 @@ class UnifiedTrainingPipeline:
             
         return stats
     
-    def evaluate_model(self) -> bool:
-        """Evaluate current model against best model in arena"""
-        if not self.arena or not self.best_model_iteration:
-            # First model, automatically accept
-            self._save_best_model()
-            return True
+    def evaluate_model_with_elo(self) -> bool:
+        """3-way ELO evaluation: Random vs Best vs Current model"""
+        from mcts.core.evaluator import RandomEvaluator
         
-        # Load best model
-        best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
-        best_model = self._create_model()
-        best_model.load_state_dict(torch.load(best_model_path))
-        best_model.eval()
+        # Initialize ELO tracker if needed
+        if not self.elo_tracker:
+            from mcts.neural_networks.arena_module import ELOTracker
+            self.elo_tracker = ELOTracker(
+                k_factor=self.config.arena.elo_k_factor,
+                initial_rating=self.config.arena.elo_initial_rating
+            )
+            # Set random model as anchor with rating 0
+            self.elo_tracker.ratings["random"] = self.config.arena.elo_anchor_rating
         
-        # Run arena match
-        logger.info(f"Running arena: Current (iter {self.iteration}) vs Best (iter {self.best_model_iteration})")
-        
-        wins, draws, losses = self.arena.compare_models(
-            self.model, best_model,
-            model1_name=f"iter_{self.iteration}",
-            model2_name=f"iter_{self.best_model_iteration}"
+        # Create random evaluator
+        from mcts.core.evaluator import EvaluatorConfig
+        eval_config = EvaluatorConfig(
+            device=self.config.mcts.device,
+            use_fp16=self.config.mcts.use_mixed_precision
+        )
+        random_evaluator = RandomEvaluator(
+            eval_config, 
+            self._get_action_size()
         )
         
-        win_rate = wins / (wins + draws + losses)
-        logger.info(f"Arena results: {wins}W-{draws}D-{losses}L (win rate: {win_rate:.2%})")
+        results_summary = []
+        accepted = True
         
-        # Update ELO ratings
-        if self.elo_tracker:
+        # Match 1: Current vs Random
+        tqdm.write("      Current vs Random...")
+        wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
+            self.model, random_evaluator,
+            model1_name=f"iter_{self.iteration}",
+            model2_name="random",
+            silent=True
+        )
+        win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
+        tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
+        
+        # Update ELO
+        self.elo_tracker.update_ratings(
+            f"iter_{self.iteration}", "random",
+            wins_vs_random, draws_vs_random, losses_vs_random
+        )
+        
+        # Match 2: Best vs Random (if we have a best model)
+        if self.best_model_iteration:
+            tqdm.write("      Best vs Random...")
+            best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
+            best_model = self._create_model()
+            best_model.load_state_dict(torch.load(best_model_path))
+            best_model.eval()
+            
+            wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
+                best_model, random_evaluator,
+                model1_name=f"iter_{self.best_model_iteration}",
+                model2_name="random",
+                silent=True
+            )
+            win_rate_best_random = wins_best_random / (wins_best_random + draws_best_random + losses_best_random)
+            tqdm.write(f"      Result: {wins_best_random}W-{draws_best_random}D-{losses_best_random}L ({win_rate_best_random:.1%})")
+            
             self.elo_tracker.update_ratings(
-                f"iter_{self.iteration}",
-                f"iter_{self.best_model_iteration}",
-                wins, draws, losses
+                f"iter_{self.best_model_iteration}", "random",
+                wins_best_random, draws_best_random, losses_best_random
             )
             
-            current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-            best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
-            logger.info(f"ELO ratings: Current={current_elo:.1f}, Best={best_elo:.1f}")
-        else:
-            # Create ELO tracker if needed
-            from mcts.neural_networks.arena_module import ELOTracker
-            self.elo_tracker = ELOTracker(k_factor=self.config.arena.elo_k_factor)
+            # Match 3: Current vs Best
+            tqdm.write("      Current vs Best...")
+            wins_vs_best, draws_vs_best, losses_vs_best = self.arena.compare_models(
+                self.model, best_model,
+                model1_name=f"iter_{self.iteration}",
+                model2_name=f"iter_{self.best_model_iteration}",
+                silent=True
+            )
+            win_rate_vs_best = wins_vs_best / (wins_vs_best + draws_vs_best + losses_vs_best)
+            tqdm.write(f"      Result: {wins_vs_best}W-{draws_vs_best}D-{losses_vs_best}L ({win_rate_vs_best:.1%})")
+            
             self.elo_tracker.update_ratings(
-                f"iter_{self.iteration}",
-                f"iter_{self.best_model_iteration}",
-                wins, draws, losses
+                f"iter_{self.iteration}", f"iter_{self.best_model_iteration}",
+                wins_vs_best, draws_vs_best, losses_vs_best
             )
             
-            current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-            best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
-        
-        # Accept if win rate exceeds threshold
-        accepted = win_rate >= self.config.arena.win_threshold
-        if accepted:
-            logger.info(f"✓ New model accepted as best!")
-            self._save_best_model()
+            # Check if current model should be accepted
+            accepted = win_rate_vs_best >= self.config.arena.win_threshold
         else:
-            logger.info(f"✗ New model rejected, keeping previous best")
+            # First model - check against random baseline
+            accepted = win_rate_vs_random >= self.config.arena.min_win_rate_vs_random
         
-        # Save arena results
-        self._save_arena_results({
+        # Get final ELO ratings
+        current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
+        random_elo = self.elo_tracker.get_rating("random")
+        
+        tqdm.write(f"\n      ELO Ratings:")
+        tqdm.write(f"        Random: {random_elo:.1f} (anchor)")
+        tqdm.write(f"        Current (iter {self.iteration}): {current_elo:.1f}")
+        
+        # Save detailed results
+        results = {
             "iteration": self.iteration,
-            "vs_iteration": self.best_model_iteration,
-            "wins": wins,
-            "draws": draws,
-            "losses": losses,
-            "win_rate": win_rate,
-            "accepted": accepted,
-            "current_elo": current_elo if self.elo_tracker else None,
-            "best_elo": best_elo if self.elo_tracker else None
-        })
+            "vs_random": {
+                "wins": wins_vs_random,
+                "draws": draws_vs_random,
+                "losses": losses_vs_random,
+                "win_rate": win_rate_vs_random
+            },
+            "elo_ratings": {
+                "random": random_elo,
+                "current": current_elo
+            },
+            "accepted": accepted
+        }
+        
+        if self.best_model_iteration:
+            best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
+            tqdm.write(f"        Best (iter {self.best_model_iteration}): {best_elo:.1f}")
+            
+            # Add vs_best results only if we have them
+            results["vs_best"] = {
+                "wins": wins_vs_best,
+                "draws": draws_vs_best,
+                "losses": losses_vs_best,
+                "win_rate": win_rate_vs_best
+            }
+            results["elo_ratings"]["best"] = best_elo
+        
+        # Save as best model if accepted
+        if accepted:
+            self._save_best_model()
+            tqdm.write(f"\n      ✓ Model accepted as new best!")
+        else:
+            tqdm.write(f"\n      ✗ Model rejected")
+            
+        self._save_arena_results(results)
         
         return accepted
     
@@ -785,6 +887,8 @@ class UnifiedTrainingPipeline:
         self.iteration = checkpoint["iteration"]
         self.best_model_iteration = checkpoint["best_model_iteration"]
         self.model.load_state_dict(checkpoint["model_state_dict"])
+        # Ensure model is on correct device after loading checkpoint
+        self.model = self.model.to(self.config.mcts.device)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if self.scheduler and "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])

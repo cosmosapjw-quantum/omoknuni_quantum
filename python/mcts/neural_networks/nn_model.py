@@ -179,7 +179,8 @@ class AlphaZeroNetwork(nn.Module):
             config.input_channels, 
             config.num_filters, 
             3, 
-            padding=1
+            padding=1,
+            bias=True
         )
         
         if config.use_batch_norm:

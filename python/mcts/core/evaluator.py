@@ -151,6 +151,69 @@ class Evaluator(ABC):
             self.evaluate_batch(dummy_batch)
             
 
+class RandomEvaluator(Evaluator):
+    """Pure random evaluator for baseline comparisons
+    
+    Returns uniform random policy and random value estimates.
+    Used as ELO anchor with rating 0.
+    """
+    
+    def __init__(self, config: EvaluatorConfig, action_size: int):
+        """Initialize random evaluator"""
+        super().__init__(config, action_size)
+        self.eval_count = 0
+        
+    def evaluate(
+        self, 
+        state: np.ndarray,
+        legal_mask: Optional[np.ndarray] = None,
+        temperature: float = 1.0
+    ) -> Tuple[np.ndarray, float]:
+        """Return uniform random policy over legal moves"""
+        # Create uniform policy
+        policy = np.ones(self.action_size, dtype=np.float32) / self.action_size
+        
+        # Apply legal move mask if provided
+        if legal_mask is not None:
+            policy[~legal_mask] = 0
+            legal_sum = policy.sum()
+            if legal_sum > 0:
+                policy = policy / legal_sum
+            else:
+                # No legal moves - shouldn't happen
+                policy = np.ones(self.action_size) / self.action_size
+        
+        # Random value between -1 and 1
+        value = np.random.uniform(-1, 1)
+        
+        self.eval_count += 1
+        return policy, value
+    
+    def evaluate_batch(
+        self,
+        states: np.ndarray,
+        legal_masks: Optional[np.ndarray] = None,
+        temperature: float = 1.0
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Evaluate batch with random policies"""
+        batch_size = states.shape[0]
+        policies = np.ones((batch_size, self.action_size), dtype=np.float32) / self.action_size
+        
+        # Apply legal masks if provided
+        if legal_masks is not None:
+            for i in range(batch_size):
+                policies[i][~legal_masks[i]] = 0
+                legal_sum = policies[i].sum()
+                if legal_sum > 0:
+                    policies[i] = policies[i] / legal_sum
+        
+        # Random values
+        values = np.random.uniform(-1, 1, size=batch_size)
+        
+        self.eval_count += batch_size
+        return policies, values
+
+
 class MockEvaluator(Evaluator):
     """Mock evaluator for testing without a trained model
     

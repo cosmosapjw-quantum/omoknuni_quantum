@@ -66,6 +66,10 @@ class GPUGameStates:
         # Initialize storage based on game type
         self._init_storage()
         
+        # Verify boards was created
+        if not hasattr(self, 'boards'):
+            raise RuntimeError(f"Failed to initialize boards for game_type={self.game_type}")
+        
         # State allocation tracking
         self.num_states = 0
         self.free_indices = torch.arange(self.capacity, device=self.device, dtype=torch.int32)
@@ -75,6 +79,11 @@ class GPUGameStates:
         """Initialize tensor storage based on game type"""
         device = self.device
         capacity = self.capacity
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Initializing storage for game_type={self.game_type} (value={self.game_type.value}), board_size={self.board_size}")
         
         if self.game_type == GameType.CHESS:
             # Chess state representation

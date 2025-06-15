@@ -211,7 +211,7 @@ class InstallCommand(install):
         print("✅ Installation completed successfully!")
         print("\nQuick start:")
         print("  python -c 'import alphazero_py; print(\"C++ bindings loaded successfully\")'")
-        print("  python example_self_play.py")
+        print("  python python/example_self_play.py")
 
     def check_requirements(self):
         """Check system requirements"""
