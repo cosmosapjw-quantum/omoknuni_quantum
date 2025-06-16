@@ -23,6 +23,35 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
 add_compile_options(-Wall -Wextra)
 add_compile_options($<$<CONFIG:Release>:-O3>)
 
+# Advanced optimization flags for release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # CPU-specific optimizations
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -flto -funroll-loops -ffast-math -fomit-frame-pointer -DNDEBUG")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -mtune=native -flto -funroll-loops -ffast-math -fomit-frame-pointer -DNDEBUG")
+    
+    # Enable interprocedural optimization (Link Time Optimization)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+    
+    # Additional vectorization hints
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(
+            -ftree-vectorize
+            -mfpmath=sse
+            -mavx2
+            -mfma
+        )
+    endif()
+    
+    # CUDA-specific optimizations
+    if(CMAKE_CUDA_COMPILER)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 --use_fast_math --ptxas-options=-v")
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --generate-line-info --expt-relaxed-constexpr")
+        
+        # Set CUDA architectures for common GPUs
+        set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90")
+    endif()
+endif()
+
 # ───────────────────────────────────── Options ─────────────────────────────────
 option(BUILD_PYTHON_BINDINGS  "Build Python bindings"  ON)
 option(BUILD_TESTS            "Build tests"            ON)

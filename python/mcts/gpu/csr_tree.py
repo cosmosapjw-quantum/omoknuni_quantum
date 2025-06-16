@@ -201,6 +201,54 @@ class CSRTree:
         # Current capacity
         self.edge_capacity = initial_edges
         
+    @property
+    def node_visits(self):
+        """Alias for visit_counts for compatibility"""
+        return self.visit_counts
+    
+    @node_visits.setter
+    def node_visits(self, value):
+        """Setter for compatibility"""
+        self.visit_counts = value
+        
+    def reset(self):
+        """Reset tree to initial empty state"""
+        # Reset counters
+        self.num_nodes = 0
+        self.num_edges = 0
+        
+        # Clear all node data
+        self.visit_counts.zero_()
+        self.value_sums.zero_()
+        self.node_priors.zero_()
+        self.parent_indices.fill_(-1)
+        self.parent_actions.fill_(-1)
+        self.flags.zero_()
+        self.phases.zero_()
+        self.virtual_loss_counts.zero_()
+        
+        # Clear edge data
+        self.row_ptr.zero_()
+        self.col_indices.zero_()
+        self.edge_actions.zero_()
+        self.edge_priors.zero_()
+        
+        # Clear counters
+        self.node_counter.zero_()
+        self.edge_counter.zero_()
+        
+        # Clear batch buffers
+        if hasattr(self, 'batch_parent_indices'):
+            self.batch_parent_indices.fill_(-1)
+            self.batch_buffer_size = 0
+        
+        # Add root node again
+        self.add_root(prior=1.0)
+        
+        # Update counters
+        self.node_counter[0] = self.num_nodes
+        self.edge_counter[0] = self.num_edges
+        
     def _init_batch_buffers(self):
         """Initialize buffers for batched operations"""
         batch_size = self.config.batch_size
@@ -729,6 +777,73 @@ class CSRTree:
         
         return valid_children, actions, priors
         
+    def apply_virtual_loss(self, node_indices: torch.Tensor):
+        """Apply virtual loss to nodes (for parallelization)
+        
+        Args:
+            node_indices: Tensor of node indices
+        """
+        if self.enable_virtual_loss:
+            self.virtual_loss_counts[node_indices] += 1
+    
+    def remove_virtual_loss(self, node_indices: torch.Tensor):
+        """Remove virtual loss from nodes
+        
+        Args:
+            node_indices: Tensor of node indices
+        """
+        if self.enable_virtual_loss:
+            self.virtual_loss_counts[node_indices] -= 1
+            # Ensure non-negative
+            self.virtual_loss_counts.clamp_(min=0)
+    
+    def get_node_data(self, node_idx: int, fields: List[str]) -> Dict[str, torch.Tensor]:
+        """Get node data for specified fields
+        
+        Args:
+            node_idx: Node index
+            fields: List of field names to retrieve
+            
+        Returns:
+            Dictionary mapping field names to values
+        """
+        result = {}
+        for field in fields:
+            if field == 'visits':
+                # Include virtual loss in visit count
+                visits = self.visit_counts[node_idx]
+                if self.enable_virtual_loss:
+                    visits = visits + self.virtual_loss_counts[node_idx]
+                result['visits'] = visits
+            elif field == 'value':
+                if self.visit_counts[node_idx] > 0:
+                    result['value'] = self.value_sums[node_idx] / self.visit_counts[node_idx]
+                else:
+                    result['value'] = torch.tensor(0.0, device=self.device)
+            elif field == 'prior':
+                result['prior'] = self.node_priors[node_idx]
+            elif field == 'expanded':
+                # Check if node is expanded (has children)
+                start = self.row_ptr[node_idx]
+                end = self.row_ptr[node_idx + 1]
+                has_children = end > start
+                result['expanded'] = torch.tensor([has_children], device=self.device)
+            else:
+                raise ValueError(f"Unknown field: {field}")
+        return result
+    
+    def get_children_batch(self, node_indices: torch.Tensor) -> torch.Tensor:
+        """Compatibility method that returns only child indices
+        
+        Args:
+            node_indices: Tensor of node indices
+            
+        Returns:
+            Tensor of shape (batch_size, max_children) with child indices
+        """
+        children, _, _ = self.batch_get_children(node_indices)
+        return children
+    
     def batch_get_children(self, node_indices: torch.Tensor, 
                           max_children: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get children for multiple nodes efficiently (GPU-optimized)

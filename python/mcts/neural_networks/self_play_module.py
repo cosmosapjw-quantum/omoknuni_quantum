@@ -130,8 +130,8 @@ class SelfPlayManager:
         logger.debug(f"[SELF-PLAY] GPU evaluation service started on device: {self.config.mcts.device}")
         
         try:
-            # Get the request and response queues for workers
-            request_queue, response_queue = gpu_service.get_queues()
+            # Get the request queue
+            request_queue = gpu_service.get_request_queue()
             
             # Get action space size
             initial_state = self.game_interface.create_initial_state()
@@ -166,6 +166,9 @@ class SelfPlayManager:
                         result_queue = mp.Queue()
                         result_queues.append(result_queue)
                         batch_queues.append(result_queue)
+                        
+                        # Create worker-specific response queue
+                        response_queue = gpu_service.create_worker_queue(game_idx)
                         
                         # Create process with hardware-aware resource allocation
                         p = mp.Process(
@@ -424,7 +427,7 @@ def _play_game_worker(config, model_state_dict: Dict,
         from mcts.core.game_interface import GameInterface, GameType
         from mcts.neural_networks.nn_model import create_model
         # Use optimized MCTS directly as requested
-        from mcts.core.optimized_mcts import MCTS, MCTSConfig
+        from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
         
@@ -630,7 +633,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
         # Use optimized MCTS directly as requested
-        from mcts.core.optimized_mcts import MCTS, MCTSConfig
+        from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.gpu.gpu_game_states import GameType as GPUGameType
         from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.utils.config_system import QuantumLevel
@@ -667,7 +670,15 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                 return policy_tensor, value_tensor
             
             def evaluate_batch(self, states, legal_masks=None, temperature=1.0):
+                # Convert torch tensors to numpy for the remote evaluator
+                if isinstance(states, torch.Tensor):
+                    states = states.cpu().numpy()
+                if legal_masks is not None and isinstance(legal_masks, torch.Tensor):
+                    legal_masks = legal_masks.cpu().numpy()
+                
+                # Call remote evaluator's batch method
                 policies, values = self.evaluator.evaluate_batch(states, legal_masks, temperature)
+                
                 # Convert numpy to torch tensors
                 policies_tensor = torch.from_numpy(policies).float().to(self.device)
                 values_tensor = torch.from_numpy(values).float().to(self.device)

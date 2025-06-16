@@ -1,0 +1,164 @@
+# Gomoku Test Configuration - Reduced for debugging
+# Minimal settings to test the training pipeline quickly
+
+experiment_name: gomoku_test
+seed: 42
+log_level: DEBUG
+num_iterations: 2
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false
+  gomoku_use_omok: false
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  num_simulations: 100  # Reduced from 800
+  c_puct: 1.0
+  dirichlet_alpha: 0.15
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  temperature_final: 0.1
+  
+  # Performance optimization
+  min_wave_size: 512      # Reduced for testing
+  max_wave_size: 512      # Reduced for testing
+  adaptive_wave_sizing: false
+  batch_size: 256        # Reduced
+  virtual_loss: 3.0
+  
+  # Memory and optimization
+  memory_pool_size_mb: 512    # Reduced
+  max_tree_nodes: 50000       # Reduced
+  tree_reuse: false           # Disabled for simplicity
+  tree_reuse_fraction: 0.5
+  
+  # GPU optimization
+  use_cuda_graphs: false      # Disabled for debugging
+  use_mixed_precision: false  # Disabled for debugging
+  use_tensor_cores: false     # Disabled for debugging
+  compile_mode: none
+  
+  # Quantum features - disabled
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device configuration
+  device: cuda
+  num_threads: 4
+
+network:
+  # Smaller network for testing
+  model_type: resnet
+  input_channels: 20
+  num_res_blocks: 5    # Reduced
+  num_filters: 64      # Reduced
+  value_head_hidden_size: 128
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.997
+  l2_regularization: 0.0001
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Minimal training parameters for testing
+  batch_size: 128
+  learning_rate: 0.01
+  learning_rate_schedule: constant
+  lr_decay_steps: 50
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.00001
+  
+  # Optimization
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 1
+  max_grad_norm: 5.0
+  
+  # Tournament settings
+  final_tournament_enabled: false
+  
+  # Training loop
+  num_epochs: 2
+  checkpoint_interval: 50
+  validation_interval: 1
+  early_stopping_patience: 50
+  early_stopping_min_delta: 0.0001
+  
+  # Self-play - minimal
+  num_games_per_iteration: 4   # Only 4 games for testing
+  num_workers: 2               # Only 2 workers
+  max_moves_per_game: 50       # Reduced
+  resign_threshold: -0.95
+  resign_check_moves: 10
+  
+  # Data handling
+  window_size: 1000
+  sample_weight_by_game_length: true
+  augment_data: false          # Disabled for speed
+  shuffle_buffer_size: 500
+  dataloader_workers: 2
+  pin_memory: true
+  persistent_workers: false
+  
+  # Mixed precision
+  mixed_precision: false
+  
+  # Evaluation
+  eval_temperature: 0.1
+  eval_num_games: 2           # Minimal
+  
+  # Paths
+  save_dir: checkpoints
+  tensorboard_dir: runs
+  data_dir: self_play_data
+
+arena:
+  # Minimal arena settings for testing
+  num_games: 4               # Only 4 games
+  num_workers: 2             # Only 2 workers
+  win_threshold: 0.55
+  statistical_significance: false
+  confidence_level: 0.95
+  
+  # Game settings
+  temperature: 0.1
+  mcts_simulations: 50       # Reduced from 800
+  c_puct: 1.0
+  max_moves: 50              # Reduced
+  time_limit_seconds: null
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 32.0
+  elo_initial_rating: 0.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Random policy evaluation
+  eval_vs_random_interval: 999  # Effectively disable
+  eval_vs_random_games: 2    # Only 2 games
+  min_win_rate_vs_random: 0.5
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 2
+  
+  # Data saving
+  save_game_records: false
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json

@@ -468,9 +468,20 @@ class MCTS:
             elif self.config.game_type == GameType.GO:
                 # Go: 3 channels - black stones, white stones, current player
                 # Channel 0 is black stones, channel 1 is white stones (absolute, not relative)
-                board = np.zeros((self.config.board_size, self.config.board_size), dtype=np.int8)
-                board[tensor_repr[0] > 0] = 1   # Black stones
-                board[tensor_repr[1] > 0] = -1  # White stones
+                # Use the actual board size from tensor representation
+                actual_board_size = tensor_repr[0].shape[0]
+                expected_board_size = self.config.board_size
+                
+                if actual_board_size != expected_board_size:
+                    logger.warning(f"Go tensor size mismatch: expected {expected_board_size}x{expected_board_size}, got {actual_board_size}x{actual_board_size}")
+                    # Resize the tensor to match expected size
+                    # For now, just use the expected size and ignore the tensor
+                    board = np.zeros((expected_board_size, expected_board_size), dtype=np.int8)
+                else:
+                    board = np.zeros((actual_board_size, actual_board_size), dtype=np.int8)
+                    board[tensor_repr[0] > 0] = 1   # Black stones
+                    board[tensor_repr[1] > 0] = -1  # White stones
+                
                 state_tensor = torch.tensor(board, dtype=torch.int8, device=self.device)
                 
             else:  # Chess

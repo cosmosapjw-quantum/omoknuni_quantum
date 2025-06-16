@@ -30,7 +30,7 @@ class TestHardwareDetection:
         mock_platform.python_version.return_value = "3.9.0"
         
         # Disable GPU for this test
-        with patch('mcts.config_manager.HAS_TORCH', False):
+        with patch('mcts.utils.config_manager.HAS_TORCH', False):
             manager = ConfigManager()
             
         hw = manager.hardware_info
@@ -41,10 +41,10 @@ class TestHardwareDetection:
         assert hw.os_name == "Linux"
         assert not hw.has_gpu
         
-    @patch('mcts.config_manager.torch')
-    @patch('mcts.config_manager.HAS_TORCH', True)
-    @patch('mcts.config_manager.psutil')
-    @patch('mcts.config_manager.multiprocessing')
+    @patch('mcts.utils.config_manager.torch')
+    @patch('mcts.utils.config_manager.HAS_TORCH', True)
+    @patch('mcts.utils.config_manager.psutil')
+    @patch('mcts.utils.config_manager.multiprocessing')
     def test_gpu_detection(self, mock_mp, mock_psutil, mock_torch):
         """Test GPU detection"""
         # Mock basic system info
@@ -136,9 +136,9 @@ class TestConfigOptimization:
         assert cfg.enable_mixed_precision
         
         # Large batch sizes for powerful GPU
-        assert cfg.batch_size == 512
-        assert cfg.wave_size == 1024
-        assert cfg.nn_batch_size == 512
+        assert cfg.batch_size == 2048
+        assert cfg.wave_size == 4096
+        assert cfg.nn_batch_size == 2048
         
         # High simulation count
         assert cfg.num_simulations == 1600
@@ -165,8 +165,8 @@ class TestConfigOptimization:
         
         # Should use GPU with moderate settings
         assert cfg.use_gpu
-        assert cfg.batch_size == 256
-        assert cfg.wave_size == 512
+        assert cfg.batch_size == 1024
+        assert cfg.wave_size == 2048
         assert cfg.num_simulations == 800
         
     def test_gpu_optimization_low_memory(self):
@@ -190,8 +190,8 @@ class TestConfigOptimization:
         
         # Should still use GPU but with small batches
         assert cfg.use_gpu
-        assert cfg.batch_size == 128
-        assert cfg.wave_size == 256
+        assert cfg.batch_size == 256
+        assert cfg.wave_size == 512
         
 
 class TestConfigGeneration:
@@ -246,7 +246,7 @@ class TestConfigGeneration:
         assert 'initial_wave_size' in wave_config
         assert 'max_wave_size' in wave_config
         assert 'enable_interference' in wave_config
-        assert wave_config['adaptive_sizing'] == True
+        assert wave_config['enable_adaptive_sizing'] == True
         
     @patch.object(ConfigManager, '_detect_hardware')
     def test_evaluator_config_generation(self, mock_detect):

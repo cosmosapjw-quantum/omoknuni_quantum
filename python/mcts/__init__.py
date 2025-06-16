@@ -10,13 +10,9 @@ __author__ = "Omoknuni Team"
 
 # Core components
 from .core import (
-    Node, TreeArena, MemoryConfig,
     GameInterface, GameType,
-    Evaluator, MockEvaluator, EvaluatorConfig,
-    BatchGameOps, BatchGameOpsConfig, TensorGameState,
+    Evaluator, MockEvaluator, RandomEvaluator, EvaluatorConfig, AlphaZeroEvaluator,
     MCTS, MCTSConfig,
-    WaveMCTS, WaveMCTSConfig,
-    CachedGameInterface, CacheConfig,
 )
 
 # Neural network components
@@ -36,7 +32,6 @@ from .neural_networks import (
 # GPU acceleration components
 from .gpu import (
     CSRTree, CSRTreeConfig,
-    GPUOptimizer, AsyncEvaluator, StateMemoryPool,
     get_csr_kernels, CSRGPUKernels, CSRBatchOperations,
     CUDAKernels, OptimizedCUDAKernels, GPUTreeKernels
 )
@@ -44,14 +39,20 @@ from .gpu import (
 # Quantum-inspired components (optional)
 try:
     from .quantum import (
-        InterferenceEngine,
-        PhaseKickedPolicy, PhaseConfig,
-        PathIntegral, PathIntegralConfig
+        QuantumConfig,
+        create_quantum_mcts,
+        QuantumLevel,
+        PathIntegral, PathIntegralConfig,
+        DecoherenceEngine, DecoherenceConfig,
+        MinHashInterference, MinHashConfig
     )
     __all_quantum = [
-        "InterferenceEngine",
-        "PhaseKickedPolicy", "PhaseConfig",
-        "PathIntegral", "PathIntegralConfig"
+        "QuantumConfig",
+        "create_quantum_mcts",
+        "QuantumLevel",
+        "PathIntegral", "PathIntegralConfig",
+        "DecoherenceEngine", "DecoherenceConfig",
+        "MinHashInterference", "MinHashConfig"
     ]
 except ImportError:
     __all_quantum = []
@@ -59,24 +60,21 @@ except ImportError:
 # Utility components
 from .utils import (
     ConfigManager,
-    ResourceMonitor,
-    StateDeltaEncoder,
-    compute_gomoku_attack_defense_scores,
-    compute_attack_defense_scores,
-    evaluate_position
+    OptimizedConfig,
+    AlphaZeroConfig,
+    MCTSFullConfig,
+    QuantumLevel,
+    create_default_config,
+    merge_configs
 )
 
 # No legacy aliases needed - MCTS is now the main class
 
 __all__ = [
     # Core
-    "Node", "TreeArena", "MemoryConfig",
     "GameInterface", "GameType",
-    "Evaluator", "MockEvaluator", "EvaluatorConfig",
-    "BatchGameOps", "BatchGameOpsConfig", "TensorGameState",
+    "Evaluator", "MockEvaluator", "RandomEvaluator", "EvaluatorConfig", "AlphaZeroEvaluator",
     "MCTS", "MCTSConfig",
-    "WaveMCTS", "WaveMCTSConfig",
-    "CachedGameInterface", "CacheConfig",
     
     # Neural Networks
     "ModelRegistry", "ModelLoader", "BaseGameModel", "ModelMetadata",
@@ -92,15 +90,15 @@ __all__ = [
     
     # GPU
     "CSRTree", "CSRTreeConfig",
-    "GPUOptimizer", "AsyncEvaluator", "StateMemoryPool",
     "get_csr_kernels", "CSRGPUKernels", "CSRBatchOperations",
     "CUDAKernels", "OptimizedCUDAKernels", "GPUTreeKernels",
     
     # Utils
     "ConfigManager",
-    "ResourceMonitor",
-    "StateDeltaEncoder",
-    "compute_gomoku_attack_defense_scores",
-    "compute_attack_defense_scores",
-    "evaluate_position",
+    "OptimizedConfig",
+    "AlphaZeroConfig",
+    "MCTSFullConfig",
+    "QuantumLevel",
+    "create_default_config",
+    "merge_configs",
 ] + __all_quantum

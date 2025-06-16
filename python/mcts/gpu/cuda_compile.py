@@ -88,7 +88,7 @@ else:
     with open(cuda_source_path, 'r') as f:
         cuda_source = f.read()
 
-    # C++ wrapper source
+    # C++ wrapper source - no PYBIND11_MODULE since load_inline creates it
     cpp_source = """
 #include <torch/extension.h>
 
@@ -110,12 +110,6 @@ torch::Tensor parallel_backup_cuda(
     torch::Tensor value_sums,
     torch::Tensor visit_counts
 );
-
-// Python bindings
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("batched_ucb_selection", &batched_ucb_selection_cuda, "Batched UCB selection (CUDA)");
-    m.def("parallel_backup", &parallel_backup_cuda, "Parallel backup (CUDA)");
-}
 """
 
     # Compile flags for optimization - only compile for current architecture
@@ -176,13 +170,15 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             
             # Load and compile the CUDA extension
             mcts_cuda = load_inline(
-                name='mcts_cuda',
+                name='mcts_cuda_kernels_inline',
                 cpp_sources=[cpp_source],
                 cuda_sources=[cuda_source],
                 extra_cuda_cflags=extra_cuda_cflags,
                 verbose=False,  # Disable verbose to reduce output
                 with_cuda=True,
-                build_directory=build_dir
+                build_directory=build_dir,
+                functions=['batched_ucb_selection_cuda', 'parallel_backup_cuda',
+                          'batched_ucb_selection_quantum_cuda', 'quantum_interference_cuda']
             )
             
             # Cancel timeout if compilation succeeded
@@ -192,8 +188,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             logger.debug("Successfully compiled custom CUDA kernels")
             
             # Make kernels available
-            batched_ucb_selection = mcts_cuda.batched_ucb_selection
-            parallel_backup = mcts_cuda.parallel_backup
+            batched_ucb_selection = mcts_cuda.batched_ucb_selection_cuda
+            parallel_backup = mcts_cuda.parallel_backup_cuda
             
             # Additional kernels from full version (if available)
             if hasattr(mcts_cuda, 'batched_add_children'):

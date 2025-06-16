@@ -369,7 +369,13 @@ class EvaluatorPool:
                for hist in self.performance_history.values()):
             
             # Compute features for meta-weighting
-            model_features = info['individual_values'].unsqueeze(-1)  # Simple features
+            # Create 3 features: value, policy entropy (dummy), confidence (dummy)
+            individual_values = info['individual_values']
+            batch_size, num_models = individual_values.shape
+            model_features = torch.zeros(batch_size, num_models, 3, device=individual_values.device)
+            model_features[:, :, 0] = individual_values  # Value predictions
+            model_features[:, :, 1] = 0.5  # Dummy policy entropy
+            model_features[:, :, 2] = 1.0  # Dummy confidence
             
             # Forward pass
             self.meta_weight_module.train()

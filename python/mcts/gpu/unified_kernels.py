@@ -8,84 +8,173 @@ import torch
 import logging
 from typing import Tuple, Optional, Dict, Any
 import os
+import sys
 from pathlib import Path
+from .kernel_wrapper import wrap_kernel_module
 
 logger = logging.getLogger(__name__)
 
 # Check for compiled kernels
 _UNIFIED_KERNELS = None
+_WRAPPED_KERNELS = None
 _KERNELS_AVAILABLE = False
 
 def _load_kernels():
-    """Load compiled CUDA kernels"""
-    global _UNIFIED_KERNELS, _KERNELS_AVAILABLE
+    """Load compiled CUDA kernels with automatic detection"""
+    global _UNIFIED_KERNELS, _WRAPPED_KERNELS, _KERNELS_AVAILABLE
     
     if _UNIFIED_KERNELS is not None:
         return _KERNELS_AVAILABLE
     
     try:
-        # Try direct import first (for compiled extensions)
+        # Method 1: Try loading from torch extensions cache
+        # This is where torch.utils.cpp_extension.load stores compiled modules
+        cache_dir = None
+        try:
+            from torch.utils.cpp_extension import _get_build_directory
+            # Try to get the build directory for our module
+            cache_dir = Path(_get_build_directory('mcts_cuda_kernels', verbose=False))
+        except:
+            # Fallback to default cache location
+            cache_dir = Path(os.path.expanduser('~/.cache/torch_extensions'))
+            if cache_dir.exists():
+                # Find the appropriate subdirectory for current Python/CUDA version
+                py_version = f"py{sys.version_info.major}{sys.version_info.minor}"
+                cuda_version = torch.version.cuda.replace('.', '') if torch.version.cuda else 'cpu'
+                for subdir in cache_dir.iterdir():
+                    if subdir.is_dir() and py_version in subdir.name:
+                        if cuda_version in subdir.name or (cuda_version == 'cpu' and 'cpu' in subdir.name):
+                            cache_dir = subdir
+                            break
+        
+        if cache_dir and cache_dir.exists():
+            # Search for compiled kernels in cache
+            kernel_patterns = ['mcts_cuda_kernels*.so', 'unified_cuda_kernels*.so']
+            for pattern in kernel_patterns:
+                for kernel_path in cache_dir.rglob(pattern):
+                    try:
+                        # Try to load the .so file directly using torch.ops.load_library
+                        torch.ops.load_library(str(kernel_path))
+                        # Check if kernels are now available in torch.ops
+                        if hasattr(torch.ops, 'mcts_cuda_kernels'):
+                            _UNIFIED_KERNELS = torch.ops.mcts_cuda_kernels
+                            _WRAPPED_KERNELS = wrap_kernel_module(_UNIFIED_KERNELS)
+                            if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                                _KERNELS_AVAILABLE = True
+                                logger.info(f"Successfully loaded CUDA kernels from cache: {kernel_path}")
+                                logger.debug(f"Available kernel functions: {_WRAPPED_KERNELS.available_kernels}")
+                                return True
+                        
+                        # Try direct module import as fallback
+                        try:
+                            import importlib.util
+                            spec = importlib.util.spec_from_file_location('mcts_cuda_kernels', str(kernel_path))
+                            if spec and spec.loader:
+                                module = importlib.util.module_from_spec(spec)
+                                sys.modules['mcts_cuda_kernels'] = module
+                                spec.loader.exec_module(module)
+                                _UNIFIED_KERNELS = module
+                                _WRAPPED_KERNELS = wrap_kernel_module(module)
+                                if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                                    _KERNELS_AVAILABLE = True
+                                    logger.info(f"Successfully loaded CUDA kernels as module from: {kernel_path}")
+                                    logger.debug(f"Available kernel functions: {_WRAPPED_KERNELS.available_kernels}")
+                                    return True
+                        except Exception as e:
+                            logger.debug(f"Module import failed: {e}")
+                    except Exception as e:
+                        logger.debug(f"Failed to load {kernel_path}: {e}")
+        
+        # Method 2: Try direct import (for installed packages)
         try:
             import mcts.gpu.unified_cuda_kernels as unified_module
             _UNIFIED_KERNELS = unified_module
-            _KERNELS_AVAILABLE = True
-            logger.debug("Successfully imported unified_cuda_kernels module")
-            funcs = [attr for attr in dir(unified_module) if not attr.startswith('_') and callable(getattr(unified_module, attr))]
-            logger.debug(f"Available kernel functions: {funcs}")
-            return True
+            _WRAPPED_KERNELS = wrap_kernel_module(unified_module)
+            if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                _KERNELS_AVAILABLE = True
+                logger.debug("Successfully imported unified_cuda_kernels module")
+                logger.debug(f"Available kernels: {_WRAPPED_KERNELS.available_kernels}")
+                return True
         except ImportError:
             pass
-            
-        # Try to load pre-compiled kernels
-        kernel_paths = [
-            Path(__file__).parent / "unified_cuda_kernels.cpython-312-x86_64-linux-gnu.so",
-            Path(__file__).parent / "mcts_cuda_kernels.cpython-312-x86_64-linux-gnu.so",
+        
+        # Method 3: Check local paths (for development)
+        local_paths = [
             Path(__file__).parent / "unified_cuda_kernels.so",
-            Path(__file__).parent.parent.parent / "build_cuda" / "unified_cuda_kernels.so",
+            Path(__file__).parent / "mcts_cuda_kernels.so",
+            Path(__file__).parent.parent.parent / "build" / "lib*" / "mcts_cuda_kernels*.so",
         ]
         
-        for path in kernel_paths:
-            if path.exists():
-                try:
-                    # Try importing as a module first (preferred method)
-                    import importlib.util
-                    # Extract module name from filename
-                    module_name = path.stem.split('.')[0]  # Remove .cpython-... suffix
-                    spec = importlib.util.spec_from_file_location(module_name, str(path))
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
+        for path_pattern in local_paths:
+            if '*' in str(path_pattern):
+                # Handle glob patterns
+                base_dir = path_pattern.parent
+                pattern = path_pattern.name
+                if base_dir.exists():
+                    for path in base_dir.glob(pattern):
+                        module = _try_load_kernel_file(path, return_module=True)
+                        if module:
+                            _UNIFIED_KERNELS = module
+                            _WRAPPED_KERNELS = wrap_kernel_module(module)
+                            if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                                _KERNELS_AVAILABLE = True
+                                return True
+            elif path_pattern.exists():
+                module = _try_load_kernel_file(path_pattern, return_module=True)
+                if module:
                     _UNIFIED_KERNELS = module
-                    _KERNELS_AVAILABLE = True
-                    logger.info(f"Successfully loaded CUDA kernels from {path}")
-                    logger.debug(f"Available kernel functions: {[attr for attr in dir(module) if not attr.startswith('_')]}")
-                    break
-                except Exception as e:
-                    logger.warning(f"Failed to load kernels from {path}: {e}")
-                    
-        if not _KERNELS_AVAILABLE and torch.cuda.is_available():
-            # Try loading via torch.ops if kernels were registered there
-            if hasattr(torch.ops, 'mcts_cuda_kernels'):
-                logger.info("Using CUDA kernels from torch.ops.mcts_cuda_kernels")
-                _UNIFIED_KERNELS = torch.ops.mcts_cuda_kernels
-                _KERNELS_AVAILABLE = True
-            else:
-                # Try JIT compilation as last resort
+                    _WRAPPED_KERNELS = wrap_kernel_module(module)
+                    if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                        _KERNELS_AVAILABLE = True
+                        return True
+        
+        # Method 4: Try JIT compilation if CUDA source exists
+        if torch.cuda.is_available():
+            cuda_source = Path(__file__).parent / "unified_cuda_kernels.cu"
+            if cuda_source.exists():
                 try:
                     from torch.utils.cpp_extension import load
-                    _UNIFIED_KERNELS = load(
-                        name='unified_cuda_kernels',
-                        sources=[str(Path(__file__).parent / "unified_cuda_kernels.cu")],
+                    logger.info("Compiling CUDA kernels (this may take a minute)...")
+                    module = load(
+                        name='mcts_cuda_kernels',
+                        sources=[str(cuda_source)],
+                        extra_cuda_cflags=['-O3', '--use_fast_math'],
                         verbose=False
                     )
-                    _KERNELS_AVAILABLE = True
-                    logger.info("JIT compiled CUDA kernels")
+                    _UNIFIED_KERNELS = module
+                    _WRAPPED_KERNELS = wrap_kernel_module(module)
+                    if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
+                        _KERNELS_AVAILABLE = True
+                        logger.info("Successfully compiled CUDA kernels")
+                        logger.debug(f"Available kernels: {_WRAPPED_KERNELS.available_kernels}")
+                        return True
                 except Exception as e:
-                    logger.warning(f"JIT compilation failed: {e}")
-                
+                    logger.debug(f"JIT compilation failed: {e}")
+        
     except Exception as e:
         logger.error(f"Failed to load CUDA kernels: {e}")
     
-    return _KERNELS_AVAILABLE
+    # No kernels available - will use PyTorch fallback
+    logger.debug("No CUDA kernels found - using optimized PyTorch implementation")
+    return False
+
+
+def _try_load_kernel_file(path: Path, return_module: bool = False):
+    """Try to load a kernel file and return success status or module"""
+    try:
+        import importlib.util
+        module_name = f'mcts_cuda_kernels_{path.stem}'
+        spec = importlib.util.spec_from_file_location(module_name, str(path))
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            logger.debug(f"Successfully loaded kernel from {path}")
+            if return_module:
+                return module
+            return True
+    except Exception as e:
+        logger.debug(f"Failed to load {path}: {e}")
+        return None if return_module else False
 
 
 class UnifiedGPUKernels:
@@ -156,7 +245,7 @@ class UnifiedGPUKernels:
         parent_visits = visit_counts[node_indices]
         
         
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:
                 # Prepare Q-values - ensure float32 for CUDA kernel
                 q_values = torch.where(
@@ -173,7 +262,7 @@ class UnifiedGPUKernels:
                 col_indices_int = col_indices.int()
                 
                 # Choose between quantum and classical kernel
-                if enable_quantum and hasattr(_UNIFIED_KERNELS, 'batched_ucb_selection_quantum'):
+                if enable_quantum and _WRAPPED_KERNELS.has_kernel('batched_ucb_selection_quantum'):
                     # Prepare quantum tensors
                     if quantum_phases is None:
                         quantum_phases = torch.empty(0, device=q_values.device, dtype=torch.float32)
@@ -191,7 +280,7 @@ class UnifiedGPUKernels:
                     uncertainty_table = uncertainty_table.to(device=q_values.device, dtype=torch.float32)
                     
                     # Call quantum-enhanced CUDA kernel
-                    result = _UNIFIED_KERNELS.batched_ucb_selection_quantum(
+                    result = _WRAPPED_KERNELS.batched_ucb_selection_quantum(
                         q_values, visit_counts_int, parent_visits_int, edge_priors_float,
                         row_ptr_int, col_indices_int, c_puct,
                         quantum_phases, uncertainty_table,
@@ -200,12 +289,15 @@ class UnifiedGPUKernels:
                     
                     # Update quantum call statistics
                     self.stats['quantum_calls'] += 1
-                else:
+                elif _WRAPPED_KERNELS.has_kernel('batched_ucb_selection'):
                     # Call classical CUDA kernel
-                    result = _UNIFIED_KERNELS.batched_ucb_selection(
+                    result = _WRAPPED_KERNELS.batched_ucb_selection(
                         q_values, visit_counts_int, parent_visits_int, edge_priors_float,
                         row_ptr_int, col_indices_int, c_puct
                     )
+                else:
+                    # No kernel available, raise to trigger fallback
+                    raise RuntimeError("CUDA kernel not available")
                 
                 # Handle both old (single tensor) and new (tuple) return formats
                 if isinstance(result, tuple):
@@ -330,9 +422,9 @@ class UnifiedGPUKernels:
         """
         self.stats['backup_calls'] += 1
         
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:
-                if hasattr(_UNIFIED_KERNELS, 'parallel_backup'):
+                if _WRAPPED_KERNELS.has_kernel('parallel_backup'):
                     # Ensure correct types for CUDA kernel
                     paths_int = paths.int()
                     values_float = values.float()
@@ -341,7 +433,7 @@ class UnifiedGPUKernels:
                     visit_counts_int = visit_counts.int()
                     
                     # Call CUDA kernel (modifies in-place)
-                    value_sums_updated = _UNIFIED_KERNELS.parallel_backup(
+                    value_sums_updated = _WRAPPED_KERNELS.parallel_backup(
                         paths_int, values_float, path_lengths_int, 
                         value_sums_float, visit_counts_int
                     )
@@ -411,10 +503,10 @@ class UnifiedGPUKernels:
         """
         self.stats['quantum_calls'] += 1
         
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:
-                if hasattr(_UNIFIED_KERNELS, 'quantum_interference'):
-                    return _UNIFIED_KERNELS.quantum_interference(
+                if _WRAPPED_KERNELS.has_kernel('quantum_interference'):
+                    return _WRAPPED_KERNELS.quantum_interference(
                         q_values, visit_counts, priors, phases,
                         c_puct, hbar_eff, lambda_qft
                     )
@@ -474,9 +566,9 @@ class UnifiedGPUKernels:
         
         This method is called by CSRTree for batch operations.
         """
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
-            if hasattr(_UNIFIED_KERNELS, 'batched_add_children'):
-                return _UNIFIED_KERNELS.batched_add_children(*args, **kwargs)
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
+            if _WRAPPED_KERNELS.has_kernel('batched_add_children'):
+                return _WRAPPED_KERNELS.batched_add_children(*args, **kwargs)
         
         # No CUDA kernel available - CSRTree will use fallback
         raise NotImplementedError("Batched add children kernel not available")
@@ -503,13 +595,13 @@ class UnifiedGPUKernels:
             similarities: Pairwise similarities [batch_size, batch_size]
             new_scores: Scores with interference applied [batch_size]
         """
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:
-                if hasattr(_UNIFIED_KERNELS, 'fused_minhash_interference'):
+                if _WRAPPED_KERNELS.has_kernel('fused_minhash_interference'):
                     # Fix dtype issue: CUDA kernel expects Int (int32) but paths might be Long (int64)
                     paths_int32 = paths.int()  # Convert Long to Int32
                     scores_float32 = scores.float()  # Ensure float32
-                    return _UNIFIED_KERNELS.fused_minhash_interference(paths_int32, scores_float32, num_hashes)
+                    return _WRAPPED_KERNELS.fused_minhash_interference(paths_int32, scores_float32, num_hashes)
                 else:
                     logger.warning("CUDA kernel fused_minhash_interference not found in loaded module")
             except Exception as e:
@@ -575,14 +667,14 @@ class UnifiedGPUKernels:
             uncertainty: Uncertainty estimates [batch_size, num_actions]
             phases: Applied phases [batch_size, num_actions]
         """
-        if self.use_cuda and _UNIFIED_KERNELS is not None:
+        if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:
-                if hasattr(_UNIFIED_KERNELS, 'phase_kicked_policy'):
+                if _WRAPPED_KERNELS.has_kernel('phase_kicked_policy'):
                     # Fix dtype issue: CUDA kernel expects Int (int32) but visits might be Float
                     priors_float32 = priors.float()  # Ensure float32
                     visits_int32 = visits.int()  # Convert to Int32 (the kernel expects visit counts as integers)
                     values_float32 = values.float()  # Ensure float32
-                    return _UNIFIED_KERNELS.phase_kicked_policy(priors_float32, visits_int32, values_float32, kick_strength)
+                    return _WRAPPED_KERNELS.phase_kicked_policy(priors_float32, visits_int32, values_float32, kick_strength)
                 else:
                     logger.warning("CUDA kernel phase_kicked_policy not found in loaded module")
             except Exception as e:

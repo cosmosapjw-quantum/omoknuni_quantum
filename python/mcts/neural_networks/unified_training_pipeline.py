@@ -717,7 +717,7 @@ class UnifiedTrainingPipeline:
             self.model, random_evaluator,
             model1_name=f"iter_{self.iteration}",
             model2_name="random",
-            silent=True
+            silent=False
         )
         win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
         tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
@@ -740,7 +740,7 @@ class UnifiedTrainingPipeline:
                 best_model, random_evaluator,
                 model1_name=f"iter_{self.best_model_iteration}",
                 model2_name="random",
-                silent=True
+                silent=False
             )
             win_rate_best_random = wins_best_random / (wins_best_random + draws_best_random + losses_best_random)
             tqdm.write(f"      Result: {wins_best_random}W-{draws_best_random}D-{losses_best_random}L ({win_rate_best_random:.1%})")
@@ -756,7 +756,7 @@ class UnifiedTrainingPipeline:
                 self.model, best_model,
                 model1_name=f"iter_{self.iteration}",
                 model2_name=f"iter_{self.best_model_iteration}",
-                silent=True
+                silent=False
             )
             win_rate_vs_best = wins_vs_best / (wins_vs_best + draws_vs_best + losses_vs_best)
             tqdm.write(f"      Result: {wins_vs_best}W-{draws_vs_best}D-{losses_vs_best}L ({win_rate_vs_best:.1%})")

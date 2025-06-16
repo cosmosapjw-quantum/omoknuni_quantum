@@ -1,27 +1,30 @@
 """Quantum-inspired MCTS enhancements"""
 
 from .quantum_features import (
-    QuantumFeatures,
     QuantumConfig,
-    create_quantum_mcts,
-    QuantumLevel
+    create_quantum_mcts
 )
+from ..utils.config_system import QuantumLevel
 from .qft_engine import QFTEngine
-from .path_integral import PathIntegralMCTS
-from .rg_flow import RGFlowEngine
-from .quantum_darwinism import QuantumDarwinismFilter
-from .decoherence import DecoherenceModel
-from .interference_gpu import InterferenceGPU
+from .path_integral import PathIntegral, PathIntegralConfig
+from .rg_flow import RGFlowOptimizer, RGConfig
+from .quantum_darwinism import QuantumDarwinismEngine, DarwinismConfig
+from .decoherence import DecoherenceEngine, DecoherenceConfig
+from .interference_gpu import MinHashInterference, MinHashConfig
 
 __all__ = [
-    "QuantumFeatures",
     "QuantumConfig", 
     "create_quantum_mcts",
     "QuantumLevel",
     "QFTEngine",
-    "PathIntegralMCTS",
-    "RGFlowEngine",
-    "QuantumDarwinismFilter",
-    "DecoherenceModel",
-    "InterferenceGPU",
+    "PathIntegral",
+    "PathIntegralConfig",
+    "RGFlowOptimizer",
+    "RGConfig",
+    "QuantumDarwinismEngine",
+    "DarwinismConfig",
+    "DecoherenceEngine",
+    "DecoherenceConfig",
+    "MinHashInterference",
+    "MinHashConfig",
 ]

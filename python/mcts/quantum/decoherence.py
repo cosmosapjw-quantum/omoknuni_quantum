@@ -266,6 +266,10 @@ class DensityMatrixEvolution:
     ) -> torch.Tensor:
         """Compute coherent evolution term -i[H,ρ]/ℏ"""
         
+        # Ensure Hamiltonian has same dtype as density matrix
+        if hamiltonian.dtype != rho.dtype:
+            hamiltonian = hamiltonian.to(rho.dtype)
+        
         # Commutator [H,ρ] = Hρ - ρH
         commutator = torch.matmul(hamiltonian, rho) - torch.matmul(rho, hamiltonian)
         
@@ -287,6 +291,9 @@ class DensityMatrixEvolution:
         decoherence_term = torch.zeros_like(rho)
         
         for L_k in lindblad_ops:
+            # Ensure Lindblad operator has same dtype as density matrix
+            if L_k.dtype != rho.dtype:
+                L_k = L_k.to(rho.dtype)
             L_k_dag = L_k.conj().transpose(-2, -1)
             
             # L_k ρ L_k†
@@ -314,11 +321,15 @@ class DensityMatrixEvolution:
         # Ensure positive semidefinite (eigenvalue decomposition)
         eigenvals, eigenvecs = torch.linalg.eigh(rho)
         eigenvals = torch.clamp(eigenvals, min=0.0)
-        rho = torch.matmul(eigenvecs, torch.matmul(torch.diag(eigenvals), eigenvecs.conj().transpose(-2, -1)))
+        # Create diagonal matrix with same dtype as eigenvectors
+        diag_eigenvals = torch.diag(eigenvals).to(eigenvecs.dtype)
+        rho = torch.matmul(eigenvecs, torch.matmul(diag_eigenvals, eigenvecs.conj().transpose(-2, -1)))
         
         # Normalize trace
         trace = torch.trace(rho)
-        if trace > self.config.matrix_regularization:
+        # Trace should be real for a density matrix, but may have small imaginary part due to numerics
+        trace_real = trace.real
+        if trace_real > self.config.matrix_regularization:
             rho = rho / trace
         
         return rho
@@ -352,13 +363,14 @@ class DensityMatrixEvolution:
                 rho, hamiltonian, visit_counts, tree_structure=tree_structure
             )
             
+            # Increment time
+            t += self.config.dt
+            
             # Check convergence
             diff = torch.norm(rho - rho_prev).item()
             if diff < self.config.convergence_threshold:
                 logger.debug(f"Density matrix converged at t={t:.3f}")
                 break
-                
-            t += self.config.dt
         
         return rho, t
 

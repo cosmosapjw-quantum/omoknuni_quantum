@@ -560,7 +560,17 @@ def _play_arena_game_worker(config, arena_config: ArenaConfig,
         c_puct=arena_config.c_puct,
         temperature=0.0,
         device=arena_config.device,
-        game_type=game_type
+        game_type=game_type,
+        board_size=config.game.board_size,
+        # Add minimal required parameters
+        min_wave_size=32,
+        max_wave_size=32,
+        adaptive_wave_sizing=False,
+        memory_pool_size_mb=128,
+        max_tree_nodes=10000,
+        use_mixed_precision=False,
+        use_cuda_graphs=False,
+        use_tensor_cores=False
     )
     
     mcts1 = MCTS(mcts_config, evaluator1)
@@ -574,11 +584,11 @@ def _play_arena_game_worker(config, arena_config: ArenaConfig,
         # Get current MCTS
         current_mcts = mcts1 if current_player == 1 else mcts2
         
-        # Get action (deterministic for arena)
-        valid_actions, valid_probs = current_mcts.get_valid_actions_and_probabilities(state, temperature=0.0)
-        if not valid_actions:
-            raise ValueError(f"No valid actions available at move {move_num}")
-        action = valid_actions[np.argmax(valid_probs)]
+        # Run MCTS search first
+        policy = current_mcts.search(state, num_simulations=arena_config.mcts_simulations)
+        
+        # Get best action (deterministic)
+        action = current_mcts.get_best_action(state)
         
         # Apply action
         state = game_interface.get_next_state(state, action)

@@ -17,7 +17,7 @@ class TestModelConfig:
     def test_default_config(self):
         """Test default configuration"""
         config = ModelConfig()
-        assert config.input_channels == 17
+        assert config.input_channels == 20
         assert config.input_height == 8
         assert config.input_width == 8
         assert config.num_actions == 4096

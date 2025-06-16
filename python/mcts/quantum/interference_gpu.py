@@ -94,6 +94,9 @@ class MinHashInterference:
         """
         if num_hashes is None:
             num_hashes = self.config.num_hashes
+        else:
+            # Ensure we don't exceed available hash functions
+            num_hashes = min(num_hashes, self.config.num_hashes)
             
         batch_size, max_depth = paths.shape
         

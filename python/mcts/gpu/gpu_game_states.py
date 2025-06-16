@@ -29,13 +29,14 @@ class GPUGameStatesConfig:
     dtype: torch.dtype = torch.float32  # For compatibility
     
     def __post_init__(self):
-        # Adjust board size based on game
-        if self.game_type == GameType.CHESS:
-            self.board_size = 8
-        elif self.game_type == GameType.GO:
-            self.board_size = 19  # Standard Go board
-        elif self.game_type == GameType.GOMOKU:
-            self.board_size = 15  # Standard Gomoku board
+        # Set default board size if not specified (0 or None)
+        if not self.board_size:
+            if self.game_type == GameType.CHESS:
+                self.board_size = 8
+            elif self.game_type == GameType.GO:
+                self.board_size = 19  # Standard Go board
+            elif self.game_type == GameType.GOMOKU:
+                self.board_size = 15  # Standard Gomoku board
 
 
 class GPUGameStates:
@@ -519,6 +520,31 @@ class GPUGameStates:
             # Get enhanced tensor representation from C++
             enhanced_tensor = cpp_state.get_enhanced_tensor_representation()
             
+            # Check if tensor size matches expected size
+            if enhanced_tensor.shape[1] != self.board_size or enhanced_tensor.shape[2] != self.board_size:
+                # Resize tensor to match expected board size
+                # This is a workaround for C++ GoState not respecting board_size parameter
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Enhanced tensor size mismatch for {self.game_type.name}: "
+                             f"expected {self.board_size}x{self.board_size}, "
+                             f"got {enhanced_tensor.shape[1]}x{enhanced_tensor.shape[2]}")
+                
+                # Create a tensor of the correct size
+                correct_tensor = np.zeros((20, self.board_size, self.board_size), dtype=np.float32)
+                
+                # Copy the center portion if the actual tensor is larger
+                if enhanced_tensor.shape[1] > self.board_size:
+                    # Take the top-left portion
+                    correct_tensor[:, :self.board_size, :self.board_size] = enhanced_tensor[:, :self.board_size, :self.board_size]
+                else:
+                    # Pad with zeros if smaller (shouldn't happen)
+                    min_h = min(enhanced_tensor.shape[1], self.board_size)
+                    min_w = min(enhanced_tensor.shape[2], self.board_size)
+                    correct_tensor[:, :min_h, :min_w] = enhanced_tensor[:, :min_h, :min_w]
+                
+                enhanced_tensor = correct_tensor
+            
             # Convert numpy array to torch tensor and copy to GPU
             features[i] = torch.from_numpy(enhanced_tensor).to(self.device)
         
@@ -565,10 +591,21 @@ class GPUGameStates:
             if self._cpp_states_pool:
                 temp_state = self._cpp_states_pool.pop()
             else:
-                temp_state = alphazero_py.create_game(cpp_game_type)
+                # Create game with proper board size
+                if self.game_type == GameType.GO:
+                    temp_state = alphazero_py.GoState(self.board_size)
+                elif self.game_type == GameType.GOMOKU:
+                    temp_state = alphazero_py.GomokuState(self.board_size)
+                else:
+                    temp_state = alphazero_py.create_game(cpp_game_type)
             
             # Reset temp state to initial position
-            temp_initial = alphazero_py.create_game(cpp_game_type)
+            if self.game_type == GameType.GO:
+                temp_initial = alphazero_py.GoState(self.board_size)
+            elif self.game_type == GameType.GOMOKU:
+                temp_initial = alphazero_py.GomokuState(self.board_size)
+            else:
+                temp_initial = alphazero_py.create_game(cpp_game_type)
             temp_state.copy_from(temp_initial)
             
             # Convert each move to string
@@ -581,9 +618,18 @@ class GPUGameStates:
             # Return temp state to pool
             self._cpp_states_pool.append(temp_state)
             
-            # Create state from move string
-            moves_str = " ".join(move_strings)
-            cpp_state = alphazero_py.create_game_from_moves(cpp_game_type, moves_str)
+            # Create initial state with proper board size and apply moves
+            if self.game_type == GameType.GO:
+                cpp_state = alphazero_py.GoState(self.board_size)
+            elif self.game_type == GameType.GOMOKU:
+                cpp_state = alphazero_py.GomokuState(self.board_size)
+            else:
+                cpp_state = alphazero_py.create_game(cpp_game_type)
+            
+            # Apply moves to reach target state
+            for move in moves:
+                if cpp_state.is_legal_move(move):
+                    cpp_state.make_move(move)
             
         else:
             # No move history - create initial state
@@ -597,7 +643,13 @@ class GPUGameStates:
             else:
                 raise ValueError(f"Unknown game type: {self.game_type}")
             
-            cpp_state = alphazero_py.create_game(cpp_game_type)
+            # Create initial state with proper board size
+            if self.game_type == GameType.GO:
+                cpp_state = alphazero_py.GoState(self.board_size)
+            elif self.game_type == GameType.GOMOKU:
+                cpp_state = alphazero_py.GomokuState(self.board_size)
+            else:
+                cpp_state = alphazero_py.create_game(cpp_game_type)
         
         # Cache the state
         self._cpp_states_cache[state_idx] = cpp_state

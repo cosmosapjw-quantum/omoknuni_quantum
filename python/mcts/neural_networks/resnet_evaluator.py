@@ -10,6 +10,8 @@ import numpy as np
 from typing import Tuple, Optional, Dict, Any, Union
 from pathlib import Path
 import logging
+import json
+import time
 
 from mcts.core.evaluator import Evaluator, EvaluatorConfig
 from .nn_framework import ModelLoader, BaseGameModel, ModelMetadata
@@ -39,8 +41,13 @@ class ResNetEvaluator(Evaluator):
             checkpoint_path: Path to model checkpoint
             device: Device to run on (auto-detect if None)
         """
-        # Auto-detect device
-        if device is None:
+        # Determine device from config or parameter
+        if device is not None:
+            # Explicit device specified
+            pass
+        elif config is not None and hasattr(config, 'device'):
+            device = config.device
+        else:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         # Initialize model
@@ -70,235 +77,295 @@ class ResNetEvaluator(Evaluator):
         self.eval_count = 0
         self.total_time = 0.0
         
-        # Mixed precision
-        self.use_amp = config.use_fp16 and device == 'cuda'
-        if self.use_amp:
-            self.scaler = torch.cuda.amp.GradScaler()
+        # Cache for batch evaluation
+        self._batch_cache = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
         
-        logger.debug(f"ResNetEvaluator initialized on {device}")
-        logger.info(f"Model parameters: {self.model.count_parameters():,}")
+        # Mixed precision support
+        self.use_mixed_precision = (hasattr(config, 'use_mixed_precision') and config.use_mixed_precision) or \
+                                   (hasattr(config, 'use_fp16') and config.use_fp16)
+        
+        # Only enable AMP on CUDA devices
+        if self.use_mixed_precision and self.device.type == 'cuda':
+            self.scaler = torch.amp.GradScaler('cuda')
+            self.use_amp = True
+        else:
+            self.use_amp = False  # Disable AMP on CPU
+        
+        # Store additional attributes for compatibility
+        self.batch_size = config.batch_size if hasattr(config, 'batch_size') else 512
+        self._return_torch_tensors = False  # Default to numpy arrays for compatibility
+        
+        logger.info(f"Initialized ResNetEvaluator for {game_type} on {device}")
+        logger.info(f"Model has {sum(p.numel() for p in self.model.parameters())} parameters")
     
-    def evaluate(
-        self,
-        state: np.ndarray,
-        legal_mask: Optional[np.ndarray] = None,
-        temperature: float = 1.0
-    ) -> Tuple[np.ndarray, float]:
-        """
-        Evaluate a single position
-        
-        Args:
-            state: Board state (channels, height, width)
-            legal_mask: Boolean mask for legal actions
-            temperature: Temperature for policy
-            
-        Returns:
-            policy: Probability distribution over actions
-            value: Position evaluation [-1, 1]
-        """
-        # Add batch dimension
-        state_batch = np.expand_dims(state, axis=0)
-        legal_mask_batch = np.expand_dims(legal_mask, axis=0) if legal_mask is not None else None
-        
-        # Evaluate batch
-        policies, values = self.evaluate_batch(state_batch, legal_mask_batch, temperature)
-        
-        return policies[0], values[0]
-    
+    @torch.no_grad()
     def evaluate_batch(
         self,
         states: Union[np.ndarray, torch.Tensor],
-        legal_masks: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        legal_moves: Optional[Union[np.ndarray, torch.Tensor]] = None,
         temperature: float = 1.0
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[Union[np.ndarray, torch.Tensor], Union[np.ndarray, torch.Tensor]]:
         """
-        Evaluate a batch of positions
+        Evaluate a batch of game states
         
         Args:
-            states: Batch of states (batch, channels, height, width) - numpy array or torch tensor
-            legal_masks: Batch of legal masks (batch, num_actions) - numpy array or torch tensor
-            temperature: Temperature for policy
+            states: Batch of game states (batch_size, channels, height, width)
+            legal_moves: Optional legal move masks
+            temperature: Temperature for policy scaling
             
         Returns:
-            policies: Batch of policies (batch, num_actions)
-            values: Batch of values (batch,)
+            Tuple of (policies, values)
+                - policies: Action probabilities (batch_size, num_actions)
+                - values: Position evaluations (batch_size,)
         """
-        batch_size = states.shape[0]
+        start_time = time.time()
         
-        # Convert to tensors
+        # Track evaluations
+        batch_size = states.shape[0] if states.ndim == 4 else 1
+        self.eval_count += batch_size
+        
+        # Handle empty batch
+        if batch_size == 0:
+            empty_policies = np.empty((0, self.action_size), dtype=np.float32)
+            empty_values = np.empty(0, dtype=np.float32)
+            if isinstance(states, torch.Tensor) and self._return_torch_tensors:
+                return torch.from_numpy(empty_policies), torch.from_numpy(empty_values)
+            return empty_policies, empty_values
+        
+        # Convert to tensor if needed
         if isinstance(states, np.ndarray):
             states_tensor = torch.from_numpy(states).float().to(self.device)
+            return_numpy = True
         else:
-            # Already a tensor - ensure it's on the right device
-            states_tensor = states.float().to(self.device)
+            states_tensor = states.to(self.device)
+            return_numpy = False
         
         # Ensure correct shape
-        if len(states_tensor.shape) == 3:
+        if states_tensor.dim() == 3:
             states_tensor = states_tensor.unsqueeze(0)
         
         # Forward pass
-        with torch.no_grad():
-            if self.use_amp:
-                with torch.amp.autocast('cuda'):
-                    policy_logits, value_logits = self.model(states_tensor)
-                    policy_logits = policy_logits.float()
-                    value_logits = value_logits.float()
-            else:
-                policy_logits, value_logits = self.model(states_tensor)
-        
-        # Apply temperature
-        if temperature != 1.0:
-            policy_logits = policy_logits / temperature
-        
-        # Apply legal move masking
-        if legal_masks is not None:
-            if isinstance(legal_masks, np.ndarray):
-                legal_masks_tensor = torch.from_numpy(legal_masks).bool().to(self.device)
-            else:
-                # Already a tensor
-                legal_masks_tensor = legal_masks.bool().to(self.device)
-            # Set illegal moves to very negative value
-            policy_logits = policy_logits.masked_fill(~legal_masks_tensor, -1e9)
-        
-        # Softmax to get probabilities
-        policies = F.softmax(policy_logits, dim=1)
-        
-        # Ensure value is in [-1, 1]
-        values = torch.tanh(value_logits).squeeze(-1)
-        
-        # Convert to numpy (keep on GPU if requested)
-        if hasattr(self, '_return_torch_tensors') and self._return_torch_tensors:
-            # Return torch tensors for GPU-based MCTS
-            self.eval_count += batch_size
-            return policies, values
+        if self.use_amp:
+            with torch.amp.autocast('cuda'):
+                log_policies, values = self.model(states_tensor)
         else:
-            # Convert to numpy for compatibility
-            policies_np = policies.cpu().numpy()
-            values_np = values.cpu().numpy()
+            log_policies, values = self.model(states_tensor)
+        
+        # Convert log probabilities to probabilities
+        policies = torch.exp(log_policies)
+        
+        # Apply legal move masking if provided
+        if legal_moves is not None:
+            if isinstance(legal_moves, np.ndarray):
+                legal_moves = torch.from_numpy(legal_moves).to(self.device)
             
-            self.eval_count += batch_size
+            # Zero out illegal moves
+            policies = policies * legal_moves
             
-            return policies_np, values_np
+            # Renormalize
+            policies_sum = policies.sum(dim=-1, keepdim=True)
+            policies = policies / (policies_sum + 1e-8)
+        
+        # Apply temperature if requested
+        if temperature != 1.0:
+            # Apply temperature to log probabilities before converting to probabilities
+            log_policies = log_policies / temperature
+            policies = torch.exp(log_policies)
+            
+            # Re-normalize if legal moves were applied
+            if legal_moves is not None:
+                policies = policies * legal_moves
+                policies_sum = policies.sum(dim=-1, keepdim=True)
+                policies = policies / (policies_sum + 1e-8)
+        
+        # Squeeze value dimension
+        values = values.squeeze(-1)
+        
+        # Return in requested format
+        if return_numpy or not self._return_torch_tensors:
+            policies = policies.cpu().numpy()
+            values = values.cpu().numpy()
+        
+        # Update timing
+        self.total_time += time.time() - start_time
+        
+        return policies, values
     
-    def save_checkpoint(self, path: str, additional_info: Optional[Dict[str, Any]] = None):
+    def evaluate(
+        self,
+        state: Union[np.ndarray, torch.Tensor],
+        legal_moves: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        temperature: float = 1.0
+    ) -> Tuple[Union[np.ndarray, torch.Tensor], float]:
         """
-        Save model checkpoint
+        Evaluate a single game state
         
         Args:
-            path: Path to save checkpoint
-            additional_info: Additional information to save
+            state: Game state (channels, height, width)
+            legal_moves: Optional legal move mask
+            temperature: Temperature for policy scaling
+            
+        Returns:
+            Tuple of (policy, value)
         """
+        # Add batch dimension
+        if isinstance(state, np.ndarray):
+            state = np.expand_dims(state, 0)
+        else:
+            state = state.unsqueeze(0)
+        
+        if legal_moves is not None:
+            if isinstance(legal_moves, np.ndarray):
+                legal_moves = np.expand_dims(legal_moves, 0)
+            else:
+                legal_moves = legal_moves.unsqueeze(0)
+        
+        # Batch evaluation
+        policies, values = self.evaluate_batch(state, legal_moves, temperature)
+        
+        # Extract single result
+        if isinstance(policies, np.ndarray):
+            return policies[0], float(values[0])
+        else:
+            return policies[0], values[0].item()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get evaluator statistics"""
+        total_requests = self._cache_hits + self._cache_misses
+        cache_hit_rate = self._cache_hits / max(1, total_requests)
+        avg_time_per_eval = self.total_time / max(1, self.eval_count)
+        
+        return {
+            'eval_count': self.eval_count,
+            'total_time': self.total_time,
+            'avg_time_per_eval': avg_time_per_eval,
+            'model_params': sum(p.numel() for p in self.model.parameters()),
+            'device': str(self.device.type),
+            'use_amp': self.use_amp,
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'cache_hit_rate': cache_hit_rate,
+            'batch_size': self.batch_size
+        }
+    
+    def reset_statistics(self):
+        """Reset evaluation statistics"""
+        self.eval_count = 0
+        self.total_time = 0.0
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._batch_cache.clear()
+    
+    def save_checkpoint(self, path: str, additional_data: Optional[Dict[str, Any]] = None):
+        """Save model checkpoint with evaluator config
+        
+        Args:
+            path: Path to save checkpoint to
+            additional_data: Optional dictionary of additional data to save
+        """
+        # Create checkpoint data
         checkpoint = {
             'model_state_dict': self.model.state_dict(),
-            'model_config': self.model.get_config(),
+            'model_config': self.model.get_config() if hasattr(self.model, 'get_config') else {},
             'evaluator_config': {
                 'device': str(self.device),
+                'batch_size': self.batch_size,
                 'use_amp': self.use_amp,
                 'action_size': self.action_size
             }
         }
         
-        if additional_info:
-            checkpoint.update(additional_info)
-        
-        # Create directory if needed
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        # Add any additional data
+        if additional_data:
+            checkpoint.update(additional_data)
         
         # Save checkpoint
-        torch.save(checkpoint, path)
+        checkpoint_path = Path(path)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, checkpoint_path)
         
-        # Save metadata separately
-        metadata_path = Path(path).parent / 'metadata.json'
-        self.model.metadata.save(str(metadata_path))
-        
-        logger.info(f"Saved checkpoint to {path}")
+        # Save metadata if model has it
+        if hasattr(self.model, 'metadata') and self.model.metadata:
+            metadata_path = checkpoint_path.parent / 'metadata.json'
+            with open(metadata_path, 'w') as f:
+                json.dump(self.model.metadata.to_dict(), f, indent=2)
+    
+    def load_checkpoint(self, path: str, **kwargs):
+        """Load model checkpoint"""
+        self.model.load_checkpoint(Path(path), **kwargs)
     
     @classmethod
-    def from_checkpoint(
-        cls,
-        checkpoint_path: str,
-        config: Optional[EvaluatorConfig] = None,
-        device: Optional[str] = None
-    ) -> 'ResNetEvaluator':
-        """
-        Load evaluator from checkpoint
+    def from_checkpoint(cls, checkpoint_path: str, device: Optional[str] = None, **kwargs):
+        """Create evaluator from checkpoint
         
         Args:
-            checkpoint_path: Path to checkpoint
-            config: Evaluator configuration
-            device: Device to load on
+            checkpoint_path: Path to model checkpoint
+            device: Device to run on (auto-detect if None)
+            **kwargs: Additional arguments for ResNetEvaluator
             
         Returns:
-            evaluator: Loaded evaluator
+            ResNetEvaluator loaded from checkpoint
         """
-        return cls(
-            checkpoint_path=checkpoint_path,
-            config=config,
-            device=device
-        )
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get evaluation statistics"""
-        return {
-            'eval_count': self.eval_count,
-            'total_time': self.total_time,
-            'avg_time_per_eval': self.total_time / max(1, self.eval_count),
-            'model_params': self.model.count_parameters(),
-            'device': str(self.device),
-            'use_amp': self.use_amp
-        }
+        return cls(checkpoint_path=checkpoint_path, device=device, **kwargs)
 
 
 def create_evaluator_for_game(
     game_type: str,
     checkpoint_path: Optional[str] = None,
-    num_blocks: int = 20,
-    num_filters: int = 256,
     device: Optional[str] = None,
+    num_blocks: Optional[int] = None,
+    num_filters: Optional[int] = None,
     **kwargs
 ) -> ResNetEvaluator:
     """
-    Create ResNet evaluator for specific game
+    Create a ResNet evaluator for a specific game
     
     Args:
         game_type: Type of game ('chess', 'go', 'gomoku')
-        checkpoint_path: Path to checkpoint (optional)
+        checkpoint_path: Optional path to model checkpoint
+        device: Device to run on (auto-detect if None)
         num_blocks: Number of ResNet blocks
-        num_filters: Number of filters
-        device: Device to run on
-        **kwargs: Additional configuration
+        num_filters: Number of filters in ResNet
+        **kwargs: Additional arguments for ResNetEvaluator
         
     Returns:
-        evaluator: ResNet evaluator instance
+        ResNetEvaluator configured for the game
     """
-    config = EvaluatorConfig(
-        device=device or ('cuda' if torch.cuda.is_available() else 'cpu'),
+    # If creating a new model, we need to patch create_resnet_for_game call
+    if checkpoint_path is None and (num_blocks is not None or num_filters is not None):
+        # Create model with specified parameters
+        model_kwargs = {'input_channels': 20}
+        if num_blocks is not None:
+            model_kwargs['num_blocks'] = num_blocks
+        if num_filters is not None:
+            model_kwargs['num_filters'] = num_filters
+        model = create_resnet_for_game(game_type, **model_kwargs)
+        return ResNetEvaluator(
+            model=model,
+            device=device,
+            **kwargs
+        )
+    
+    return ResNetEvaluator(
+        game_type=game_type,
+        checkpoint_path=checkpoint_path,
+        device=device,
         **kwargs
     )
-    
-    if checkpoint_path:
-        return ResNetEvaluator.from_checkpoint(checkpoint_path, config, device)
-    else:
-        # Create new model
-        model = create_resnet_for_game(
-            game_type,
-            num_blocks=num_blocks,
-            num_filters=num_filters
-        )
-        return ResNetEvaluator(model=model, config=config)
 
 
-# Convenience functions for common games
-def create_chess_evaluator(**kwargs) -> ResNetEvaluator:
-    """Create evaluator for chess"""
-    return create_evaluator_for_game('chess', **kwargs)
+def create_chess_evaluator(num_blocks: int = 20, num_filters: int = 256, **kwargs) -> ResNetEvaluator:
+    """Create evaluator for Chess"""
+    return create_evaluator_for_game('chess', num_blocks=num_blocks, num_filters=num_filters, **kwargs)
 
 
-def create_go_evaluator(**kwargs) -> ResNetEvaluator:
+def create_go_evaluator(num_blocks: int = 20, num_filters: int = 256, **kwargs) -> ResNetEvaluator:
     """Create evaluator for Go"""
-    return create_evaluator_for_game('go', **kwargs)
+    return create_evaluator_for_game('go', num_blocks=num_blocks, num_filters=num_filters, **kwargs)
 
 
-def create_gomoku_evaluator(**kwargs) -> ResNetEvaluator:
+def create_gomoku_evaluator(num_blocks: int = 20, num_filters: int = 256, **kwargs) -> ResNetEvaluator:
     """Create evaluator for Gomoku"""
-    return create_evaluator_for_game('gomoku', **kwargs)
+    return create_evaluator_for_game('gomoku', num_blocks=num_blocks, num_filters=num_filters, **kwargs)

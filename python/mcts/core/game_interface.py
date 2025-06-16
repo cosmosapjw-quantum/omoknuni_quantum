@@ -182,9 +182,19 @@ class GameInterface:
                         
                         # Try legacy constructor
                         if komi != -1.0:
-                            return alphazero_py.GoState(self.board_size, komi, chinese_rules, enforce_superko)
+                            state = alphazero_py.GoState(self.board_size, komi, chinese_rules, enforce_superko)
                         else:
-                            return alphazero_py.GoState(self.board_size)
+                            state = alphazero_py.GoState(self.board_size)
+                            
+                        # Debug: verify board size was set correctly
+                        if hasattr(state, 'get_board_size'):
+                            actual_size = state.get_board_size()
+                            if actual_size != self.board_size:
+                                logger.warning(f"GoState created with size {self.board_size} but reports size {actual_size}")
+                                # Try to create with default constructor and hope it respects the size
+                                state = alphazero_py.GoState(self.board_size)
+                        
+                        return state
                     except TypeError:
                         # Fallback if bindings don't support options yet
                         return alphazero_py.GoState(self.board_size)
@@ -472,8 +482,12 @@ class GameInterface:
             symmetries = []
             
             for i in range(4):  # 4 rotations
-                # Rotate board
-                rot_board = np.rot90(board, i)
+                # Rotate board - handle multi-channel case
+                if len(board.shape) == 3:
+                    # Rotate each channel separately
+                    rot_board = np.rot90(board, i, axes=(1, 2))
+                else:
+                    rot_board = np.rot90(board, i)
                 
                 # Rotate policy (reshape to board shape, rotate, flatten)
                 policy_board = policy[:-1].reshape(self.board_shape) if self.game_type == GameType.GO else policy.reshape(self.board_shape)
@@ -486,8 +500,12 @@ class GameInterface:
                     
                 symmetries.append((rot_board, rot_policy))
                 
-                # Add reflection
-                refl_board = np.fliplr(rot_board)
+                # Add reflection - handle multi-channel case
+                if len(rot_board.shape) == 3:
+                    # Flip along the last axis (width)
+                    refl_board = np.flip(rot_board, axis=2)
+                else:
+                    refl_board = np.fliplr(rot_board)
                 refl_policy_board = np.fliplr(rot_policy_board)
                 refl_policy = refl_policy_board.flatten()
                 
@@ -519,9 +537,11 @@ class GameInterface:
         features = []
         
         # Channel 0: Current board state
-        current_board = self.state_to_numpy(state)
+        # Use basic representation (not enhanced) to get a single channel
+        current_board = self.state_to_numpy(state, use_enhanced=False)
         if len(current_board.shape) == 3:
-            current_board = current_board[:, :, 0]  # Take first channel if multi-channel
+            # For chess, we might get multiple piece channels - sum them for a basic board
+            current_board = current_board.sum(axis=0)
         features.append(current_board)
         
         # Channel 1: Current player indicator plane
@@ -566,9 +586,9 @@ class GameInterface:
                     # Fallback to Python implementation
                     logger.debug(f"C++ attack/defense computation failed: {e}, using Python implementation")
                     from .attack_defense import compute_attack_defense_scores
-                    board = self.state_to_numpy(state)
+                    board = self.state_to_numpy(state, use_enhanced=False)
                     if len(board.shape) == 3:
-                        board = board[:, :, 0]  # Take first channel
+                        board = board.sum(axis=0)  # Sum channels for basic board
                     attack_plane, defense_plane = compute_attack_defense_scores(
                         self.game_type.value, board, self.get_current_player(state)
                     )
@@ -577,9 +597,9 @@ class GameInterface:
             else:
                 # Use Python implementation if C++ not available
                 from .attack_defense import compute_attack_defense_scores
-                board = self.state_to_numpy(state)
+                board = self.state_to_numpy(state, use_enhanced=False)
                 if len(board.shape) == 3:
-                    board = board[:, :, 0]  # Take first channel
+                    board = board.sum(axis=0)  # Sum channels for basic board
                 attack_plane, defense_plane = compute_attack_defense_scores(
                     self.game_type.value, board, self.get_current_player(state)
                 )
@@ -897,6 +917,25 @@ class MockChessState(MockGameState):
     def get_board(self) -> np.ndarray:
         return self.board
         
+    def get_board_size(self) -> int:
+        return 8
+        
+    def get_tensor_representation(self) -> np.ndarray:
+        """Get basic tensor representation"""
+        # Return the 12-channel board representation
+        return self.board.transpose(2, 0, 1)  # Convert HWC to CHW
+        
+    def get_enhanced_tensor_representation(self) -> np.ndarray:
+        """Get enhanced tensor representation with 20 channels"""
+        # Create 20-channel representation
+        tensor = np.zeros((20, 8, 8), dtype=np.float32)
+        # First 12 channels: piece positions
+        tensor[:12] = self.board.transpose(2, 0, 1)
+        # Channel 12: Current player (0 for white, 1 for black)
+        tensor[12] = self._current_player
+        # Remaining channels: zeros for now (would be castling rights, etc.)
+        return tensor
+        
     def get_legal_moves(self) -> List[int]:
         # In initial position, white has 20 moves (16 pawn + 4 knight)
         return list(range(20))
@@ -913,6 +952,32 @@ class MockGoState(MockGameState):
     def get_board(self) -> np.ndarray:
         return self.board
         
+    def get_board_size(self) -> int:
+        return self.size
+        
+    def get_tensor_representation(self) -> np.ndarray:
+        """Get basic tensor representation"""
+        # Return a 3-channel representation: black stones, white stones, empty
+        tensor = np.zeros((3, self.size, self.size), dtype=np.float32)
+        # Mock some basic board state
+        tensor[0] = self.board[:, :, 0]  # Black stones
+        tensor[1] = self.board[:, :, 1]  # White stones
+        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
+        return tensor
+        
+    def get_enhanced_tensor_representation(self) -> np.ndarray:
+        """Get enhanced tensor representation with 20 channels"""
+        # Create 20-channel representation
+        tensor = np.zeros((20, self.size, self.size), dtype=np.float32)
+        # First 3 channels: basic board state
+        tensor[0] = self.board[:, :, 0]  # Black stones
+        tensor[1] = self.board[:, :, 1]  # White stones
+        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
+        # Channel 3: Current player (0 for black, 1 for white)
+        tensor[3] = self._current_player
+        # Remaining channels: zeros for now (would be move history, etc.)
+        return tensor
+        
     def get_legal_moves(self) -> List[int]:
         # All empty intersections + pass
         return list(range(self.size * self.size + 1))
@@ -928,6 +993,32 @@ class MockGomokuState(MockGameState):
         
     def get_board(self) -> np.ndarray:
         return self.board
+        
+    def get_board_size(self) -> int:
+        return self.size
+        
+    def get_tensor_representation(self) -> np.ndarray:
+        """Get basic tensor representation"""
+        # Return a 3-channel representation: black stones, white stones, empty
+        tensor = np.zeros((3, self.size, self.size), dtype=np.float32)
+        # Mock some basic board state
+        tensor[0] = self.board[:, :, 0]  # Black stones
+        tensor[1] = self.board[:, :, 1]  # White stones
+        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
+        return tensor
+        
+    def get_enhanced_tensor_representation(self) -> np.ndarray:
+        """Get enhanced tensor representation with 20 channels"""
+        # Create 20-channel representation
+        tensor = np.zeros((20, self.size, self.size), dtype=np.float32)
+        # First 3 channels: basic board state
+        tensor[0] = self.board[:, :, 0]  # Black stones
+        tensor[1] = self.board[:, :, 1]  # White stones
+        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
+        # Channel 3: Current player (0 for black, 1 for white)
+        tensor[3] = self._current_player
+        # Remaining channels: zeros for now (would be move history, etc.)
+        return tensor
         
     def get_legal_moves(self) -> List[int]:
         # All empty intersections

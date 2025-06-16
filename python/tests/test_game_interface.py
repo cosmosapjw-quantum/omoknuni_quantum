@@ -36,13 +36,14 @@ class TestGameInterface:
         chess_interface = GameInterface(GameType.CHESS)
         initial_state = chess_interface.create_initial_state()
         assert initial_state is not None
-        assert hasattr(initial_state, 'get_board')
+        assert hasattr(initial_state, 'get_tensor_representation')
         assert hasattr(initial_state, 'get_legal_moves')
         
         # Go initial state
         go_interface = GameInterface(GameType.GO, board_size=9)
         initial_state = go_interface.create_initial_state()
         assert initial_state is not None
+        assert hasattr(initial_state, 'get_legal_moves')
         
     def test_state_to_numpy(self):
         """Test converting game state to numpy array"""
@@ -52,7 +53,9 @@ class TestGameInterface:
         # Convert to numpy
         board_array = chess_interface.state_to_numpy(state)
         assert isinstance(board_array, np.ndarray)
-        assert board_array.shape == (8, 8, 12)  # 6 piece types * 2 colors
+        # Shape is (channels, height, width)
+        assert board_array.shape[1:] == (8, 8)  # Chess board is 8x8
+        assert board_array.shape[0] >= 12  # At least 12 channels for piece types
         
         # Check initial position has pieces
         assert board_array.sum() > 0  # Should have pieces on board
@@ -107,18 +110,34 @@ class TestGameInterface:
         """Test getting winner from terminal state"""
         chess_interface = GameInterface(GameType.CHESS)
         
-        # Mock a winning state for white
-        mock_state = Mock()
-        mock_state.is_terminal.return_value = True
-        mock_state.get_winner.return_value = 1  # White wins
-        
-        winner = chess_interface.get_winner(mock_state)
-        assert winner == 1
-        
-        # Mock a draw
-        mock_state.get_winner.return_value = 0  # Draw
-        winner = chess_interface.get_winner(mock_state)
-        assert winner == 0
+        # If C++ games are available, we need to mock get_game_result
+        if hasattr(chess_interface, '_game_class') and chess_interface._game_class is not None:
+            # Mock a winning state for white
+            mock_state = Mock()
+            mock_state.is_terminal.return_value = True
+            
+            # Import alphazero_py to get GameResult enum
+            try:
+                import alphazero_py
+                mock_state.get_game_result.return_value = alphazero_py.GameResult.WIN_PLAYER1
+                winner = chess_interface.get_winner(mock_state)
+                assert winner == 1
+                
+                # Mock a draw
+                mock_state.get_game_result.return_value = alphazero_py.GameResult.DRAW
+                winner = chess_interface.get_winner(mock_state)
+                assert winner == 0
+            except ImportError:
+                # Fallback for when alphazero_py is not available
+                mock_state.get_winner.return_value = 1
+                winner = chess_interface.get_winner(mock_state)
+                assert winner == 1
+        else:
+            # Use simple mock
+            mock_state = Mock()
+            mock_state.get_winner.return_value = 1
+            winner = chess_interface.get_winner(mock_state)
+            assert winner == 1
         
     def test_move_to_action_index(self):
         """Test converting moves to action indices"""
@@ -195,11 +214,10 @@ class TestGameInterface:
         encoded = chess_interface.encode_for_nn(state, history)
         
         assert isinstance(encoded, np.ndarray)
-        # Should have shape (channels, height, width)
-        # Chess: 12 piece planes * 8 history + additional features
         assert len(encoded.shape) == 3
         assert encoded.shape[1:] == (8, 8)
-        assert encoded.shape[0] >= 12 * 8  # At least piece history
+        # Should have exactly 20 channels as per documentation
+        assert encoded.shape[0] == 20
         
     def test_batch_operations(self):
         """Test batch operations for vectorized MCTS"""
@@ -210,7 +228,9 @@ class TestGameInterface:
         
         # Batch convert to numpy
         boards = chess_interface.batch_state_to_numpy(states)
-        assert boards.shape == (32, 8, 8, 12)
+        # batch_state_to_numpy returns (batch, channels, height, width)
+        assert boards.shape[0] == 32  # Batch size
+        assert boards.shape[2:] == (8, 8)  # Chess board size
         
         # Batch get legal moves
         all_legal_moves = chess_interface.batch_get_legal_moves(states)

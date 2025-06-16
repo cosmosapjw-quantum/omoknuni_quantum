@@ -23,9 +23,7 @@ from .csr_gpu_kernels import (
     OptimizedCSRKernels
 )
 
-# Import optimizers
-from .gpu_optimizer import GPUOptimizer, AsyncEvaluator, StateMemoryPool
-from .cuda_graph_optimizer import CUDAGraphOptimizer
+# Note: GPU optimizers removed as they were not used in the codebase
 
 # Legacy aliases for backward compatibility
 OptimizedCUDAKernels = UnifiedGPUKernels
@@ -83,11 +81,6 @@ __all__ = [
     "OptimizedCUDAKernels",
     "CUDAKernels",
     
-    # Optimizers
-    "GPUOptimizer",
-    "AsyncEvaluator",
-    "StateMemoryPool",
-    "CUDAGraphOptimizer",
     
     # Status flags
     "CUDA_AVAILABLE",

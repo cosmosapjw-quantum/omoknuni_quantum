@@ -39,21 +39,21 @@ class CSRTreeFormat:
         # CSR structure arrays
         self.row_ptr = torch.zeros(max_nodes + 1, dtype=torch.int32, device=self.device)
         self.col_indices = torch.zeros(0, dtype=torch.int32, device=self.device)  # Dynamic size
-        self.actions = torch.zeros(0, dtype=torch.int16, device=self.device)     # Action for each edge
-        self.priors = torch.zeros(0, dtype=torch.float16, device=self.device)    # Prior for each edge
+        self.actions = torch.zeros(0, dtype=torch.int32, device=self.device)     # Action for each edge
+        self.priors = torch.zeros(0, dtype=torch.float32, device=self.device)    # Prior for each edge
         
         # Node data (unchanged from original)
         self.visit_counts = torch.zeros(max_nodes, dtype=torch.int32, device=self.device)
-        self.value_sums = torch.zeros(max_nodes, dtype=torch.float16, device=self.device)
-        self.node_priors = torch.zeros(max_nodes, dtype=torch.float16, device=self.device)
-        self.parent_indices = torch.full((max_nodes,), -1, dtype=torch.int16, device=self.device)
+        self.value_sums = torch.zeros(max_nodes, dtype=torch.float32, device=self.device)
+        self.node_priors = torch.zeros(max_nodes, dtype=torch.float32, device=self.device)
+        self.parent_indices = torch.full((max_nodes,), -1, dtype=torch.int32, device=self.device)
         self.flags = torch.zeros(max_nodes, dtype=torch.uint8, device=self.device)
         
         self.num_nodes = 0
         self.num_edges = 0
-        
+    
     def get_children_indices(self, node_idx: int) -> torch.Tensor:
-        """Get child indices for a node using CSR indexing"""
+        """Get child indices for a node from CSR structure"""
         start = self.row_ptr[node_idx].item()
         end = self.row_ptr[node_idx + 1].item()
         return self.col_indices[start:end]
@@ -84,13 +84,13 @@ class CSRTreeFormat:
             
         if max_children == 0:
             return (torch.empty((batch_size, 0), dtype=torch.int32, device=self.device),
-                   torch.empty((batch_size, 0), dtype=torch.int16, device=self.device))
+                   torch.empty((batch_size, 0), dtype=torch.int32, device=self.device))
             
         # Allocate output tensors
         batch_children = torch.full((batch_size, max_children), -1, 
                                    dtype=torch.int32, device=self.device)
         batch_actions = torch.full((batch_size, max_children), -1,
-                                  dtype=torch.int16, device=self.device)
+                                  dtype=torch.int32, device=self.device)
         
         # Fill batch tensors
         for i in range(batch_size):
@@ -121,46 +121,59 @@ def convert_tree_to_csr(tree: OptimizedTensorTree) -> CSRTreeFormat:
     csr.num_nodes = tree.num_nodes
     csr.visit_counts[:tree.num_nodes] = tree.visit_counts[:tree.num_nodes]
     csr.value_sums[:tree.num_nodes] = tree.value_sums[:tree.num_nodes]
-    csr.node_priors[:tree.num_nodes] = tree.priors[:tree.num_nodes]
+    csr.node_priors[:tree.num_nodes] = tree.node_priors[:tree.num_nodes]
     csr.parent_indices[:tree.num_nodes] = tree.parent_indices[:tree.num_nodes]
     csr.flags[:tree.num_nodes] = tree.flags[:tree.num_nodes]
     
-    # Build CSR structure
-    total_edges = 0
-    
-    # Pass 1: Count total edges
+    # Build CSR format from parent-child relationships
+    # First, collect all parent-child edges
+    edges = []
     for node_idx in range(tree.num_nodes):
-        num_children = int(tree.num_children[node_idx])
-        total_edges += num_children
-        
-    # Allocate CSR arrays
-    csr.col_indices = torch.zeros(total_edges, dtype=torch.int32, device=tree.device)
-    csr.actions = torch.zeros(total_edges, dtype=torch.int16, device=tree.device)
-    csr.priors = torch.zeros(total_edges, dtype=torch.float16, device=tree.device)
+        # Find children from the children lookup table
+        for i in range(tree.children.shape[1]):
+            child_idx = tree.children[node_idx, i].item()
+            if child_idx == -1:
+                break
+            # Find the action and prior for this edge
+            action = tree.parent_actions[child_idx].item()
+            # Find prior from edge data
+            prior = tree.node_priors[child_idx].item()
+            edges.append((node_idx, child_idx, action, prior))
+    
+    # Sort edges by parent node
+    edges.sort(key=lambda x: x[0])
+    
+    # Build CSR structure
+    total_edges = len(edges)
     csr.num_edges = total_edges
     
-    # Pass 2: Fill CSR arrays
-    edge_idx = 0
-    for node_idx in range(tree.num_nodes):
-        csr.row_ptr[node_idx] = edge_idx
+    if total_edges > 0:
+        # Allocate CSR arrays
+        csr.col_indices = torch.zeros(total_edges, dtype=torch.int32, device=tree.device)
+        csr.actions = torch.zeros(total_edges, dtype=torch.int32, device=tree.device)
+        csr.priors = torch.zeros(total_edges, dtype=torch.float32, device=tree.device)
         
-        num_children = int(tree.num_children[node_idx])
-        if num_children > 0:
-            # Get children from sparse storage
-            children_indices, children_actions = tree.get_children(node_idx)
+        # Fill CSR data and build row_ptr
+        current_parent = -1
+        edge_idx = 0
+        for parent, child, action, prior in edges:
+            # Update row_ptr when we encounter a new parent
+            while current_parent < parent:
+                current_parent += 1
+                csr.row_ptr[current_parent] = edge_idx
             
-            # Copy to CSR arrays
-            csr.col_indices[edge_idx:edge_idx + num_children] = children_indices
-            csr.actions[edge_idx:edge_idx + num_children] = children_actions
-            
-            # Set priors (lookup from child nodes)
-            for i, child_idx in enumerate(children_indices):
-                csr.priors[edge_idx + i] = tree.priors[child_idx]
-                
-            edge_idx += num_children
-            
-    # Set final row pointer
-    csr.row_ptr[tree.num_nodes] = edge_idx
+            # Add edge data
+            csr.col_indices[edge_idx] = child
+            csr.actions[edge_idx] = action
+            csr.priors[edge_idx] = prior
+            edge_idx += 1
+        
+        # Fill remaining row_ptr entries
+        for i in range(current_parent + 1, tree.num_nodes + 1):
+            csr.row_ptr[i] = total_edges
+    else:
+        # No edges - all row_ptr entries point to 0
+        csr.row_ptr.fill_(0)
     
     return csr
 
@@ -178,16 +191,17 @@ def small_tree(device):
     tree = OptimizedTensorTree(config)
     
     # Build small tree: root with 3 children, first child has 2 children
-    root = tree.add_root()
+    # CSRTree already has root at index 0
+    root = 0
     
     # Add children to root
-    child1 = tree.add_child(root, action=0, prior=0.5)
-    child2 = tree.add_child(root, action=1, prior=0.3)
-    child3 = tree.add_child(root, action=2, prior=0.2)
+    child1 = tree.add_child(root, action=0, child_prior=0.5)
+    child2 = tree.add_child(root, action=1, child_prior=0.3)
+    child3 = tree.add_child(root, action=2, child_prior=0.2)
     
     # Add children to first child
-    grandchild1 = tree.add_child(child1, action=0, prior=0.6)
-    grandchild2 = tree.add_child(child1, action=1, prior=0.4)
+    grandchild1 = tree.add_child(child1, action=0, child_prior=0.6)
+    grandchild2 = tree.add_child(child1, action=1, child_prior=0.4)
     
     # Update some visit counts and values for testing
     tree.visit_counts[root] = 10
@@ -209,7 +223,7 @@ def large_tree(device):
     tree = OptimizedTensorTree(config)
     
     # Build larger tree structure
-    root = tree.add_root()
+    root = 0  # CSRTree already has root at index 0
     
     # Add multiple levels
     nodes_by_level = [[root]]
@@ -220,7 +234,7 @@ def large_tree(device):
             num_children = min(5, max(2, hash(parent) % 6))
             for action in range(num_children):
                 prior = 1.0 / (num_children + 1)
-                child = tree.add_child(parent, action=action, prior=prior)
+                child = tree.add_child(parent, action=action, child_prior=prior)
                 next_level.append(child)
                 
                 # Set some random visit counts
@@ -243,7 +257,7 @@ class TestCSRConversion:
         """Test converting an empty tree"""
         config = OptimizedTreeConfig(max_nodes=10, device=device)
         tree = OptimizedTensorTree(config)
-        tree.add_root()  # Just root node
+        # CSRTree already has a root node from initialization
         
         csr = convert_tree_to_csr(tree)
         
@@ -307,7 +321,7 @@ class TestCSRConversion:
         assert len(root_priors) == 3
         
         # Should match the priors we set: 0.5, 0.3, 0.2
-        expected_priors = torch.tensor([0.5, 0.3, 0.2], dtype=torch.float16, device=csr.device)
+        expected_priors = torch.tensor([0.5, 0.3, 0.2], dtype=torch.float32, device=csr.device)
         torch.testing.assert_close(torch.sort(root_priors)[0], 
                                    torch.sort(expected_priors)[0], 
                                    rtol=1e-3, atol=1e-3)
@@ -445,7 +459,7 @@ class TestCSRCorrectness:
         # Check every node's children match
         for node_idx in range(large_tree.num_nodes):
             # Get children from original tree
-            orig_children, orig_actions = large_tree.get_children(node_idx)
+            orig_children, orig_actions, orig_priors = large_tree.get_children(node_idx)
             
             # Get children from CSR tree
             csr_children = csr.get_children_indices(node_idx)
@@ -502,7 +516,7 @@ class TestCSREdgeCases:
         """Test CSR conversion of tree with only root node"""
         config = OptimizedTreeConfig(max_nodes=10, device=device)
         tree = OptimizedTensorTree(config)
-        tree.add_root()
+        # CSRTree already has root
         
         csr = convert_tree_to_csr(tree)
         
@@ -516,10 +530,10 @@ class TestCSREdgeCases:
         tree = OptimizedTensorTree(config)
         
         # Build linear tree: 0 -> 1 -> 2 -> 3
-        root = tree.add_root()
-        current = root
+        # CSRTree already has root at index 0
+        current = 0
         for i in range(3):
-            current = tree.add_child(current, action=0, prior=1.0)
+            current = tree.add_child(current, action=0, child_prior=1.0)
             
         csr = convert_tree_to_csr(tree)
         
@@ -538,9 +552,10 @@ class TestCSREdgeCases:
         tree = OptimizedTensorTree(config)
         
         # Build wide tree: root with 50 children
-        root = tree.add_root()
+        # CSRTree already has root at index 0
+        root = 0
         for i in range(50):
-            tree.add_child(root, action=i, prior=0.02)
+            tree.add_child(root, action=i, child_prior=0.02)
             
         csr = convert_tree_to_csr(tree)
         

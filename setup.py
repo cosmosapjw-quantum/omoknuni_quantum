@@ -71,6 +71,21 @@ class CMakeBuild(build_ext):
             f"-DBUILD_TESTS=ON",
         ]
         
+        # Add optimization flags for release builds
+        if cfg == "Release":
+            cmake_args.extend([
+                "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -march=native -mtune=native -flto -funroll-loops -ffast-math",
+                "-DCMAKE_C_FLAGS_RELEASE=-O3 -march=native -mtune=native -flto -funroll-loops -ffast-math",
+                "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",  # Enable LTO
+            ])
+            
+            # Add CUDA-specific optimization flags if CUDA is available
+            if self.check_cuda_availability():
+                cmake_args.extend([
+                    "-DCMAKE_CUDA_FLAGS=-O3 --use_fast_math --ptxas-options=-v --generate-line-info",
+                    "-DCMAKE_CUDA_ARCHITECTURES=60;61;70;75;80;86;89;90",  # Support multiple GPU architectures
+                ])
+        
         # Check for CUDA availability
         cuda_available = self.check_cuda_availability()
         if cuda_available:
@@ -270,18 +285,7 @@ class InstallCommand(install):
     def post_install(self):
         """Post-installation setup"""
         print("🔧 Running post-installation setup...")
-        
-        # Create directories for data and checkpoints
-        dirs_to_create = [
-            "checkpoints",
-            "runs", 
-            "self_play_data",
-            "arena_logs"
-        ]
-        
-        for dir_name in dirs_to_create:
-            Path(dir_name).mkdir(exist_ok=True)
-            print(f"✓ Created directory: {dir_name}")
+        print("✓ Post-installation setup completed")
 
 class DevelopCommand(develop):
     """Custom develop command for development installation"""
