@@ -77,7 +77,7 @@ def _load_kernels():
                                 _WRAPPED_KERNELS = wrap_kernel_module(module)
                                 if _WRAPPED_KERNELS and _WRAPPED_KERNELS.available_kernels:
                                     _KERNELS_AVAILABLE = True
-                                    logger.info(f"Successfully loaded CUDA kernels as module from: {kernel_path}")
+                                    logger.debug(f"Successfully loaded CUDA kernels as module from: {kernel_path}")
                                     logger.debug(f"Available kernel functions: {_WRAPPED_KERNELS.available_kernels}")
                                     return True
                         except Exception as e:

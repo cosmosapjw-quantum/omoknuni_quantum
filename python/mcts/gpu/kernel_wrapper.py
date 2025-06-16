@@ -31,7 +31,7 @@ class CUDAKernelWrapper:
         if self._available_kernels:
             logger.debug(f"Kernel wrapper initialized with functions: {list(self._available_kernels.keys())}")
         else:
-            logger.warning("No kernel functions found in module")
+            logger.debug("No kernel functions found in module")
     
     def _detect_torch_ops(self) -> bool:
         """Detect if this is a torch.ops style module"""

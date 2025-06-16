@@ -216,8 +216,8 @@ class UnifiedTrainingPipeline:
         # PyTorch's autocast handles the conversions automatically
         
         # Debug: Verify model is on correct device
-        logger.info(f"Model device: {next(model.parameters()).device}")
-        logger.info(f"Target device: {self.config.mcts.device}")
+        logger.debug(f"Model device: {next(model.parameters()).device}")
+        logger.debug(f"Target device: {self.config.mcts.device}")
         
         return model
     

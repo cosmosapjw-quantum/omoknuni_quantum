@@ -1335,6 +1335,25 @@ class MCTS:
             self.unified_mcts.reset_tree()
         logger.debug("Reset search tree")
     
+    def get_root_value(self) -> float:
+        """Get the value estimate of the root node
+        
+        Returns:
+            The average value of the root node from MCTS perspective
+        """
+        if self.using_optimized:
+            # For optimized implementation, root is always node 0
+            if self.tree.visit_counts[0] > 0:
+                return float(self.tree.value_sums[0] / self.tree.visit_counts[0])
+            else:
+                return 0.0
+        elif self.unified_mcts and hasattr(self.unified_mcts, 'tree'):
+            # For unified MCTS
+            if hasattr(self.unified_mcts.tree, 'visit_counts') and hasattr(self.unified_mcts.tree, 'value_sums'):
+                if self.unified_mcts.tree.visit_counts[0] > 0:
+                    return float(self.unified_mcts.tree.value_sums[0] / self.unified_mcts.tree.visit_counts[0])
+        return 0.0
+    
     def run_benchmark(self, state: Any, duration: float = 10.0) -> Dict[str, Any]:
         """Run performance benchmark
         

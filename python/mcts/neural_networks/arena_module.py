@@ -15,6 +15,13 @@ from tqdm import tqdm
 import numpy as np
 
 import torch
+import torch.multiprocessing as mp
+
+# Set start method for CUDA compatibility
+try:
+    mp.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # Already set
 
 logger = logging.getLogger(__name__)
 
@@ -156,11 +163,54 @@ class ArenaManager:
         is_evaluator1 = isinstance(model1, Evaluator)
         is_evaluator2 = isinstance(model2, Evaluator)
         
-        if self.arena_config.num_workers <= 1 or is_evaluator1 or is_evaluator2:
-            # Use sequential for evaluators (can't pickle them easily)
-            return self._sequential_arena(model1, model2, num_games, silent)
-        else:
-            return self._parallel_arena(model1, model2, num_games)
+        # Always use sequential arena to avoid CUDA multiprocessing issues
+        # The MCTS module uses custom CUDA kernels that don't serialize well
+        return self._sequential_arena(model1, model2, num_games, silent)
+    
+    def _serialize_config(self, config):
+        """Serialize config for multiprocessing, removing CUDA references"""
+        # Create a dictionary representation to avoid any CUDA references
+        return {
+            'game': {
+                'game_type': config.game.game_type,
+                'board_size': config.game.board_size
+            },
+            'network': {
+                'input_channels': config.network.input_channels,
+                'num_res_blocks': config.network.num_res_blocks,
+                'num_filters': config.network.num_filters
+            },
+            'training': {
+                'max_moves_per_game': config.training.max_moves_per_game
+            },
+            'mcts': {
+                'min_wave_size': config.mcts.min_wave_size,
+                'max_wave_size': config.mcts.max_wave_size,
+                'adaptive_wave_sizing': config.mcts.adaptive_wave_sizing,
+                'use_mixed_precision': config.mcts.use_mixed_precision,
+                'use_cuda_graphs': config.mcts.use_cuda_graphs,
+                'use_tensor_cores': config.mcts.use_tensor_cores
+            },
+            'arena': {
+                'elo_k_factor': config.arena.elo_k_factor
+            },
+            'log_level': config.log_level
+        }
+    
+    def _serialize_arena_config(self, arena_config: ArenaConfig):
+        """Serialize arena config for multiprocessing"""
+        return {
+            'num_games': arena_config.num_games,
+            'win_threshold': arena_config.win_threshold,
+            'num_workers': arena_config.num_workers,
+            'mcts_simulations': arena_config.mcts_simulations,
+            'c_puct': arena_config.c_puct,
+            'temperature': arena_config.temperature,
+            'temperature_threshold': arena_config.temperature_threshold,
+            'timeout_seconds': arena_config.timeout_seconds,
+            'use_progress_bar': arena_config.use_progress_bar,
+            'save_game_records': arena_config.save_game_records
+        }
     
     def _sequential_arena(self, model1, model2,
                          num_games: int, silent: bool = False) -> Tuple[int, int, int]:
@@ -219,12 +269,17 @@ class ArenaManager:
     def _parallel_arena(self, model1: torch.nn.Module, model2: torch.nn.Module,
                        num_games: int) -> Tuple[int, int, int]:
         """Run arena games in parallel"""
+        from mcts.utils.safe_multiprocessing import serialize_state_dict_for_multiprocessing
+        
         wins, draws, losses = 0, 0, 0
         
-        model1_state = model1.state_dict()
-        model2_state = model2.state_dict()
+        # Serialize state dicts for safe multiprocessing
+        model1_state = serialize_state_dict_for_multiprocessing(model1.state_dict())
+        model2_state = serialize_state_dict_for_multiprocessing(model2.state_dict())
         
-        with ProcessPoolExecutor(max_workers=self.arena_config.num_workers) as executor:
+        # Use spawn context for CUDA compatibility
+        ctx = mp.get_context('spawn')
+        with ProcessPoolExecutor(max_workers=self.arena_config.num_workers, mp_context=ctx) as executor:
             # Submit games
             futures = []
             for game_idx in range(num_games):
@@ -232,8 +287,8 @@ class ArenaManager:
                 if game_idx % 2 == 0:
                     future = executor.submit(
                         _play_arena_game_worker,
-                        self.config,
-                        self.arena_config,
+                        self._serialize_config(self.config),
+                        self._serialize_arena_config(self.arena_config),
                         model1_state,
                         model2_state,
                         game_idx,
@@ -242,8 +297,8 @@ class ArenaManager:
                 else:
                     future = executor.submit(
                         _play_arena_game_worker,
-                        self.config,
-                        self.arena_config,
+                        self._serialize_config(self.config),
+                        self._serialize_arena_config(self.arena_config),
                         model2_state,
                         model1_state,
                         game_idx,
@@ -498,19 +553,35 @@ class ArenaManager:
         logger.info("=" * 70)
 
 
-def _play_arena_game_worker(config, arena_config: ArenaConfig,
+def _play_arena_game_worker(config_dict: Dict, arena_config_dict: Dict,
                            model1_state: Dict, model2_state: Dict,
                            game_idx: int, invert_result: bool) -> int:
     """Worker function for parallel arena games"""
+    import os
+    import sys
+    
+    # Set up proper multiprocessing for CUDA
+    import torch.multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass  # Already set
+    
+    import torch
     from mcts.core.game_interface import GameInterface, GameType
     from mcts.core.mcts import MCTS, MCTSConfig
+    from mcts.utils.safe_multiprocessing import deserialize_state_dict_from_multiprocessing
     
     # Set up logging
-    logging.basicConfig(level=getattr(logging, config.log_level))
+    logging.basicConfig(level=getattr(logging, config_dict['log_level']))
+    
+    # Determine device - use CUDA if available
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    logger.debug(f"[ARENA WORKER] PID: {os.getpid()}, Game: {game_idx}, Device: {device}")
     
     # Create game interface
-    game_type = GameType[config.game.game_type.upper()]
-    game_interface = GameInterface(game_type, config.game.board_size)
+    game_type = GameType[config_dict['game']['game_type'].upper()]
+    game_interface = GameInterface(game_type, config_dict['game']['board_size'])
     
     # Get action space size
     initial_state = game_interface.create_initial_state()
@@ -520,48 +591,54 @@ def _play_arena_game_worker(config, arena_config: ArenaConfig,
     from mcts.neural_networks.nn_model import create_model
     
     model1 = create_model(
-        game_type=config.game.game_type,
-        input_height=config.game.board_size,
-        input_width=config.game.board_size,
+        game_type=config_dict['game']['game_type'],
+        input_height=config_dict['game']['board_size'],
+        input_width=config_dict['game']['board_size'],
         num_actions=action_size,
-        input_channels=config.network.input_channels,
-        num_res_blocks=config.network.num_res_blocks,
-        num_filters=config.network.num_filters
+        input_channels=config_dict['network']['input_channels'],
+        num_res_blocks=config_dict['network']['num_res_blocks'],
+        num_filters=config_dict['network']['num_filters']
     )
-    model1.load_state_dict(model1_state)
+    # Deserialize and load state dict
+    model1_state_deserialized = deserialize_state_dict_from_multiprocessing(model1_state)
+    model1.load_state_dict(model1_state_deserialized)
+    model1.to(device)
     model1.eval()
     
     model2 = create_model(
-        game_type=config.game.game_type,
-        input_height=config.game.board_size,
-        input_width=config.game.board_size,
+        game_type=config_dict['game']['game_type'],
+        input_height=config_dict['game']['board_size'],
+        input_width=config_dict['game']['board_size'],
         num_actions=action_size,
-        input_channels=config.network.input_channels,
-        num_res_blocks=config.network.num_res_blocks,
-        num_filters=config.network.num_filters
+        input_channels=config_dict['network']['input_channels'],
+        num_res_blocks=config_dict['network']['num_res_blocks'],
+        num_filters=config_dict['network']['num_filters']
     )
-    model2.load_state_dict(model2_state)
+    # Deserialize and load state dict
+    model2_state_deserialized = deserialize_state_dict_from_multiprocessing(model2_state)
+    model2.load_state_dict(model2_state_deserialized)
+    model2.to(device)
     model2.eval()
     
     # Create evaluators
     from mcts.core.evaluator import AlphaZeroEvaluator
     evaluator1 = AlphaZeroEvaluator(
         model=model1,
-        device=arena_config.device
+        device=device  # Use the detected device
     )
     evaluator2 = AlphaZeroEvaluator(
         model=model2,
-        device=arena_config.device
+        device=device  # Use the detected device
     )
     
     # Create MCTS instances
     mcts_config = MCTSConfig(
-        num_simulations=arena_config.mcts_simulations,
-        c_puct=arena_config.c_puct,
+        num_simulations=arena_config_dict['mcts_simulations'],
+        c_puct=arena_config_dict['c_puct'],
         temperature=0.0,
-        device=arena_config.device,
+        device=device,  # Use the detected device
         game_type=game_type,
-        board_size=config.game.board_size,
+        board_size=config_dict['game']['board_size'],
         # Add minimal required parameters
         min_wave_size=32,
         max_wave_size=32,
@@ -580,12 +657,12 @@ def _play_arena_game_worker(config, arena_config: ArenaConfig,
     state = game_interface.create_initial_state()
     current_player = 1
     
-    for move_num in range(config.training.max_moves_per_game):
+    for move_num in range(config_dict['training']['max_moves_per_game']):
         # Get current MCTS
         current_mcts = mcts1 if current_player == 1 else mcts2
         
         # Run MCTS search first
-        policy = current_mcts.search(state, num_simulations=arena_config.mcts_simulations)
+        policy = current_mcts.search(state, num_simulations=arena_config_dict['mcts_simulations'])
         
         # Get best action (deterministic)
         action = current_mcts.get_best_action(state)

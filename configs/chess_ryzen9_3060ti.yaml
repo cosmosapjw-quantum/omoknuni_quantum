@@ -99,6 +99,7 @@ training:
   max_moves_per_game: 300  # Longer chess games
   resign_threshold: -0.90  # Less aggressive resignation
   resign_check_moves: 20
+  resign_start_iteration: 15  # Chess needs more iterations to learn endgames
   
   # Data handling - Optimized for 64GB RAM
   window_size: 300000  # Smaller window for chess positions

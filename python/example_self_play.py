@@ -130,7 +130,7 @@ class SelfPlayWorker:
             
             # Run MCTS search
             if verbose:
-                print(f"\nMove {move_count} - Player {state.current_player() + 1}")
+                print(f"\nMove {move_count} - Player {state.get_current_player() + 1}")
             
             search_start = time.perf_counter()
             policy = self.mcts.search(state, self.mcts_config.num_simulations)
@@ -179,11 +179,13 @@ class SelfPlayWorker:
         game_time = time.perf_counter() - game_start
         
         # Determine winner
-        if hasattr(state, 'get_winner'):
-            winner = state.get_winner()
+        result = state.get_game_result()
+        if result == alphazero_py.GameResult.WIN_PLAYER1:
+            winner = 1
+        elif result == alphazero_py.GameResult.WIN_PLAYER2:
+            winner = -1
         else:
-            # For games without explicit winner method
-            winner = state.get_result(0)  # From player 0's perspective
+            winner = 0
         
         if verbose:
             print(f"\n{'='*50}")
@@ -312,6 +314,13 @@ class SelfPlayWorker:
 def main():
     """Main self-play demonstration"""
     
+    # Set up multiprocessing for CUDA compatibility
+    import multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass  # Already set
+    
     # Check GPU availability
     if not torch.cuda.is_available():
         print("WARNING: CUDA not available, running on CPU (will be slow)")
@@ -347,9 +356,7 @@ def main():
     print("Initializing neural network evaluator...")
     evaluator = ResNetEvaluator(
         game_type='gomoku',
-        board_size=15,
-        device=device,
-        use_mixed_precision=True
+        device=device
     )
     
     # Create self-play worker
@@ -412,22 +419,6 @@ def main():
     print("\n" + "="*70)
     print("Self-play demonstration complete!")
     print("="*70)
-    
-    # Save one game for analysis (optional)
-    if games:
-        print("\nSaving first game data...")
-        game_data = {
-            'states': [s.tolist() for s in games[0].states],
-            'policies': [p.tolist() for p in games[0].policies],
-            'actions': games[0].actions,
-            'winner': games[0].winner,
-            'game_length': games[0].game_length
-        }
-        
-        import json
-        with open('example_game.json', 'w') as f:
-            json.dump(game_data, f)
-        print("Game data saved to example_game.json")
 
 
 if __name__ == "__main__":

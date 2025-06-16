@@ -93,7 +93,7 @@ class GPUEvaluatorService:
         self.pending_responses = defaultdict(dict)
         self.response_lock = threading.Lock()
         
-        logger.info(f"GPUEvaluatorService initialized on {device} with batch_size={batch_size}")
+        logger.debug(f"GPUEvaluatorService initialized on {device} with batch_size={batch_size}")
     
     def start(self):
         """Start the evaluation service"""
@@ -104,14 +104,14 @@ class GPUEvaluatorService:
         self.service_thread = threading.Thread(target=self._service_loop, daemon=True)
         self.service_thread.start()
         
-        logger.info("GPUEvaluatorService started")
+        logger.debug("GPUEvaluatorService started")
     
     def stop(self):
         """Stop the evaluation service"""
         if self.service_thread is None:
             return
         
-        logger.info("Stopping GPUEvaluatorService...")
+        logger.debug("Stopping GPUEvaluatorService...")
         self.stop_event.set()
         
         # Send sentinel to unblock the service thread
@@ -126,7 +126,7 @@ class GPUEvaluatorService:
             logger.warning("GPUEvaluatorService thread did not stop cleanly")
         
         self.service_thread = None
-        logger.info("GPUEvaluatorService stopped")
+        logger.debug("GPUEvaluatorService stopped")
     
     def get_request_queue(self) -> mp.Queue:
         """Get the request queue for workers"""

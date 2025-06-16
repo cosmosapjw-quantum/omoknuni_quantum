@@ -136,6 +136,7 @@ training:
   max_moves_per_game: 225
   resign_threshold: -0.95
   resign_check_moves: 10
+  resign_start_iteration: 10  # Start resignation after 10 iterations for better early learning
   
   # Data handling - Optimized for 64GB RAM
   window_size: 500000  # Large buffer with ample RAM

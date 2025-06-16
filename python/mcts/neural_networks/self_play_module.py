@@ -259,6 +259,37 @@ class SelfPlayManager:
             if isinstance(policy, torch.Tensor):
                 policy = policy.cpu().numpy()
             
+            # Check resignation condition
+            root_value = mcts.get_root_value()
+            
+            # Initialize resignation tracking if not exists
+            if not hasattr(mcts, 'recent_values'):
+                mcts.recent_values = []
+            
+            # Track recent values from current player's perspective
+            mcts.recent_values.append(root_value)
+            # Keep only the last N moves
+            mcts.recent_values = mcts.recent_values[-self.config.training.resign_check_moves:]
+            
+            # Check if we should resign (only after resign_start_iteration)
+            if iteration >= self.config.training.resign_start_iteration:
+                if len(mcts.recent_values) >= self.config.training.resign_check_moves:
+                    # Log the resignation check for debugging
+                    if move_num % 10 == 0:  # Log every 10 moves to avoid spam
+                        logger.debug(f"Resignation check at move {move_num}: recent values {[f'{v:.3f}' for v in mcts.recent_values]}, threshold {self.config.training.resign_threshold}")
+                    
+                    if all(v < self.config.training.resign_threshold for v in mcts.recent_values):
+                        # Resign - current player loses
+                        outcome = -1  # Loss for current player
+                        
+                        # Update all examples with the game outcome
+                        for i, example in enumerate(examples):
+                            # Alternate values based on player perspective
+                            example.value = outcome * ((-1) ** (i % 2))
+                        
+                        logger.info(f"Game {game_id} resigned at move {move_num} with root value {root_value:.3f} (threshold: {self.config.training.resign_threshold})")
+                        break
+            
             # Select move based on policy
             # Note: MCTS already applies temperature scaling to visit counts using
             # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
@@ -279,9 +310,9 @@ class SelfPlayManager:
                     action = np.random.choice(legal_moves)
             
             # Double-check the action is actually legal
-            if not self.game_interface.is_move_legal(state, action):
+            legal_moves = self.game_interface.get_legal_moves(state)
+            if action not in legal_moves:
                 logger.error(f"MCTS returned illegal action {action} at move {move_num}")
-                legal_moves = self.game_interface.get_legal_moves(state)
                 logger.error(f"Legal moves: {legal_moves[:10]}... (total {len(legal_moves)})")
                 logger.error(f"Policy values: {policy[legal_moves[:10]]}")
                 # Try to select best legal action from policy
@@ -777,6 +808,37 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             # Convert to numpy if needed
             if isinstance(policy, torch.Tensor):
                 policy = policy.cpu().numpy()
+            
+            # Check resignation condition
+            root_value = mcts.get_root_value()
+            
+            # Initialize resignation tracking if not exists
+            if not hasattr(mcts, 'recent_values'):
+                mcts.recent_values = []
+            
+            # Track recent values from current player's perspective
+            mcts.recent_values.append(root_value)
+            # Keep only the last N moves
+            mcts.recent_values = mcts.recent_values[-config.training.resign_check_moves:]
+            
+            # Check if we should resign (only after resign_start_iteration)
+            if iteration >= config.training.resign_start_iteration:
+                if len(mcts.recent_values) >= config.training.resign_check_moves:
+                    # Log the resignation check for debugging
+                    if move_num % 10 == 0:  # Log every 10 moves to avoid spam
+                        logger.debug(f"Resignation check at move {move_num}: recent values {[f'{v:.3f}' for v in mcts.recent_values]}, threshold {config.training.resign_threshold}")
+                    
+                    if all(v < config.training.resign_threshold for v in mcts.recent_values):
+                        # Resign - current player loses
+                        outcome = -1  # Loss for current player
+                        
+                        # Update all examples with the game outcome
+                        for i, example in enumerate(examples):
+                            # Alternate values based on player perspective
+                            example.value = outcome * ((-1) ** (i % 2))
+                        
+                        logger.info(f"Game {game_id} resigned at move {move_num} with root value {root_value:.3f} (threshold: {config.training.resign_threshold})")
+                        break
             
             # Select move based on policy
             # Note: MCTS already applies temperature scaling to visit counts using

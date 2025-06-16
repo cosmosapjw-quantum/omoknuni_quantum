@@ -245,6 +245,7 @@ class TrainingFullConfig:
     max_moves_per_game: int = 500
     resign_threshold: float = -0.95
     resign_check_moves: int = 10
+    resign_start_iteration: int = 10  # Start using resignation after this many iterations
     
     # Data handling
     window_size: int = 500000

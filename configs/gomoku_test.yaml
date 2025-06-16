@@ -104,6 +104,7 @@ training:
   max_moves_per_game: 50       # Reduced
   resign_threshold: -0.95
   resign_check_moves: 10
+  resign_start_iteration: 5  # Test config, allow earlier resignation
   
   # Data handling
   window_size: 1000

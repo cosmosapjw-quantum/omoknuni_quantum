@@ -106,6 +106,7 @@ training:
   max_moves_per_game: 400  # Long Go games
   resign_threshold: -0.95
   resign_check_moves: 30
+  resign_start_iteration: 20  # Go is complex, needs more iterations to learn life/death
   
   # Data handling
   window_size: 200000  # Smaller window
