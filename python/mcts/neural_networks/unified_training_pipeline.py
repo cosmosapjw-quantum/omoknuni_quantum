@@ -152,6 +152,9 @@ class UnifiedTrainingPipeline:
         # Resume from checkpoint if specified
         if resume_from:
             self.load_checkpoint(resume_from)
+            logger.info(f"Resumed from checkpoint: iteration {self.iteration}")
+        else:
+            logger.info("Starting fresh training")
     
     def _setup_directories(self):
         """Create necessary directories"""
@@ -310,13 +313,24 @@ class UnifiedTrainingPipeline:
         Args:
             num_iterations: Number of training iterations
         """
-        logger.info(f"Starting training for {num_iterations} iterations")
+        # Calculate actual iterations to run
+        start_iteration = self.iteration
+        target_iteration = start_iteration + num_iterations
+        
+        logger.info(f"Training from iteration {start_iteration + 1} to {target_iteration}")
+        if start_iteration > 0:
+            logger.info(f"Resuming from previous checkpoint at iteration {start_iteration}")
         
         # Use trange for iteration progress with clean formatting
         print()  # Initial newline for clean start
-        for i in trange(num_iterations, desc="Training iterations", 
-                       initial=self.iteration, unit="iter", position=0, leave=True):
+        
+        # Create progress bar that shows correct progress when resuming
+        pbar = trange(target_iteration, desc="Training iterations", 
+                     initial=start_iteration, unit="iter", position=0, leave=True)
+        
+        for _ in range(num_iterations):
             self.iteration += 1
+            pbar.update(1)
             iteration_start = time.time()
             
             # Print clean header with proper spacing
@@ -350,11 +364,10 @@ class UnifiedTrainingPipeline:
             arena_time = time.time() - arena_start
             tqdm.write(f"      Arena completed in {arena_time:.1f}s")
             
-            # Phase 4: Save checkpoint if needed
-            if self.iteration % self.config.training.checkpoint_interval == 0:
-                tqdm.write("\n[4/4] Saving checkpoint...")
-                self.save_checkpoint()
-                tqdm.write("      Checkpoint saved.")
+            # Phase 4: Save checkpoint every iteration
+            tqdm.write("\n[4/4] Saving checkpoint...")
+            self.save_checkpoint()
+            tqdm.write("      Checkpoint saved.")
             
             # Summary
             iteration_time = time.time() - iteration_start
@@ -876,13 +889,40 @@ class UnifiedTrainingPipeline:
         buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
         self.replay_buffer.save(str(buffer_path))
         
+        # Create symlink to latest checkpoint for easy resuming
+        latest_link = self.checkpoint_dir / "latest_checkpoint.pt"
+        if latest_link.exists():
+            latest_link.unlink()
+        latest_link.symlink_to(checkpoint_path.name)
+        
+        # Also save a resume info file
+        resume_info = {
+            "iteration": self.iteration,
+            "checkpoint_path": str(checkpoint_path),
+            "buffer_path": str(buffer_path),
+            "timestamp": datetime.now().isoformat()
+        }
+        with open(self.checkpoint_dir / "resume_info.json", "w") as f:
+            json.dump(resume_info, f, indent=2)
+        
         logger.info(f"Saved checkpoint at iteration {self.iteration}")
     
     def load_checkpoint(self, checkpoint_path: str):
         """Load training checkpoint"""
+        checkpoint_path = Path(checkpoint_path)
+        
+        # Handle both direct checkpoint path and checkpoint directory
+        if checkpoint_path.is_dir():
+            # Find latest checkpoint in directory
+            checkpoints = sorted(checkpoint_path.glob("checkpoint_iter_*.pt"))
+            if not checkpoints:
+                raise FileNotFoundError(f"No checkpoints found in {checkpoint_path}")
+            checkpoint_path = checkpoints[-1]
+            logger.info(f"Found latest checkpoint: {checkpoint_path}")
+        
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=self.config.mcts.device)
         
         self.iteration = checkpoint["iteration"]
         self.best_model_iteration = checkpoint["best_model_iteration"]
@@ -896,14 +936,28 @@ class UnifiedTrainingPipeline:
         if self.scaler and "scaler_state_dict" in checkpoint:
             self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
         
-        if self.elo_tracker and "elo_ratings" in checkpoint:
+        if "elo_ratings" in checkpoint:
+            # Create ELO tracker if needed
+            if not self.elo_tracker:
+                from mcts.neural_networks.arena_module import ELOTracker
+                self.elo_tracker = ELOTracker(k_factor=self.config.arena.elo_k_factor)
             self.elo_tracker.ratings = checkpoint["elo_ratings"]
+            logger.info(f"Loaded ELO ratings for {len(checkpoint['elo_ratings'])} players")
         
         # Try to load replay buffer
         buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
         if buffer_path.exists():
             self.replay_buffer.load(str(buffer_path))
             logger.info(f"Loaded replay buffer with {len(self.replay_buffer)} examples")
+        else:
+            # Try to find most recent replay buffer
+            buffer_files = sorted(self.data_dir.glob("replay_buffer_iter_*.pkl"))
+            if buffer_files:
+                latest_buffer = buffer_files[-1]
+                self.replay_buffer.load(str(latest_buffer))
+                logger.info(f"Loaded most recent replay buffer from {latest_buffer.name} with {len(self.replay_buffer)} examples")
+            else:
+                logger.warning("No replay buffer found, starting with empty buffer")
     
     def run_final_tournament(self):
         """Run tournament between all saved models"""

@@ -6,20 +6,37 @@ to achieve < 2x overhead compared to classical MCTS.
 
 import torch
 import numpy as np
-from typing import Tuple, Optional, List, Dict, Any
+from typing import Tuple, Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 import logging
 import math
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
+class TimeFormulation(Enum):
+    """Time formulation for path integral"""
+    CONTINUOUS = "continuous"  # v1: continuous time
+    DISCRETE = "discrete"      # v2: discrete information time
+
 @dataclass 
 class PathIntegralConfig:
-    """Configuration for path integral formulation"""
+    """Configuration for path integral formulation with v2.0 support"""
+    # Version control
+    time_formulation: TimeFormulation = TimeFormulation.DISCRETE  # Default to v2
+    
     # Core parameters
     hbar_eff: float = 0.1
     temperature: float = 1.0
     lambda_qft: float = 1.0
+    c_puct: Optional[float] = None      # Required for v2
+    
+    # v2.0 specific parameters
+    use_puct_action: bool = True        # Use full PUCT action
+    prior_coupling: float = 1.0         # λ for prior term
+    temperature_mode: str = 'annealing' # 'fixed' or 'annealing'
+    initial_temperature: float = 1.0    # T₀ for annealing
     
     # Optimization parameters
     use_lookup_tables: bool = True
@@ -34,6 +51,45 @@ class PathIntegralConfig:
     # Device
     device: str = 'cuda'
 
+class DiscreteTimeHandler:
+    """Handles discrete information time for v2.0"""
+    
+    def __init__(self, config: PathIntegralConfig):
+        self.config = config
+        self.T0 = config.initial_temperature
+        self.eps = 1e-8
+    
+    def information_time(self, N: Union[int, torch.Tensor]) -> Union[float, torch.Tensor]:
+        """Compute information time τ(N) = log(N+2)"""
+        if isinstance(N, torch.Tensor):
+            return torch.log(N + 2)
+        return math.log(N + 2)
+    
+    def compute_temperature(self, N: Union[int, torch.Tensor]) -> Union[float, torch.Tensor]:
+        """Compute temperature T(N) = T₀/log(N+2)"""
+        if self.config.temperature_mode == 'fixed':
+            return self.T0
+        elif self.config.temperature_mode == 'annealing':
+            tau = self.information_time(N)
+            return self.T0 / (tau + self.eps)
+        else:
+            raise ValueError(f"Unknown temperature mode: {self.config.temperature_mode}")
+    
+    def compute_hbar_eff(self, N: Union[int, torch.Tensor], 
+                         c_puct: Optional[float] = None) -> Union[float, torch.Tensor]:
+        """Compute effective Planck constant for v2.0"""
+        if c_puct is None:
+            c_puct = self.config.c_puct
+            if c_puct is None:
+                raise ValueError("c_puct must be provided or set in config")
+        
+        tau = self.information_time(N)
+        if isinstance(N, torch.Tensor):
+            return c_puct * (N + 2) / (torch.sqrt(N + 1) * tau)
+        else:
+            return c_puct * (N + 2) / (math.sqrt(N + 1) * tau)
+
+
 class PrecomputedTables:
     """Pre-computed lookup tables for fast path integral evaluation"""
     
@@ -41,7 +97,11 @@ class PrecomputedTables:
         self.config = config
         self.device = torch.device(config.device)
         
-        logger.info("Pre-computing path integral tables...")
+        # Initialize discrete time handler for v2.0
+        if config.time_formulation == TimeFormulation.DISCRETE:
+            self.time_handler = DiscreteTimeHandler(config)
+        
+        logger.info(f"Pre-computing path integral tables for {config.time_formulation.value}...")
         
         # Pre-compute exponential decay factors for different path lengths
         self.length_factors = self._compute_length_factors()
@@ -78,8 +138,14 @@ class PrecomputedTables:
         # One-loop corrections for different visit counts
         visits = torch.arange(0, 1000, device=self.device).float()
         
-        # Effective Planck constant scales with visits
-        hbar_eff = self.config.hbar_eff / torch.sqrt(visits + 1)
+        if self.config.time_formulation == TimeFormulation.DISCRETE:
+            # v2.0: Dynamic ℏ_eff(N)
+            hbar_eff = torch.zeros_like(visits)
+            for i, N in enumerate(visits):
+                hbar_eff[i] = self.time_handler.compute_hbar_eff(N)
+        else:
+            # v1.0: Fixed scaling
+            hbar_eff = self.config.hbar_eff / torch.sqrt(visits + 1)
         
         # Quantum correction: 1 + hbar_eff^2 * correction_term
         corrections = 1.0 + hbar_eff**2 * 0.1  # Simplified correction
@@ -101,6 +167,10 @@ class PathIntegral:
         self.device = torch.device(config.device)
         self.tables = PrecomputedTables(config)
         
+        # Initialize discrete time handler for v2.0
+        if config.time_formulation == TimeFormulation.DISCRETE:
+            self.time_handler = DiscreteTimeHandler(config)
+        
         # Statistics
         self.stats = {
             'cache_hits': 0,
@@ -113,6 +183,8 @@ class PathIntegral:
         paths: torch.Tensor,
         values: torch.Tensor,
         visits: torch.Tensor,
+        priors: Optional[torch.Tensor] = None,
+        simulation_count: Optional[int] = None,
         tree: Optional[Any] = None
     ) -> torch.Tensor:
         """Compute path integral for a batch of paths using pre-computed tables
@@ -121,6 +193,8 @@ class PathIntegral:
             paths: Path tensor [batch_size, max_depth]
             values: Value estimates [batch_size]
             visits: Visit counts [batch_size]
+            priors: Prior probabilities [batch_size] (v2.0)
+            simulation_count: Current simulation count (v2.0)
             tree: Optional tree structure for additional info
             
         Returns:
@@ -137,9 +211,9 @@ class PathIntegral:
         
         # Compute or retrieve cached actions
         if self.config.cache_path_actions and self.tables.action_cache is not None:
-            actions = self._get_cached_actions(paths, values, visits)
+            actions = self._get_cached_actions(paths, values, visits, priors)
         else:
-            actions = self._compute_actions_vectorized(paths, values, visits)
+            actions = self._compute_actions_vectorized(paths, values, visits, priors)
             
         # Discretize actions for table lookup
         action_indices = self._discretize_actions(actions)
@@ -148,7 +222,11 @@ class PathIntegral:
         boltzmann_factors = self._lookup_boltzmann(action_indices)
         
         # Look up quantum corrections based on visits
-        quantum_corrections = self._lookup_quantum_corrections(visits)
+        if simulation_count is not None and self.config.time_formulation == TimeFormulation.DISCRETE:
+            # v2.0: Use simulation count for dynamic corrections
+            quantum_corrections = self._compute_dynamic_corrections(visits, simulation_count)
+        else:
+            quantum_corrections = self._lookup_quantum_corrections(visits)
         
         # Compute path integrals with all factors
         path_integrals = length_factors * boltzmann_factors * quantum_corrections
@@ -186,7 +264,8 @@ class PathIntegral:
         self, 
         paths: torch.Tensor, 
         values: torch.Tensor,
-        visits: torch.Tensor
+        visits: torch.Tensor,
+        priors: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Get actions from cache or compute and cache them"""
         # Create cache key from path hashes
@@ -213,7 +292,8 @@ class PathIntegral:
             uncached_actions = self._compute_actions_vectorized(
                 paths[uncached_mask],
                 values[uncached_mask],
-                visits[uncached_mask]
+                visits[uncached_mask],
+                priors[uncached_mask] if priors is not None else None
             )
             actions[uncached_mask] = uncached_actions
             
@@ -228,16 +308,68 @@ class PathIntegral:
         self,
         paths: torch.Tensor,
         values: torch.Tensor, 
-        visits: torch.Tensor
+        visits: torch.Tensor,
+        priors: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        """Compute classical actions for paths (vectorized)"""
-        # Simplified action: combination of path length and value
-        path_lengths = (paths >= 0).sum(dim=1).float()
+        """Compute actions for paths based on formulation"""
+        if self.config.use_puct_action and priors is not None:
+            # v2.0: Full PUCT action S[γ] = -Σ[log N(s,a) + λ log P(a|s)]
+            return self._compute_puct_action(paths, visits, priors)
+        else:
+            # v1.0: Simplified action
+            path_lengths = (paths >= 0).sum(dim=1).float()
+            actions = -values * path_lengths / torch.sqrt(visits + 1)
+            return actions
+    
+    def _compute_puct_action(
+        self,
+        paths: torch.Tensor,
+        visits: torch.Tensor,
+        priors: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute full PUCT action for v2.0"""
+        batch_size = paths.shape[0]
+        actions = torch.zeros(batch_size, device=self.device)
         
-        # Action = -value * path_length / sqrt(visits + 1)
-        actions = -values * path_lengths / torch.sqrt(visits + 1)
+        # Get prior coupling strength
+        lambda_coupling = self.config.prior_coupling
+        if lambda_coupling == 'auto' and self.config.c_puct is not None:
+            lambda_coupling = self.config.c_puct
+        
+        # Compute action for each path
+        for i in range(batch_size):
+            path = paths[i]
+            valid_nodes = path[path >= 0]
+            
+            if len(valid_nodes) == 0:
+                continue
+            
+            # S = -Σ[log N + λ log P]
+            # Using simplified version with average visits/priors
+            avg_visits = visits[i]
+            avg_prior = priors[i] if priors[i] > 0 else 1e-8
+            
+            log_visits = torch.log(avg_visits + 1)
+            log_prior = torch.log(avg_prior)
+            
+            path_length = len(valid_nodes)
+            actions[i] = -path_length * (log_visits + lambda_coupling * log_prior)
         
         return actions
+    
+    def _compute_dynamic_corrections(
+        self,
+        visits: torch.Tensor,
+        simulation_count: int
+    ) -> torch.Tensor:
+        """Compute dynamic quantum corrections for v2.0"""
+        # Get current ℏ_eff
+        hbar_eff = self.time_handler.compute_hbar_eff(simulation_count)
+        
+        # Dynamic correction based on current phase
+        corrections = 1.0 + hbar_eff**2 / (visits + 1)
+        
+        return corrections
         
     def _apply_interference_fast(
         self,
@@ -295,3 +427,114 @@ class PathIntegral:
             self.tables.action_cache.clear()
             self.stats['cache_hits'] = 0
             self.stats['cache_misses'] = 0
+
+
+# Factory functions for easy instantiation
+def create_path_integral(
+    device: str = 'cuda',
+    version: str = 'v2',
+    use_lookup_tables: bool = True,
+    use_mixed_precision: bool = True,
+    **kwargs
+) -> PathIntegral:
+    """
+    Factory function to create PathIntegral with sensible defaults
+    
+    Args:
+        device: Device for computation ('cuda' or 'cpu')
+        version: 'v1' for continuous time, 'v2' for discrete time
+        use_lookup_tables: Enable pre-computed tables
+        use_mixed_precision: Enable FP16/FP32 mixed precision
+        **kwargs: Additional config parameters
+        
+    Returns:
+        PathIntegral configured for specified version
+    """
+    if version == 'v2':
+        return create_path_integral_v2(device, use_lookup_tables=use_lookup_tables,
+                                       use_mixed_precision=use_mixed_precision, **kwargs)
+    elif version == 'v1':
+        return create_path_integral_v1(device, use_lookup_tables=use_lookup_tables,
+                                       use_mixed_precision=use_mixed_precision, **kwargs)
+    else:
+        raise ValueError(f"Unknown version: {version}. Use 'v1' or 'v2'.")
+
+
+def create_path_integral_v2(
+    device: str = 'cuda',
+    branching_factor: int = 10,
+    avg_game_length: int = 100,
+    c_puct: Optional[float] = None,
+    use_lookup_tables: bool = True,
+    use_mixed_precision: bool = True,
+    **kwargs
+) -> PathIntegral:
+    """
+    Create v2.0 PathIntegral with discrete time and full PUCT action
+    
+    Args:
+        device: Device for computation
+        branching_factor: Average branching factor
+        avg_game_length: Average game length
+        c_puct: Exploration constant (auto-computed if None)
+        use_lookup_tables: Enable pre-computed tables
+        use_mixed_precision: Enable mixed precision
+        **kwargs: Additional config parameters
+        
+    Returns:
+        PathIntegral configured for v2.0
+    """
+    # Auto-compute c_puct if not provided
+    if c_puct is None:
+        c_puct = math.sqrt(2 * math.log(branching_factor))
+    
+    config = PathIntegralConfig(
+        time_formulation=TimeFormulation.DISCRETE,
+        c_puct=c_puct,
+        use_puct_action=True,
+        temperature_mode='annealing',
+        use_lookup_tables=use_lookup_tables,
+        use_mixed_precision=use_mixed_precision,
+        device=device,
+        **kwargs
+    )
+    
+    logger.info(f"Created v2.0 PathIntegral with discrete time and PUCT action")
+    return PathIntegral(config)
+
+
+def create_path_integral_v1(
+    device: str = 'cuda',
+    hbar_eff: float = 0.1,
+    temperature: float = 1.0,
+    use_lookup_tables: bool = True,
+    use_mixed_precision: bool = True,
+    **kwargs
+) -> PathIntegral:
+    """
+    Create v1.0 PathIntegral with continuous time formulation
+    
+    Args:
+        device: Device for computation
+        hbar_eff: Effective Planck constant
+        temperature: Temperature for thermal averaging
+        use_lookup_tables: Enable pre-computed tables
+        use_mixed_precision: Enable mixed precision
+        **kwargs: Additional config parameters
+        
+    Returns:
+        PathIntegral configured for v1.0
+    """
+    config = PathIntegralConfig(
+        time_formulation=TimeFormulation.CONTINUOUS,
+        hbar_eff=hbar_eff,
+        temperature=temperature,
+        use_puct_action=False,
+        use_lookup_tables=use_lookup_tables,
+        use_mixed_precision=use_mixed_precision,
+        device=device,
+        **kwargs
+    )
+    
+    logger.info(f"Created v1.0 PathIntegral with continuous time")
+    return PathIntegral(config)

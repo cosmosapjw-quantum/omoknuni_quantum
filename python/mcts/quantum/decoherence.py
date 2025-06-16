@@ -1,6 +1,6 @@
 """
-Decoherence Engine for QFT-MCTS
-===============================
+Decoherence Engine for QFT-MCTS (v1.0 and v2.0)
+===============================================
 
 This module implements quantum decoherence dynamics that naturally explain
 the emergence of classical MCTS behavior from quantum superpositions.
@@ -12,7 +12,16 @@ Key Features:
 - GPU-accelerated density matrix computations
 - Automatic quantum→classical transition
 
-Based on: docs/qft-mcts-math-foundations.md Section 3.2
+v2.0 Features:
+- Power-law decoherence: ρᵢⱼ(N) ~ N^(-Γ₀)
+- Discrete information time: τ(N) = log(N+2)
+- Phase-dependent decoherence rates
+- Temperature annealing: T(N) = T₀/log(N+2)
+- Auto-computed Γ₀ from theory: 2c_puct·σ²_eval·T
+
+Based on:
+- v1.0: docs/qft-mcts-math-foundations.md Section 3.2
+- v2.0: docs/v2.0/mathematical-foundations.md
 """
 
 import torch
@@ -22,17 +31,35 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 import logging
 import time
+import math
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+class TimeFormulation(Enum):
+    """Time formulation for decoherence dynamics"""
+    CONTINUOUS = "continuous"  # v1.0 - continuous time
+    DISCRETE = "discrete"      # v2.0 - discrete information time
 
 
 @dataclass
 class DecoherenceConfig:
     """Configuration for decoherence engine"""
+    # Version settings
+    time_formulation: TimeFormulation = TimeFormulation.CONTINUOUS  # v1 or v2
+    version: str = 'v1'  # 'v1' or 'v2'
+    
     # Physical parameters
     base_decoherence_rate: float = 1.0    # λ - system-environment coupling
     hbar: float = 1.0                     # Reduced Planck constant
     temperature: float = 1.0              # Environment temperature
+    
+    # v2.0 specific parameters
+    power_law_exponent: Optional[float] = None  # Γ₀ for power-law decay (auto-computed if None)
+    c_puct: Optional[float] = None        # For auto-computing parameters
+    temperature_mode: str = 'fixed'       # 'fixed' or 'annealing'
+    initial_temperature: float = 1.0      # T₀ for annealing
     
     # Decoherence model
     visit_count_sensitivity: float = 1.0  # How strongly visit differences drive decoherence
@@ -50,6 +77,34 @@ class DecoherenceConfig:
     use_mixed_precision: bool = True      # FP16/FP32 optimization
 
 
+class DiscreteTimeHandler:
+    """Handles discrete information time for v2.0"""
+    
+    def __init__(self, config: DecoherenceConfig):
+        self.config = config
+        self.eps = 1e-8
+    
+    def information_time(self, N: Union[int, torch.Tensor]) -> Union[float, torch.Tensor]:
+        """Compute information time τ(N) = log(N+2)"""
+        if isinstance(N, torch.Tensor):
+            return torch.log(N + 2)
+        return math.log(N + 2)
+    
+    def time_derivative(self, N: Union[int, torch.Tensor]) -> Union[float, torch.Tensor]:
+        """Compute d/dτ = (N+2)d/dN"""
+        return 1.0 / (N + 2)
+    
+    def compute_temperature(self, N: Union[int, torch.Tensor]) -> Union[float, torch.Tensor]:
+        """Compute temperature for annealing"""
+        if self.config.temperature_mode == 'fixed':
+            return self.config.initial_temperature
+        elif self.config.temperature_mode == 'annealing':
+            tau = self.information_time(N)
+            return self.config.initial_temperature / (tau + self.eps)
+        else:
+            return self.config.temperature
+
+
 class DecoherenceOperators:
     """
     Lindblad operators that describe decoherence processes
@@ -61,6 +116,7 @@ class DecoherenceOperators:
     def __init__(self, config: DecoherenceConfig, device: torch.device):
         self.config = config
         self.device = device
+        self.time_handler = DiscreteTimeHandler(config) if config.version == 'v2' else None
         
     def compute_lindblad_operators(
         self, 
@@ -173,31 +229,64 @@ class DecoherenceOperators:
     
     def compute_decoherence_rates(
         self, 
-        visit_counts: torch.Tensor
+        visit_counts: torch.Tensor,
+        total_simulations: Optional[int] = None,
+        q_values: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Compute pairwise decoherence rates Γ_ij
         
-        From theory: Γ_ij = λ|N_i - N_j|/max(N_i, N_j)
+        v1.0: Γ_ij = λ|N_i - N_j|/max(N_i, N_j) (exponential decay)
+        v2.0: ρᵢⱼ(N) ~ N^(-Γ₀) (power-law decay)
         """
         num_nodes = visit_counts.shape[0]
         
-        # Create pairwise visit difference matrix
-        visit_i = visit_counts.unsqueeze(1)  # Shape: (num_nodes, 1)
-        visit_j = visit_counts.unsqueeze(0)  # Shape: (1, num_nodes)
-        
-        # Compute |N_i - N_j|
-        visit_diff = torch.abs(visit_i - visit_j)
-        
-        # Compute max(N_i, N_j)
-        visit_max = torch.max(visit_i, visit_j)
-        
-        # Decoherence rate: Γ_ij = λ|N_i - N_j|/max(N_i, N_j)
-        rates = self.config.base_decoherence_rate * visit_diff / (
-            visit_max + self.config.matrix_regularization
-        )
+        if self.config.version == 'v2' and self.config.time_formulation == TimeFormulation.DISCRETE:
+            # v2.0: Power-law decoherence
+            if self.config.power_law_exponent is not None:
+                gamma = self.config.power_law_exponent
+            else:
+                # Auto-compute from theory: Γ₀ = 2c_puct·σ²_eval·T₀
+                if q_values is not None and self.config.c_puct is not None:
+                    sigma_Q = torch.std(q_values)
+                    T = self.config.initial_temperature
+                    if total_simulations is not None and self.config.temperature_mode == 'annealing':
+                        T = self.time_handler.compute_temperature(total_simulations)
+                    gamma = 2 * self.config.c_puct * sigma_Q**2 * T
+                else:
+                    gamma = 0.5  # Default fallback
+            
+            # Power-law decay matrix
+            decoherence_matrix = (visit_counts + 1).unsqueeze(0).pow(-gamma)
+            
+            # Apply pairwise differences as modulation
+            visit_i = visit_counts.unsqueeze(1)
+            visit_j = visit_counts.unsqueeze(0)
+            visit_diff = torch.abs(visit_i - visit_j)
+            visit_max = torch.max(visit_i, visit_j)
+            
+            # Modulate power-law by visit differences
+            modulation = visit_diff / (visit_max + self.config.matrix_regularization)
+            rates = self.config.base_decoherence_rate * decoherence_matrix * modulation
+            
+        else:
+            # v1.0: Original exponential decoherence
+            visit_i = visit_counts.unsqueeze(1)
+            visit_j = visit_counts.unsqueeze(0)
+            visit_diff = torch.abs(visit_i - visit_j)
+            visit_max = torch.max(visit_i, visit_j)
+            rates = self.config.base_decoherence_rate * visit_diff / (
+                visit_max + self.config.matrix_regularization
+            )
         
         return rates
+
+
+class MCTSPhase(Enum):
+    """MCTS phase for v2.0 phase-dependent decoherence"""
+    QUANTUM = "quantum"       # N < N_c1
+    CRITICAL = "critical"     # N_c1 < N < N_c2
+    CLASSICAL = "classical"   # N > N_c2
 
 
 class DensityMatrixEvolution:
@@ -212,6 +301,9 @@ class DensityMatrixEvolution:
         self.config = config
         self.device = device
         self.operators = DecoherenceOperators(config, device)
+        self.time_handler = DiscreteTimeHandler(config) if config.version == 'v2' else None
+        self.total_simulations = 0  # Track for v2.0
+        self.current_phase = MCTSPhase.QUANTUM  # Track phase for v2.0
         
     def evolve_density_matrix(
         self,
@@ -241,6 +333,15 @@ class DensityMatrixEvolution:
         lindblad_ops = self.operators.compute_lindblad_operators(
             visit_counts, tree_structure
         )
+        
+        # Compute decoherence rates (v2.0 needs q_values)
+        if self.config.version == 'v2':
+            q_values = hamiltonian.diag() if hamiltonian is not None else None
+            decoherence_rates = self.operators.compute_decoherence_rates(
+                visit_counts, self.total_simulations, q_values
+            )
+        else:
+            decoherence_rates = self.operators.compute_decoherence_rates(visit_counts)
         
         # Compute coherent evolution: -i[H,ρ]/ℏ
         coherent_term = self._compute_coherent_evolution(rho, hamiltonian)
@@ -287,8 +388,20 @@ class DensityMatrixEvolution:
         Compute Lindblad decoherence term
         
         D[ρ] = Σ_k γ_k (L_k ρ L_k† - {L_k†L_k, ρ}/2)
+        
+        v2.0: Includes phase-dependent scaling of decoherence strength
         """
         decoherence_term = torch.zeros_like(rho)
+        
+        # Phase-dependent scaling for v2.0
+        phase_scaling = 1.0
+        if self.config.version == 'v2' and hasattr(self, 'current_phase'):
+            if self.current_phase == MCTSPhase.QUANTUM:
+                phase_scaling = 0.5  # Weaker decoherence in quantum phase
+            elif self.current_phase == MCTSPhase.CRITICAL:
+                phase_scaling = 1.0  # Standard decoherence
+            elif self.current_phase == MCTSPhase.CLASSICAL:
+                phase_scaling = 2.0  # Stronger decoherence to enforce classicality
         
         for L_k in lindblad_ops:
             # Ensure Lindblad operator has same dtype as density matrix
@@ -307,8 +420,8 @@ class DensityMatrixEvolution:
                 torch.matmul(L_dag_L, rho) + torch.matmul(rho, L_dag_L)
             )
             
-            # Add contribution
-            decoherence_term += dissipator - anticommutator
+            # Add contribution with phase scaling
+            decoherence_term += phase_scaling * (dissipator - anticommutator)
         
         return decoherence_term
     
@@ -583,18 +696,44 @@ class DecoherenceEngine:
         self.current_hamiltonian = H.to(self.device)
         return self.current_hamiltonian
     
+    def set_total_simulations(self, N: int):
+        """Set total simulation count for v2.0 features"""
+        self.total_simulations = N
+        if hasattr(self.density_evolution, 'total_simulations'):
+            self.density_evolution.total_simulations = N
+    
+    def set_mcts_phase(self, phase: MCTSPhase):
+        """Set current MCTS phase for v2.0 phase-dependent decoherence"""
+        self.current_phase = phase
+        if hasattr(self.density_evolution, 'current_phase'):
+            self.density_evolution.current_phase = phase
+    
     def evolve_quantum_to_classical(
         self,
         visit_counts: torch.Tensor,
         tree_structure: Optional[Dict[str, torch.Tensor]] = None,
-        evolution_time: Optional[float] = None
+        evolution_time: Optional[float] = None,
+        total_simulations: Optional[int] = None,
+        mcts_phase: Optional[MCTSPhase] = None
     ) -> Dict[str, torch.Tensor]:
         """
         Evolve quantum state to classical (main interface)
         
         This is the primary method that MCTS calls to get quantum-corrected
         probabilities through decoherence.
+        
+        Args:
+            visit_counts: Node visit counts
+            tree_structure: Optional tree connectivity
+            evolution_time: Max evolution time
+            total_simulations: Total MCTS simulations (v2.0)
+            mcts_phase: Current MCTS phase (v2.0)
         """
+        # Update v2.0 state if provided
+        if total_simulations is not None:
+            self.set_total_simulations(total_simulations)
+        if mcts_phase is not None:
+            self.set_mcts_phase(mcts_phase)
         # Initialize or update Hamiltonian
         if self.current_hamiltonian is None or self.current_hamiltonian.shape[0] != len(visit_counts):
             self.create_tree_hamiltonian(visit_counts, tree_structure)
@@ -638,7 +777,12 @@ class DecoherenceEngine:
         
         # Compute decoherence rate
         operators = DecoherenceOperators(self.config, self.device)
-        rates = operators.compute_decoherence_rates(visit_counts)
+        if self.config.version == 'v2':
+            # Extract Q values from diagonal of Hamiltonian for v2.0
+            q_values = self.current_hamiltonian.diag() if self.current_hamiltonian is not None else None
+            rates = operators.compute_decoherence_rates(visit_counts, self.total_simulations, q_values)
+        else:
+            rates = operators.compute_decoherence_rates(visit_counts)
         self.stats['decoherence_rate'] = rates.mean().item()
         
         return {
@@ -659,10 +803,11 @@ class DecoherenceEngine:
         self.current_hamiltonian = None
 
 
-# Factory function for easy instantiation
+# Factory functions for easy instantiation
 def create_decoherence_engine(
     device: Union[str, torch.device] = 'cuda',
     base_rate: float = 1.0,
+    version: str = 'v1',
     **kwargs
 ) -> DecoherenceEngine:
     """
@@ -671,6 +816,7 @@ def create_decoherence_engine(
     Args:
         device: Device for computation
         base_rate: Base decoherence rate λ
+        version: 'v1' or 'v2' for different formulations
         **kwargs: Override default config parameters
         
     Returns:
@@ -684,9 +830,66 @@ def create_decoherence_engine(
         'base_decoherence_rate': base_rate,
         'hbar': 1.0,
         'temperature': 1.0,
+        'version': version,
     }
+    
+    # Set v2-specific defaults
+    if version == 'v2':
+        config_dict.update({
+            'time_formulation': TimeFormulation.DISCRETE,
+            'temperature_mode': 'annealing',
+            'initial_temperature': 1.0,
+        })
+    
     config_dict.update(kwargs)
     
     config = DecoherenceConfig(**config_dict)
     
     return DecoherenceEngine(config, device)
+
+
+def create_decoherence_engine_v2(
+    device: Union[str, torch.device] = 'cuda',
+    c_puct: Optional[float] = None,
+    power_law_exponent: Optional[float] = None,
+    temperature_mode: str = 'annealing',
+    **kwargs
+) -> DecoherenceEngine:
+    """
+    Create v2.0 decoherence engine with power-law decay
+    
+    Args:
+        device: Device for computation
+        c_puct: PUCT constant for auto-computing parameters
+        power_law_exponent: Γ₀ for power-law decay (auto if None)
+        temperature_mode: 'fixed' or 'annealing'
+        **kwargs: Additional config overrides
+    """
+    v2_config = {
+        'c_puct': c_puct,
+        'power_law_exponent': power_law_exponent,
+        'temperature_mode': temperature_mode,
+    }
+    v2_config.update(kwargs)
+    
+    return create_decoherence_engine(
+        device=device,
+        version='v2',
+        **v2_config
+    )
+
+
+def create_decoherence_engine_v1(
+    device: Union[str, torch.device] = 'cuda',
+    base_rate: float = 1.0,
+    **kwargs
+) -> DecoherenceEngine:
+    """
+    Create v1.0 decoherence engine with exponential decay
+    """
+    return create_decoherence_engine(
+        device=device,
+        base_rate=base_rate,
+        version='v1',
+        **kwargs
+    )

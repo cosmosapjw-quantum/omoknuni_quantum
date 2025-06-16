@@ -24,7 +24,10 @@ import math
 from ..gpu.csr_tree import CSRTree, CSRTreeConfig
 from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig, GameType
 from ..gpu.unified_kernels import get_unified_kernels
-from ..quantum.quantum_features import QuantumConfig, create_quantum_mcts
+from ..quantum import (
+    QuantumConfig, UnifiedQuantumConfig, QuantumMCTSWrapper,
+    create_quantum_mcts, MCTSPhase
+)
 from .game_interface import GameInterface, GameType as LegacyGameType
 from .unified_mcts import UnifiedMCTS, UnifiedMCTSConfig
 from ..neural_networks.evaluator_pool import EvaluatorPool
@@ -56,22 +59,71 @@ class MCTSConfig:
     game_type: Union[GameType, LegacyGameType] = GameType.GOMOKU
     board_size: int = 15
     
-    # Quantum features - Full integration
+    # Quantum features - Full integration (v1 and v2)
     enable_quantum: bool = False
     quantum_config: Optional[QuantumConfig] = None
+    quantum_version: str = 'v2'  # 'v1' or 'v2'
     
-    def get_or_create_quantum_config(self) -> QuantumConfig:
+    # v2.0 specific quantum parameters
+    quantum_branching_factor: Optional[int] = None  # Auto-detect if None
+    quantum_avg_game_length: Optional[int] = None   # Auto-detect if None
+    enable_phase_adaptation: bool = True
+    envariance_threshold: float = 1e-3
+    envariance_check_interval: int = 1000
+    
+    def get_or_create_quantum_config(self) -> Union[QuantumConfig, UnifiedQuantumConfig]:
         """Get quantum config, creating default if needed"""
         if self.quantum_config is None:
-            self.quantum_config = QuantumConfig(
-                enable_quantum=self.enable_quantum,
-                min_wave_size=self.min_wave_size,
-                optimal_wave_size=self.max_wave_size,
-                device=self.device,
-                use_mixed_precision=self.use_mixed_precision,
-                fast_mode=True
-            )
+            if self.quantum_version == 'v2':
+                # Create v2 config
+                self.quantum_config = UnifiedQuantumConfig(
+                    version='v2',
+                    enable_quantum=self.enable_quantum,
+                    branching_factor=self.quantum_branching_factor or self._estimate_branching_factor(),
+                    avg_game_length=self.quantum_avg_game_length or self._estimate_game_length(),
+                    c_puct=self.c_puct,
+                    use_neural_prior=True,
+                    enable_phase_adaptation=self.enable_phase_adaptation,
+                    temperature_mode='annealing',
+                    envariance_threshold=self.envariance_threshold,
+                    min_wave_size=self.min_wave_size,
+                    optimal_wave_size=self.max_wave_size,
+                    device=self.device,
+                    use_mixed_precision=self.use_mixed_precision
+                )
+            else:
+                # Create v1 config
+                self.quantum_config = QuantumConfig(
+                    enable_quantum=self.enable_quantum,
+                    min_wave_size=self.min_wave_size,
+                    optimal_wave_size=self.max_wave_size,
+                    device=self.device,
+                    use_mixed_precision=self.use_mixed_precision,
+                    fast_mode=True
+                )
         return self.quantum_config
+    
+    def _estimate_branching_factor(self) -> int:
+        """Estimate branching factor based on game type"""
+        if self.game_type in [GameType.GOMOKU, LegacyGameType.GOMOKU]:
+            return self.board_size * self.board_size
+        elif self.game_type in [GameType.GO, LegacyGameType.GO]:
+            return self.board_size * self.board_size + 1  # +1 for pass
+        elif self.game_type in [GameType.CHESS, LegacyGameType.CHESS]:
+            return 35  # Average chess branching factor
+        else:
+            return 50  # Default estimate
+    
+    def _estimate_game_length(self) -> int:
+        """Estimate average game length based on game type"""
+        if self.game_type in [GameType.GOMOKU, LegacyGameType.GOMOKU]:
+            return self.board_size * self.board_size // 2
+        elif self.game_type in [GameType.GO, LegacyGameType.GO]:
+            return self.board_size * self.board_size * 2
+        elif self.game_type in [GameType.CHESS, LegacyGameType.CHESS]:
+            return 80  # Average chess game length
+        else:
+            return 100  # Default estimate
     
     # Virtual loss for leaf parallelization
     enable_virtual_loss: bool = True
@@ -238,22 +290,36 @@ class MCTS:
         
         # Initialize quantum features if enabled
         self.quantum_features = None
+        self.quantum_total_simulations = 0  # Track for v2.0
+        self.quantum_phase = MCTSPhase.QUANTUM  # Initial phase
+        self.envariance_check_counter = 0
+        
         if self.config.enable_quantum:
             quantum_config = self.config.get_or_create_quantum_config()
-            self.quantum_features = create_quantum_mcts(
-                enable_quantum=quantum_config.enable_quantum,
-                quantum_level=quantum_config.quantum_level,
-                hbar_eff=quantum_config.hbar_eff,
-                coupling_strength=quantum_config.coupling_strength,
-                temperature=quantum_config.temperature,
-                decoherence_rate=quantum_config.decoherence_rate,
-                min_wave_size=quantum_config.min_wave_size,
-                fast_mode=quantum_config.fast_mode,
-                device=quantum_config.device,
-                use_mixed_precision=quantum_config.use_mixed_precision
-            )
+            
+            if isinstance(quantum_config, UnifiedQuantumConfig):
+                # v2.0 with wrapper
+                self.quantum_features = QuantumMCTSWrapper(quantum_config)
+            else:
+                # Use the factory function which handles version detection
+                self.quantum_features = create_quantum_mcts(
+                    enable_quantum=quantum_config.enable_quantum,
+                    version=self.config.quantum_version,
+                    quantum_level=quantum_config.quantum_level,
+                    min_wave_size=quantum_config.min_wave_size,
+                    optimal_wave_size=quantum_config.optimal_wave_size,
+                    device=quantum_config.device,
+                    use_mixed_precision=quantum_config.use_mixed_precision,
+                    # v2 parameters if available
+                    branching_factor=self.config.quantum_branching_factor,
+                    avg_game_length=self.config.quantum_avg_game_length,
+                    enable_phase_adaptation=self.config.enable_phase_adaptation,
+                    envariance_threshold=self.config.envariance_threshold
+                )
+            
             if self.config.enable_debug_logging:
-                logger.info(f"Quantum features enabled with config: {quantum_config}")
+                logger.info(f"Quantum features enabled with version: {self.config.quantum_version}")
+                logger.info(f"Quantum config: {quantum_config}")
         
         # CUDA graph optimization
         self.cuda_graph = None
@@ -416,6 +482,24 @@ class MCTS:
             
             completed += wave_size
             
+            # Update quantum v2.0 state
+            if self.quantum_features and self.config.quantum_version == 'v2':
+                self.quantum_total_simulations = completed
+                
+                # Check envariance periodically
+                self.envariance_check_counter += wave_size
+                if (self.config.enable_phase_adaptation and 
+                    self.envariance_check_counter >= self.config.envariance_check_interval):
+                    
+                    if hasattr(self.quantum_features, 'check_convergence'):
+                        converged = self.quantum_features.check_convergence(self.tree)
+                        if converged:
+                            if self.config.enable_debug_logging:
+                                logger.info(f"Envariance convergence reached at {completed} simulations")
+                            break  # Early termination on convergence
+                    
+                    self.envariance_check_counter = 0
+            
             # Progressive root expansion every N simulations
             if completed % 1000 == 0 and completed < num_sims:
                 self._progressive_expand_root()
@@ -426,9 +510,16 @@ class MCTS:
         # Update internal statistics
         self.stats_internal['tree_nodes'] = self.tree.num_nodes
         
+        # Add quantum v2.0 statistics
+        if self.quantum_features and hasattr(self.quantum_features, 'get_phase_info'):
+            phase_info = self.quantum_features.get_phase_info()
+            self.stats_internal.update(phase_info)
+        
         if self.config.enable_debug_logging:
-            logger.info(f"Search complete: {num_sims} sims")
+            logger.info(f"Search complete: {completed} sims (requested: {num_sims})")
             logger.info(f"Tree size: {self.tree.num_nodes} nodes")
+            if self.quantum_features and self.config.quantum_version == 'v2':
+                logger.info(f"Quantum phase: {self.stats_internal.get('current_phase', 'unknown')}")
         
         return policy
     
@@ -620,14 +711,69 @@ class MCTS:
                 # Prepare quantum parameters if enabled
                 quantum_params = {}
                 if self.quantum_features:
-                    quantum_params = {
-                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
-                        'uncertainty_table': getattr(self.quantum_features, 'uncertainty_table', torch.empty(0, device=self.device)),
-                        'hbar_eff': self.quantum_features.config.hbar_eff,
-                        'phase_kick_strength': self.quantum_features.config.phase_kick_strength,
-                        'interference_alpha': self.quantum_features.config.interference_alpha,
-                        'enable_quantum': True
-                    }
+                    # Get quantum parameters from the implementation
+                    if hasattr(self.quantum_features, 'impl') and hasattr(self.quantum_features.impl, 'config'):
+                        # Wrapped version
+                        impl = self.quantum_features.impl
+                        impl_config = impl.config
+                        
+                        # For v2.0, use pre-computed tables and cached phase config
+                        if self.config.quantum_version == 'v2' and hasattr(impl, '_current_phase_config'):
+                            phase_config = impl._current_phase_config
+                            
+                            # Compute hbar_eff using pre-computed factors
+                            if hasattr(impl, 'hbar_factors') and self.quantum_total_simulations < len(impl.hbar_factors):
+                                hbar_eff = self.config.c_puct * impl.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
+                            else:
+                                hbar_eff = 0.1  # fallback
+                            
+                            quantum_params = {
+                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                'uncertainty_table': getattr(impl, 'decoherence_table', torch.empty(0, device=self.device)),
+                                'hbar_eff': hbar_eff,
+                                'phase_kick_strength': phase_config.get('interference_strength', 0.1),
+                                'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
+                                'enable_quantum': True
+                            }
+                        else:
+                            # v1.0 parameters
+                            quantum_params = {
+                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                'uncertainty_table': getattr(impl, 'uncertainty_table', torch.empty(0, device=self.device)),
+                                'hbar_eff': getattr(impl_config, 'hbar_eff', 0.1),
+                                'phase_kick_strength': getattr(impl_config, 'phase_kick_strength', 0.1),
+                                'interference_alpha': getattr(impl_config, 'interference_alpha', 0.05),
+                                'enable_quantum': True
+                            }
+                    else:
+                        # Direct implementation
+                        if self.config.quantum_version == 'v2' and hasattr(self.quantum_features, '_current_phase_config'):
+                            phase_config = self.quantum_features._current_phase_config
+                            
+                            # Compute hbar_eff using pre-computed factors
+                            if hasattr(self.quantum_features, 'hbar_factors') and self.quantum_total_simulations < len(self.quantum_features.hbar_factors):
+                                hbar_eff = self.config.c_puct * self.quantum_features.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
+                            else:
+                                hbar_eff = 0.1  # fallback
+                                
+                            quantum_params = {
+                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                'uncertainty_table': getattr(self.quantum_features, 'decoherence_table', torch.empty(0, device=self.device)),
+                                'hbar_eff': hbar_eff,
+                                'phase_kick_strength': phase_config.get('interference_strength', 0.1),
+                                'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
+                                'enable_quantum': True
+                            }
+                        else:
+                            # v1.0 parameters
+                            quantum_params = {
+                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                'uncertainty_table': getattr(self.quantum_features, 'uncertainty_table', torch.empty(0, device=self.device)),
+                                'hbar_eff': getattr(self.quantum_features.config, 'hbar_eff', 0.1),
+                                'phase_kick_strength': getattr(self.quantum_features.config, 'phase_kick_strength', 0.1),
+                                'interference_alpha': getattr(self.quantum_features.config, 'interference_alpha', 0.05),
+                                'enable_quantum': True
+                            }
                 
                 # The tree method handles CSR consistency internally
                 selected_actions, _ = self.tree.batch_select_ucb_optimized(
@@ -653,13 +799,26 @@ class MCTS:
                 # Apply quantum features to selection if enabled
                 if self.quantum_features:
                     try:
-                        ucb_scores = self.quantum_features.apply_quantum_to_selection(
-                            q_values=q_values,
-                            visit_counts=visit_counts,
-                            priors=priors_tensor,
-                            c_puct=self.config.c_puct,
-                            parent_visits=parent_visits
-                        )
+                        # For v2.0, pass additional parameters
+                        if hasattr(self.quantum_features, 'version') or isinstance(self.quantum_features, QuantumMCTSWrapper):
+                            ucb_scores = self.quantum_features.apply_quantum_to_selection(
+                                q_values=q_values,
+                                visit_counts=visit_counts,
+                                priors=priors_tensor,
+                                c_puct=self.config.c_puct,
+                                total_simulations=self.quantum_total_simulations,
+                                parent_visit=parent_visits.squeeze(1).max().item(),
+                                is_root=(active_nodes[0] == 0).item() if len(active_nodes) > 0 else False
+                            )
+                        else:
+                            # v1.0 interface
+                            ucb_scores = self.quantum_features.apply_quantum_to_selection(
+                                q_values=q_values,
+                                visit_counts=visit_counts,
+                                priors=priors_tensor,
+                                c_puct=self.config.c_puct,
+                                parent_visits=parent_visits
+                            )
                     except Exception as e:
                         if self.config.enable_debug_logging:
                             logger.warning(f"Quantum selection failed, using classical: {e}")
@@ -884,11 +1043,14 @@ class MCTS:
         # Apply quantum corrections if enabled
         if self.quantum_features:
             try:
-                enhanced_values, _ = self.quantum_features.apply_quantum_to_evaluation(
-                    values=values,
-                    policies=policies
-                )
-                values = enhanced_values
+                # v2.0 doesn't modify evaluation directly, only selection
+                # But we can still apply corrections if the method exists
+                if hasattr(self.quantum_features, 'apply_quantum_to_evaluation'):
+                    enhanced_values, _ = self.quantum_features.apply_quantum_to_evaluation(
+                        values=values,
+                        policies=policies
+                    )
+                    values = enhanced_values
             except Exception as e:
                 if self.config.enable_debug_logging:
                     logger.warning(f"Quantum evaluation failed, using classical: {e}")
@@ -1386,6 +1548,11 @@ class MCTS:
         # Run benchmark
         start_time = time.time()
         searches = []
+        
+        # Reset quantum state for fair benchmark
+        if self.quantum_features:
+            self.quantum_total_simulations = 0
+            self.envariance_check_counter = 0
         
         while time.time() - start_time < duration:
             search_start = time.perf_counter()

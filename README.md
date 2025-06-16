@@ -33,10 +33,17 @@ pip install -e .
 ### Training a Model
 
 ```bash
-cd python
-python -m mcts.neural_networks.unified_training_pipeline \
-    --config ../configs/gomoku_classical.yaml
+# Start new training
+python train.py --game gomoku --iterations 100 --workers 8
+
+# Resume from checkpoint
+python train.py --resume experiments/gomoku_unified_training/checkpoints/latest_checkpoint.pt --iterations 50
+
+# With custom config
+python train.py --config configs/gomoku_classical.yaml
 ```
+
+See [docs/resume-training-guide.md](docs/resume-training-guide.md) for detailed training and resume options.
 
 ### Running Self-Play
 
