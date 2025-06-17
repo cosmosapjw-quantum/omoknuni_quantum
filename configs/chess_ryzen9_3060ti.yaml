@@ -29,7 +29,7 @@ mcts:
   virtual_loss: 3.0
   
   # Memory settings - Conservative for 8GB VRAM with chess complexity
-  memory_pool_size_mb: 2048   # 2GB - safe for 8GB VRAM
+  memory_pool_size_mb: 1536   # Optimized for RTX 3060 Ti stability
   max_tree_nodes: 400000      # Slightly less for chess's higher branching
   tree_reuse: true
   tree_reuse_fraction: 0.5

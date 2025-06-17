@@ -294,6 +294,17 @@ class ArenaManager:
                 if hasattr(evaluator2, 'model') and hasattr(evaluator2.model, 'forward'):
                     _ = evaluator2.model(dummy_state)
                 torch.cuda.synchronize()
+                
+            # Pre-compile CUDA kernels to avoid JIT compilation during games
+            try:
+                from mcts.gpu.unified_kernels import get_unified_kernels
+                logger.debug("Pre-loading CUDA kernels for arena...")
+                kernels = get_unified_kernels('cuda')
+                # Force compilation by calling a simple operation
+                if kernels and hasattr(kernels, 'compile'):
+                    kernels.compile()
+            except Exception as e:
+                logger.debug(f"Could not pre-compile CUDA kernels: {e}")
         
         # Progress bar
         disable_progress = silent or logger.level > logging.INFO or not self.arena_config.use_progress_bar
@@ -729,8 +740,12 @@ class ArenaManager:
             
             # Memory and optimization - reduced for arena to prevent GPU OOM
             # Arena typically runs fewer simulations and doesn't need huge trees
-            memory_pool_size_mb=min(256, self.config.mcts.memory_pool_size_mb // 4),
-            max_tree_nodes=min(10000, self.config.mcts.max_tree_nodes // 10),  # Much smaller
+            memory_pool_size_mb=min(384, self.config.mcts.memory_pool_size_mb // 4),
+            # Ensure tree has at least 4x wave size to prevent deadlock
+            max_tree_nodes=max(
+                self.config.mcts.max_wave_size * 4,  # At least 4x wave size
+                min(50000, self.config.mcts.max_tree_nodes // 8)  # But still smaller than self-play
+            ),
             use_mixed_precision=self.config.mcts.use_mixed_precision,
             use_cuda_graphs=False,  # Disable CUDA graphs to save memory in arena
             use_tensor_cores=self.config.mcts.use_tensor_cores,

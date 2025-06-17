@@ -135,10 +135,12 @@ def _load_kernels():
                 try:
                     from torch.utils.cpp_extension import load
                     logger.info("Compiling CUDA kernels (this may take a minute)...")
+                    # Set GCC 12 as host compiler
+                    os.environ['CUDAHOSTCXX'] = 'g++-12'
                     module = load(
                         name='mcts_cuda_kernels',
                         sources=[str(cuda_source)],
-                        extra_cuda_cflags=['-O3', '--use_fast_math'],
+                        extra_cuda_cflags=['-O3', '--use_fast_math', '-ccbin', 'g++-12'],
                         verbose=False
                     )
                     _UNIFIED_KERNELS = module

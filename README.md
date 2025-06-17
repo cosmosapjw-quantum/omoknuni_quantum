@@ -10,6 +10,45 @@ High-performance AlphaZero implementation achieving **168k+ simulations/second**
 - **Production Ready**: Full training pipeline with self-play, arena, and ELO tracking
 - **GPU Optimized**: CUDA kernels, mixed precision, and tensor cores support
 
+## System Requirements
+
+### Software Requirements
+
+- **Operating System**: Ubuntu 22.04/24.04 on WSL2 (Windows 11)
+- **CUDA**: 12.2 (via NVIDIA Studio Driver 537.42 for WSL2 compatibility)
+- **PyTorch**: 2.0+ with CUDA 12.1 support
+- **GCC**: 12.x (required for CUDA compatibility, GCC 13+ not supported by CUDA 12.2)
+- **Python**: 3.8+
+- **CMake**: 3.12+
+- **Ninja**: Recommended for faster builds
+
+### WSL2 CUDA Setup
+
+This project is optimized for WSL2 with specific driver requirements:
+
+```bash
+# On Windows host:
+# Install NVIDIA Studio Driver 537.42 (critical for WSL2 CUDA stability)
+# This specific version avoids common WSL2 CUDA issues
+# Download from: https://www.nvidia.com/download/driverResults.aspx/208074/
+
+# In WSL2:
+# Verify CUDA is available
+nvidia-smi  # Should show your GPU
+
+# Install required dependencies
+sudo apt update
+sudo apt install g++-12 gcc-12 build-essential cmake ninja-build
+
+# Install CUDA Toolkit 12.2 (if not already installed)
+# Follow: https://developer.nvidia.com/cuda-12-2-2-download-archive
+
+# Set up CUDA environment (automatic with our setup)
+source cuda_config.sh
+```
+
+**Note**: NVIDIA Studio Driver 537.42 is specifically recommended for WSL2 as newer drivers may cause CUDA initialization issues.
+
 ## Quick Start
 
 ### Installation
@@ -18,6 +57,9 @@ High-performance AlphaZero implementation achieving **168k+ simulations/second**
 # Clone repository
 git clone https://github.com/yourusername/omoknuni_quantum.git
 cd omoknuni_quantum
+
+# Set up CUDA environment for GCC 12
+source cuda_config.sh
 
 # Build C++ components
 mkdir build && cd build
@@ -28,6 +70,23 @@ cd ..
 # Install Python package
 cd python
 pip install -e .
+
+# Compile CUDA kernels (automatic fallback if this fails)
+python compile_kernels.py
+```
+
+### Troubleshooting CUDA Compilation
+
+If you encounter GCC version errors during CUDA kernel compilation:
+
+```bash
+# The project automatically uses GCC 12, but if issues persist:
+export CUDAHOSTCXX=g++-12
+export NVCC_APPEND_FLAGS="-ccbin g++-12"
+
+# Verify correct GCC version is being used
+g++-12 --version  # Should show GCC 12.x
+nvcc --version    # Should show CUDA 12.2
 ```
 
 ### Training a Model
@@ -131,6 +190,14 @@ config = MCTSConfig(
 | RTX 3060 Ti | 168,000+ | Wave size: 3072, Mixed precision |
 | RTX 3090 | 250,000+ | Wave size: 4096, Mixed precision |
 | RTX 4090 | 400,000+ | Wave size: 8192, Mixed precision |
+
+### Test Environment
+- **OS**: Windows 11 with WSL2 (Ubuntu 24.04)
+- **CPU**: AMD Ryzen 9 5900X (12 cores / 24 threads)
+- **RAM**: 64GB DDR4
+- **GPU**: RTX 3060 Ti (8GB VRAM)
+- **CUDA**: 12.2 with NVIDIA Studio Driver 537.42
+- **PyTorch**: 2.0+ with CUDA 12.1 support
 
 ## Project Structure
 

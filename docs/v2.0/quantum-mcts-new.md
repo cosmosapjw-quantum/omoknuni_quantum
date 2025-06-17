@@ -464,7 +464,7 @@ Envariance means:
 
 Information about optimal moves spreads redundantly through the tree:
 
-$$R_\delta(N) = \frac{\text{# fragments with move info}}{\text{total # fragments}}$$
+$$R_\delta(N) = \frac{\text{\# fragments with move info}}{\text{total \# fragments}}$$
 
 ### 11.2 Scaling in Discrete Time
 

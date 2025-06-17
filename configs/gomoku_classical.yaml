@@ -30,8 +30,8 @@ mcts:
   virtual_loss: 3.0
   
   # Memory and optimization
-  memory_pool_size_mb: 2048   # Reduced to 2GB for safety
-  max_tree_nodes: 500000      # Reduced to fit in VRAM comfortably
+  memory_pool_size_mb: 1536   # Optimized for RTX 3060 Ti stability
+  max_tree_nodes: 400000      # Reduced for better memory headroom
   tree_reuse: true
   tree_reuse_fraction: 0.5
   
@@ -130,7 +130,7 @@ training:
   
   # Self-play - Utilizing 12 cores/24 threads
   num_games_per_iteration: 120
-  num_workers: 8
+  num_workers: 12  # Match CPU cores for optimal utilization
   max_moves_per_game: 225
   resign_threshold: -0.95
   resign_check_moves: 10
@@ -141,7 +141,7 @@ training:
   sample_weight_by_game_length: true
   augment_data: true
   shuffle_buffer_size: 20000  # Larger shuffle buffer
-  dataloader_workers: 8  # Utilize CPU threads
+  dataloader_workers: 12  # Utilize CPU threads
   pin_memory: true
   persistent_workers: true  # Keep workers alive
   
@@ -163,7 +163,7 @@ training:
 arena:
   # Battle settings - Utilizing multi-core CPU
   num_games: 120
-  num_workers: 8
+  num_workers: 12
   win_threshold: 0.55
   statistical_significance: true
   confidence_level: 0.95
@@ -192,7 +192,7 @@ arena:
   tournament_games_per_pair: 10
   
   # Data saving
-  save_game_records: false
+  save_game_records: true
   save_arena_logs: true
   arena_log_dir: arena_logs
   elo_save_path: elo_ratings.json

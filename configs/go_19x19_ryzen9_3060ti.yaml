@@ -99,7 +99,7 @@ training:
   
   # Self-play - Limited for Go complexity
   num_games_per_iteration: 100  # Fewer games
-  num_workers: 8  # Less workers to avoid memory issues
+  num_workers: 10  # Increased but conservative for Go's memory needs
   # games_per_worker: auto-calculated based on num_games / num_workers
   max_moves_per_game: 400  # Long Go games
   resign_threshold: -0.95

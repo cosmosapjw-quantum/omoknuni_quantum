@@ -553,6 +553,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         '-use_fast_math',
         '--expt-relaxed-constexpr',
         '-gencode', f'arch={arch},code={code}',  # Only compile for current GPU
+        '-ccbin', 'g++-12',  # Use GCC 12 as host compiler
     ]
     
     try:
@@ -567,6 +568,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         import os
         os.environ['TORCH_CUDA_ARCH_LIST'] = f'{capability[0]}.{capability[1]}'
         os.environ['MAX_JOBS'] = '4'  # Limit parallel jobs
+        os.environ['CUDAHOSTCXX'] = 'g++-12'  # Use GCC 12 as host compiler
         
         # Load and compile
         custom_cuda_ops = load(
@@ -723,6 +725,7 @@ def compile_cuda_kernels(force_rebuild=False, verbose=False):
             # Set environment to suppress warnings
             env = os.environ.copy()
             env['PYTHONWARNINGS'] = 'ignore'
+            env['CUDAHOSTCXX'] = 'g++-12'  # Use GCC 12 as host compiler
             
             result = subprocess.run(
                 cmd,

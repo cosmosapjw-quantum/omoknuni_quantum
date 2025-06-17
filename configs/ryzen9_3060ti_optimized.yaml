@@ -35,8 +35,8 @@ mcts:
   virtual_loss: 3.0  # Positive value (will be negated internally)
   
   # Memory settings - Optimized for 8GB VRAM with headroom
-  memory_pool_size_mb: 2048   # 2GB - safe for 8GB VRAM
-  max_tree_nodes: 500000      # 500k nodes - fits comfortably in VRAM
+  memory_pool_size_mb: 1536   # Optimized for RTX 3060 Ti stability
+  max_tree_nodes: 400000      # Optimized for better memory headroom
   tree_reuse: true
   tree_reuse_fraction: 0.5
   

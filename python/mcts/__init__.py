@@ -8,6 +8,12 @@ for achieving high-performance game AI on consumer hardware.
 __version__ = "0.2.0"
 __author__ = "Omoknuni Team"
 
+# Setup CUDA environment before any torch imports
+try:
+    from . import cuda_setup
+except ImportError:
+    pass  # cuda_setup is optional
+
 # Core components
 from .core import (
     GameInterface, GameType,
