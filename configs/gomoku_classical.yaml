@@ -169,7 +169,7 @@ arena:
   confidence_level: 0.95
   
   # Game settings
-  temperature: 0.1
+  temperature: 0.0
   mcts_simulations: 800
   c_puct: 1.0
   max_moves: 225
