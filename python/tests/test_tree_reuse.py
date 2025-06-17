@@ -110,8 +110,7 @@ class TestTreeReuse:
             memory_pool_size_mb=0,  # Disable memory pool
             max_tree_nodes=mcts_config.max_tree_nodes,
             device=mcts_config.device,
-            game_type=mcts_config.game_type,
-            use_optimized_implementation=False
+            game_type=mcts_config.game_type
         )
         mcts_no_reuse = MCTS(config_no_reuse, evaluator)
         

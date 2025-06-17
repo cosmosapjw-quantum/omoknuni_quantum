@@ -44,7 +44,7 @@ class TestMCTS:
         assert mcts.evaluator == evaluator
         assert mcts.config == config
         # Check implementation is initialized
-        assert hasattr(mcts, 'using_optimized') or hasattr(mcts, 'unified_mcts')
+        assert hasattr(mcts, 'tree')  # Optimized implementation always uses tree
         
     def test_search_from_position(self):
         """Test running MCTS search from a position"""

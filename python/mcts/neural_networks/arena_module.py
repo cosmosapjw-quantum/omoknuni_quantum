@@ -38,7 +38,7 @@ class ArenaConfig:
     num_games: int = 40
     win_threshold: float = 0.55
     num_workers: int = 4
-    mcts_simulations: int = 400
+    mcts_simulations: int = 200  # Reduced for faster arena matches
     c_puct: float = 1.0
     temperature: float = 0.0
     temperature_threshold: int = 0
@@ -284,7 +284,6 @@ class ArenaManager:
         
         # Warm up neural networks to trigger CUDA compilation before arena starts
         if not silent and torch.cuda.is_available():
-            logger.debug("Warming up neural networks for CUDA compilation...")
             dummy_state = torch.randn(1, 20, self.config.game.board_size, 
                                      self.config.game.board_size, device=self.arena_config.device)
             with torch.no_grad():
@@ -320,21 +319,23 @@ class ArenaManager:
                         result = self._play_single_game(evaluator1, evaluator2, game_idx)
                     else:
                         result = -self._play_single_game(evaluator2, evaluator1, game_idx)
-                
-                if result > 0:
-                    wins += 1
-                elif result < 0:
-                    losses += 1
-                else:
-                    draws += 1
-                
-                pbar.update(1)
-                pbar.set_postfix({
-                    'W': wins,
-                    'D': draws,
-                    'L': losses,
-                    'WR': f'{wins/(wins+draws+losses):.1%}'
-                })
+                    
+                    # Count result
+                    if result > 0:
+                        wins += 1
+                    elif result < 0:
+                        losses += 1
+                    else:
+                        draws += 1
+                    
+                    # Update progress
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        'W': wins,
+                        'D': draws,
+                        'L': losses,
+                        'WR': f'{wins/(wins+draws+losses):.1%}'
+                    })
         
         # Clean up evaluators if we created them
         if created_evaluator1:
@@ -623,16 +624,14 @@ class ArenaManager:
                     temp = 0.0
                 
                 # Clear MCTS tree before search to ensure fresh state
-                current_mcts.clear()
+                if hasattr(current_mcts, 'reset_tree'):
+                    current_mcts.reset_tree()
+                elif hasattr(current_mcts, 'clear'):
+                    current_mcts.clear()
                 
                 # Run MCTS search
                 with torch.no_grad():  # Ensure no gradients are tracked
-                    search_start = time.time()
                     policy = current_mcts.search(state, num_simulations=self.arena_config.mcts_simulations)
-                    search_time = time.time() - search_start
-                    
-                    if game_idx < 3 and move_num < 5:
-                        logger.debug(f"[ARENA] Game {game_idx}, Move {move_num} - MCTS search took {search_time:.3f}s")
                 
                 if temp == 0:
                     # Deterministic - choose best action
@@ -738,14 +737,11 @@ class ArenaManager:
             max_wave_size=self.config.mcts.max_wave_size,
             adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
             
-            # Memory and optimization - reduced for arena to prevent GPU OOM
-            # Arena typically runs fewer simulations and doesn't need huge trees
-            memory_pool_size_mb=min(384, self.config.mcts.memory_pool_size_mb // 4),
-            # Ensure tree has at least 4x wave size to prevent deadlock
-            max_tree_nodes=max(
-                self.config.mcts.max_wave_size * 4,  # At least 4x wave size
-                min(50000, self.config.mcts.max_tree_nodes // 8)  # But still smaller than self-play
-            ),
+            # Memory and optimization - optimized for arena performance
+            # Arena needs balanced memory allocation for good performance
+            memory_pool_size_mb=min(768, self.config.mcts.memory_pool_size_mb // 3),
+            # Tree nodes - arena games are typically shorter, so we can use fewer nodes
+            max_tree_nodes=min(25000, self.config.mcts.max_tree_nodes // 4),
             use_mixed_precision=self.config.mcts.use_mixed_precision,
             use_cuda_graphs=False,  # Disable CUDA graphs to save memory in arena
             use_tensor_cores=self.config.mcts.use_tensor_cores,

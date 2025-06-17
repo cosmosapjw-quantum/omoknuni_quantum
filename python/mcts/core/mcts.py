@@ -29,7 +29,6 @@ from ..quantum import (
     create_quantum_mcts, MCTSPhase
 )
 from .game_interface import GameInterface, GameType as LegacyGameType
-from .unified_mcts import UnifiedMCTS, UnifiedMCTSConfig
 from ..neural_networks.evaluator_pool import EvaluatorPool
 from ..neural_networks.simple_evaluator_wrapper import SimpleEvaluatorWrapper
 
@@ -149,7 +148,6 @@ class MCTSConfig:
     cache_features: bool = True
     use_zobrist_hashing: bool = True
     tree_batch_size: int = 1024
-    use_optimized_implementation: bool = True
     
     # Debug options
     enable_debug_logging: bool = False
@@ -182,7 +180,6 @@ class MCTS:
     
     This implementation automatically selects between:
     - OptimizedMCTS for maximum performance (default)
-    - UnifiedMCTS for compatibility mode
     
     Achieves 80k-200k simulations/second through GPU vectorization.
     """
@@ -213,11 +210,8 @@ class MCTS:
         if hasattr(self.evaluator, '_return_torch_tensors'):
             self.evaluator._return_torch_tensors = True
         
-        # Use optimized implementation for best performance
-        if config.use_optimized_implementation:
-            self._init_optimized_mcts()
-        else:
-            self._init_unified_mcts()
+        # Initialize optimized MCTS
+        self._init_optimized_mcts()
             
         # Create game interface if needed (for cached_game compatibility)
         if game_interface is None:
@@ -327,38 +321,9 @@ class MCTS:
             self._setup_cuda_graphs()
             
         # Mark that we're using optimized implementation
-        self.using_optimized = True
-        self.unified_mcts = None
         
         logger.debug("Using OptimizedMCTS implementation for maximum performance")
         
-    def _init_unified_mcts(self):
-        """Initialize unified MCTS implementation for compatibility"""
-        # Convert to UnifiedMCTSConfig
-        unified_config = UnifiedMCTSConfig(
-            num_simulations=self.config.num_simulations,
-            c_puct=self.config.c_puct,
-            temperature=self.config.temperature,
-            dirichlet_alpha=self.config.dirichlet_alpha,
-            dirichlet_epsilon=self.config.dirichlet_epsilon,
-            wave_size=self.config.wave_size,
-            min_wave_size=self.config.min_wave_size,
-            max_wave_size=self.config.max_wave_size,
-            device=self.config.device,
-            game_type=self.config.game_type,
-            board_size=self.config.board_size,
-            enable_quantum=self.config.enable_quantum,
-            quantum_config=self.config.quantum_config,
-            enable_virtual_loss=self.config.enable_virtual_loss,
-            virtual_loss_value=-abs(self.config.virtual_loss)  # Ensure negative value
-        )
-        
-        # Create unified MCTS
-        self.unified_mcts = UnifiedMCTS(unified_config, self.evaluator)
-        self.using_optimized = False
-        
-        logger.debug("Using UnifiedMCTS implementation for compatibility")
-    
     def _allocate_buffers(self):
         """Pre-allocate all work buffers for zero allocation during search"""
         ws = self.config.max_wave_size
@@ -451,11 +416,8 @@ class MCTS:
             
         search_start = time.perf_counter()
         
-        # Run search using appropriate implementation
-        if self.using_optimized:
-            policy = self._search_optimized(state, num_simulations)
-        else:
-            policy = self.unified_mcts.search(state, num_simulations)
+        # Run search using optimized implementation
+        policy = self._search_optimized(state, num_simulations)
         
         # Update statistics
         elapsed = time.perf_counter() - search_start
@@ -475,11 +437,7 @@ class MCTS:
         self.stats['last_search_sims_per_second'] = sims_per_sec
         
         # Merge statistics from implementation
-        if self.using_optimized:
-            self.stats.update(self.stats_internal)
-        else:
-            unified_stats = self.unified_mcts.get_statistics()
-            self.stats.update(unified_stats)
+        self.stats.update(self.stats_internal)
         
         return policy
         
@@ -1438,23 +1396,21 @@ class MCTS:
         """
         stats = self.stats.copy()
         
-        # Add implementation-specific stats
-        if self.using_optimized:
-            # Add tree statistics
-            if hasattr(self.tree, 'get_stats'):
-                tree_stats = self.tree.get_stats()
-                stats['tree_nodes'] = tree_stats.get('nodes', 0)
-                stats['tree_edges'] = tree_stats.get('edges', 0)
-                stats['tree_memory_mb'] = tree_stats.get('total_mb', 0)
-                stats['memory_reallocations'] = tree_stats.get('memory_reallocations', 0)
-                stats['edge_utilization'] = tree_stats.get('edge_utilization', 0)
-            
-            # Add state pool usage
-            stats['state_pool_usage'] = (~self.state_pool_free).sum().item() / len(self.state_pool_free)
-            
-            # Add kernel timings if profiling
-            if self.kernel_timings:
-                stats.update({f'kernel_{k}': v for k, v in self.kernel_timings.items()})
+        # Add tree statistics
+        if hasattr(self.tree, 'get_stats'):
+            tree_stats = self.tree.get_stats()
+            stats['tree_nodes'] = tree_stats.get('nodes', 0)
+            stats['tree_edges'] = tree_stats.get('edges', 0)
+            stats['tree_memory_mb'] = tree_stats.get('total_mb', 0)
+            stats['memory_reallocations'] = tree_stats.get('memory_reallocations', 0)
+            stats['edge_utilization'] = tree_stats.get('edge_utilization', 0)
+        
+        # Add state pool usage
+        stats['state_pool_usage'] = (~self.state_pool_free).sum().item() / len(self.state_pool_free)
+        
+        # Add kernel timings if profiling
+        if self.kernel_timings:
+            stats.update({f'kernel_{k}': v for k, v in self.kernel_timings.items()})
         
         # GPU memory usage
         if torch.cuda.is_available():
@@ -1465,19 +1421,18 @@ class MCTS:
     
     def optimize_for_hardware(self):
         """Auto-optimize settings based on hardware"""
-        if self.using_optimized:
-            if torch.cuda.is_available():
-                # Enable TensorCore operations
-                torch.backends.cudnn.allow_tf32 = self.config.use_tensor_cores
-                torch.backends.cuda.matmul.allow_tf32 = self.config.use_tensor_cores
-                
-                # Set optimal number of threads
-                torch.set_num_threads(1)  # Avoid CPU bottlenecks
-                
-                if self.config.enable_debug_logging:
-                    logger.info("Hardware optimization applied")
-                    logger.info(f"TensorCores: {self.config.use_tensor_cores}")
-                    logger.info(f"Mixed precision: {self.config.use_mixed_precision}")
+        if torch.cuda.is_available():
+            # Enable TensorCore operations
+            torch.backends.cudnn.allow_tf32 = self.config.use_tensor_cores
+            torch.backends.cuda.matmul.allow_tf32 = self.config.use_tensor_cores
+            
+            # Set optimal number of threads
+            torch.set_num_threads(1)  # Avoid CPU bottlenecks
+            
+            if self.config.enable_debug_logging:
+                logger.info("Hardware optimization applied")
+                logger.info(f"TensorCores: {self.config.use_tensor_cores}")
+                logger.info(f"Mixed precision: {self.config.use_mixed_precision}")
         
         # Auto-adjust wave sizes if adaptive
         if torch.cuda.is_available() and self.config.adaptive_wave_sizing:
@@ -1515,22 +1470,19 @@ class MCTS:
     
     def reset_tree(self):
         """Reset the search tree for a new game or position"""
-        if self.using_optimized:
-            # Reset tree and state pool
-            self.tree = CSRTree(CSRTreeConfig(
-                max_nodes=self.config.max_tree_nodes,
-                max_edges=self.config.max_tree_nodes * self.config.max_children_per_node,
-                device=self.config.device,
-                enable_virtual_loss=self.config.enable_virtual_loss,
-                virtual_loss_value=-abs(self.config.virtual_loss),
-                batch_size=self.config.max_wave_size,
-                enable_batched_ops=True
-            ))
-            self.node_to_state.fill_(-1)
-            self.state_pool_free.fill_(True)
-            self.state_pool_next = 0
-        elif self.unified_mcts and hasattr(self.unified_mcts, 'reset_tree'):
-            self.unified_mcts.reset_tree()
+        # Reset tree and state pool
+        self.tree = CSRTree(CSRTreeConfig(
+            max_nodes=self.config.max_tree_nodes,
+            max_edges=self.config.max_tree_nodes * self.config.max_children_per_node,
+            device=self.config.device,
+            enable_virtual_loss=self.config.enable_virtual_loss,
+            virtual_loss_value=-abs(self.config.virtual_loss),
+            batch_size=self.config.max_wave_size,
+            enable_batched_ops=True
+        ))
+        self.node_to_state.fill_(-1)
+        self.state_pool_free.fill_(True)
+        self.state_pool_next = 0
         logger.debug("Reset search tree")
     
     def get_root_value(self) -> float:
@@ -1539,18 +1491,11 @@ class MCTS:
         Returns:
             The average value of the root node from MCTS perspective
         """
-        if self.using_optimized:
-            # For optimized implementation, root is always node 0
-            if self.tree.visit_counts[0] > 0:
-                return float(self.tree.value_sums[0] / self.tree.visit_counts[0])
-            else:
-                return 0.0
-        elif self.unified_mcts and hasattr(self.unified_mcts, 'tree'):
-            # For unified MCTS
-            if hasattr(self.unified_mcts.tree, 'visit_counts') and hasattr(self.unified_mcts.tree, 'value_sums'):
-                if self.unified_mcts.tree.visit_counts[0] > 0:
-                    return float(self.unified_mcts.tree.value_sums[0] / self.unified_mcts.tree.visit_counts[0])
-        return 0.0
+        # For optimized implementation, root is always node 0
+        if self.tree.visit_counts[0] > 0:
+            return float(self.tree.value_sums[0] / self.tree.visit_counts[0])
+        else:
+            return 0.0
     
     def run_benchmark(self, state: Any, duration: float = 10.0) -> Dict[str, Any]:
         """Run performance benchmark

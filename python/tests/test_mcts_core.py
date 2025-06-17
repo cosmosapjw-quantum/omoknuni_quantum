@@ -168,19 +168,10 @@ class TestMCTSInitialization:
         config.use_optimized_implementation = True
         mcts = MCTS(config, evaluator)
         
-        assert mcts.using_optimized == True
         assert mcts.tree is not None
         assert isinstance(mcts.tree, CSRTree)
         assert mcts.game_states is not None
-        assert mcts.unified_mcts is None
     
-    def test_unified_initialization(self, config, evaluator):
-        """Test unified MCTS initialization"""
-        config.use_optimized_implementation = False
-        mcts = MCTS(config, evaluator)
-        
-        assert mcts.using_optimized == False
-        assert mcts.unified_mcts is not None
     
     def test_evaluator_tensor_mode(self, config):
         """Test that evaluator is configured for tensor mode"""

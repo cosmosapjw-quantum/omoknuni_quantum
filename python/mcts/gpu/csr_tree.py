@@ -1112,9 +1112,10 @@ class CSRTree:
                         # Single best action
                         best_indices[i] = max_indices[0]
             
-            # Gather selected actions and scores
+            # Return position indices, not parent actions
+            # The "action" to take is the position index in the children array
             batch_indices = torch.arange(batch_size, device=self.device)
-            selected_actions = batch_actions[batch_indices, best_indices]
+            selected_actions = best_indices.to(torch.int32)  # Position indices are the actions
             selected_scores = ucb_scores[batch_indices, best_indices]
             
             # Fix nodes with no children
@@ -1125,11 +1126,14 @@ class CSRTree:
         return selected_actions, selected_scores
         
     def batch_action_to_child(self, node_indices: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-        """Convert actions to child node indices (FULLY VECTORIZED - 20x faster)
+        """Convert position indices to child node indices (FULLY VECTORIZED - 20x faster)
+        
+        The 'actions' parameter represents position indices in the children array,
+        not game actions. This matches the output from batch_select_ucb_optimized.
         
         Args:
             node_indices: (batch_size,) tensor of parent node indices
-            actions: (batch_size,) tensor of actions
+            actions: (batch_size,) tensor of position indices (from batch_select_ucb_optimized)
             
         Returns:
             child_indices: (batch_size,) tensor of child node indices (-1 if not found)
@@ -1143,7 +1147,7 @@ class CSRTree:
         with torch.no_grad():  # Optimization: disable gradient computation
             # Bounds checking
             node_bounds_ok = (node_indices >= 0) & (node_indices < self.num_nodes)
-            action_bounds_ok = actions >= 0
+            action_bounds_ok = (actions >= 0) & (actions < self.children.shape[1])  # Position must be valid
             valid_batch_mask = node_bounds_ok & action_bounds_ok
             
             # Initialize result
@@ -1152,73 +1156,26 @@ class CSRTree:
             if not valid_batch_mask.any():
                 return child_indices
             
-            # FULLY VECTORIZED APPROACH
-            # Get all children for valid nodes
+            # Use position indices directly
+            # The 'actions' are position indices in the children array
             valid_positions = torch.where(valid_batch_mask)[0]
             valid_nodes = node_indices[valid_batch_mask]
-            valid_actions = actions[valid_batch_mask]
+            valid_position_indices = actions[valid_batch_mask]
             
-            # Get children table for all valid nodes at once
+            # Get children table for all valid nodes
             node_children_batch = self.children[valid_nodes]  # [num_valid, max_children]
             
-            # Create mask for valid children
-            valid_children_mask = node_children_batch >= 0  # [num_valid, max_children]
+            # Directly index using position indices
+            # Use advanced indexing: for each row i, get element at position valid_position_indices[i]
+            row_indices = torch.arange(len(valid_nodes), device=self.device)
+            selected_children = node_children_batch[row_indices, valid_position_indices]
             
-            # For each valid node, we need to find the child with matching action
-            # Strategy: Use advanced indexing to check all children at once
+            # Check if selected children are valid (>= 0)
+            valid_children = selected_children >= 0
             
-            # Get all potentially valid children indices
-            row_indices, col_indices = torch.where(valid_children_mask)
-            
-            if len(row_indices) == 0:
-                return child_indices
-            
-            # Get the actual child indices
-            potential_children = node_children_batch[row_indices, col_indices]
-            
-            # Get parent actions for these children
-            child_parent_actions = self.parent_actions[potential_children]
-            
-            # Find which children have matching actions
-            # Map row_indices back to original valid_actions
-            target_actions = valid_actions[row_indices]
-            matches = child_parent_actions == target_actions
-            
-            if not matches.any():
-                return child_indices
-            
-            # Get matching positions
-            match_positions = torch.where(matches)[0]
-            matched_rows = row_indices[match_positions]
-            matched_children = potential_children[match_positions]
-            
-            # For each unique row (parent), take the first matching child
-            # VECTORIZED: Use unique_consecutive to handle multiple matches per parent
-            
-            # Sort by row to group matches by parent
-            sort_indices = torch.argsort(matched_rows)
-            sorted_rows = matched_rows[sort_indices]
-            sorted_children = matched_children[sort_indices]
-            
-            # Find first occurrence of each parent using a different approach
-            # Create a mask for first occurrences
-            is_first = torch.ones(len(sorted_rows), dtype=torch.bool, device=self.device)
-            if len(sorted_rows) > 1:
-                is_first[1:] = sorted_rows[1:] != sorted_rows[:-1]
-            
-            # Get first occurrences
-            first_indices = torch.where(is_first)[0]
-            
-            if len(first_indices) > 0:
-                # Get the parent rows and children for first occurrences
-                first_parent_rows = sorted_rows[first_indices]
-                first_children = sorted_children[first_indices]
-                
-                # Map back to original positions
-                original_positions = valid_positions[first_parent_rows]
-                
-                # Assign children
-                child_indices[original_positions] = first_children
+            # Assign valid children to result
+            result_positions = valid_positions[valid_children]
+            child_indices[result_positions] = selected_children[valid_children]
             
             return child_indices
 
