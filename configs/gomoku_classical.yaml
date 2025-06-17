@@ -4,7 +4,7 @@
 experiment_name: gomoku_classical
 seed: 42
 log_level: INFO
-num_iterations: 100
+num_iterations: 500
 
 game:
   game_type: gomoku
@@ -15,7 +15,7 @@ game:
 
 mcts:
   num_simulations: 800
-  c_puct: 1.0
+  c_puct: 3.0
   dirichlet_alpha: 0.15
   dirichlet_epsilon: 0.25
   temperature: 1.0
@@ -97,7 +97,7 @@ network:
 
 training:
   # Training parameters optimized for RTX 3060 Ti + Ryzen 9 5900X
-  batch_size: 512  # Optimal for 8GB VRAM with mixed precision
+  batch_size: 1024
   learning_rate: 0.01
   learning_rate_schedule: cosine  # Better for longer training
   lr_decay_steps: 50
@@ -125,8 +125,6 @@ training:
   
   # Training loop
   num_epochs: 10
-  checkpoint_interval: 50
-  validation_interval: 1  # Arena evaluation every epoch
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
   

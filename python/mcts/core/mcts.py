@@ -395,6 +395,7 @@ class MCTS:
         
         # State management
         self.node_to_state = torch.full((self.config.max_tree_nodes,), -1, dtype=torch.int32, device=self.device)
+        self.state_to_node = torch.full((self.config.max_tree_nodes,), -1, dtype=torch.int32, device=self.device)
         self.state_pool_free = torch.ones(self.config.max_tree_nodes, dtype=torch.bool, device=self.device)
         self.state_pool_next = 0
         
@@ -411,6 +412,29 @@ class MCTS:
         """Setup CUDA graphs for kernel launches"""
         # CUDA graphs capture will be implemented in the search method
         pass
+    
+    def clear(self):
+        """Clear the MCTS tree and reset for a new search"""
+        # Reset tree to initial state
+        self.tree.reset()
+        
+        # Reset node mappings
+        self.node_to_state.fill_(-1)
+        self.state_to_node.fill_(-1)
+        
+        # Reset statistics
+        self.stats['tree_reuse_count'] = 0
+        self.stats['tree_reuse_nodes'] = 0
+        
+        # Reset quantum features if enabled
+        if self.quantum_features:
+            self.quantum_total_simulations = 0
+            self.quantum_phase = MCTSPhase.QUANTUM
+            self.envariance_check_counter = 0
+        
+        # Clear any cached data
+        if hasattr(self, '_last_root_state'):
+            delattr(self, '_last_root_state')
         
     def search(self, state: Any, num_simulations: Optional[int] = None) -> np.ndarray:
         """Run MCTS search from given state
@@ -1391,8 +1415,20 @@ class MCTS:
         
         self.config.temperature = old_temp
         
-        # Return action with highest probability
-        return int(np.argmax(policy))
+        # Get legal moves
+        if hasattr(state, 'get_legal_moves'):
+            legal_moves = state.get_legal_moves()
+        else:
+            # Fallback to checking non-zero probabilities
+            legal_moves = np.where(policy > 0)[0]
+        
+        if len(legal_moves) == 0:
+            raise ValueError("No legal moves available")
+        
+        # Return legal action with highest probability
+        legal_probs = policy[legal_moves]
+        best_legal_idx = np.argmax(legal_probs)
+        return int(legal_moves[best_legal_idx])
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get performance statistics

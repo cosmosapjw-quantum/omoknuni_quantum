@@ -699,6 +699,7 @@ class UnifiedTrainingPipeline:
     def evaluate_model_with_elo(self) -> bool:
         """3-way ELO evaluation: Random vs Best vs Current model"""
         from mcts.core.evaluator import RandomEvaluator
+        import gc
         
         # Initialize ELO tracker if needed
         if not self.elo_tracker:
@@ -724,6 +725,10 @@ class UnifiedTrainingPipeline:
         results_summary = []
         accepted = True
         
+        # Clear GPU cache before starting arena battles
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         # Match 1: Current vs Random
         tqdm.write("      Current vs Random...")
         wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
@@ -741,12 +746,26 @@ class UnifiedTrainingPipeline:
             wins_vs_random, draws_vs_random, losses_vs_random
         )
         
+        # Clean up after first match
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         # Match 2: Best vs Random (if we have a best model)
         if self.best_model_iteration:
+            # First, move current model to CPU temporarily to free GPU memory
+            current_device = next(self.model.parameters()).device
+            self.model.cpu()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
             tqdm.write("      Best vs Random...")
             best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
             best_model = self._create_model()
-            best_model.load_state_dict(torch.load(best_model_path))
+            
+            # Load best model directly to GPU
+            best_model.load_state_dict(torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False))
             best_model.eval()
             
             wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
@@ -763,8 +782,21 @@ class UnifiedTrainingPipeline:
                 wins_best_random, draws_best_random, losses_best_random
             )
             
+            # Move best model to CPU before loading current model back
+            best_model.cpu()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Move current model back to GPU
+            self.model.to(current_device)
+            
             # Match 3: Current vs Best
             tqdm.write("      Current vs Best...")
+            
+            # Move best model back to GPU for the match
+            best_model.to(self.config.mcts.device)
+            
             wins_vs_best, draws_vs_best, losses_vs_best = self.arena.compare_models(
                 self.model, best_model,
                 model1_name=f"iter_{self.iteration}",
@@ -781,6 +813,12 @@ class UnifiedTrainingPipeline:
             
             # Check if current model should be accepted
             accepted = win_rate_vs_best >= self.config.arena.win_threshold
+            
+            # CRITICAL: Delete best model to free GPU memory
+            del best_model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         else:
             # First model - check against random baseline
             accepted = win_rate_vs_random >= self.config.arena.min_win_rate_vs_random
@@ -911,6 +949,13 @@ class UnifiedTrainingPipeline:
         """Load training checkpoint"""
         checkpoint_path = Path(checkpoint_path)
         
+        # Convert to absolute path if relative
+        if not checkpoint_path.is_absolute():
+            # Try to resolve relative to the project root (where train.py is)
+            import os
+            project_root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent.parent
+            checkpoint_path = project_root / checkpoint_path
+        
         # Handle both direct checkpoint path and checkpoint directory
         if checkpoint_path.is_dir():
             # Find latest checkpoint in directory
@@ -922,7 +967,7 @@ class UnifiedTrainingPipeline:
         
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         
-        checkpoint = torch.load(checkpoint_path, map_location=self.config.mcts.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.config.mcts.device, weights_only=False)
         
         self.iteration = checkpoint["iteration"]
         self.best_model_iteration = checkpoint["best_model_iteration"]
@@ -940,7 +985,10 @@ class UnifiedTrainingPipeline:
             # Create ELO tracker if needed
             if not self.elo_tracker:
                 from mcts.neural_networks.arena_module import ELOTracker
-                self.elo_tracker = ELOTracker(k_factor=self.config.arena.elo_k_factor)
+                self.elo_tracker = ELOTracker(
+                    k_factor=self.config.arena.elo_k_factor,
+                    initial_rating=self.config.arena.elo_initial_rating
+                )
             self.elo_tracker.ratings = checkpoint["elo_ratings"]
             logger.info(f"Loaded ELO ratings for {len(checkpoint['elo_ratings'])} players")
         
@@ -973,7 +1021,7 @@ class UnifiedTrainingPipeline:
         for model_file in model_files[-10:]:  # Last 10 models
             iteration = int(model_file.stem.split('_')[-1])
             model = self._create_model()
-            model.load_state_dict(torch.load(model_file))
+            model.load_state_dict(torch.load(model_file, weights_only=False))
             model.eval()
             models[f"iter_{iteration}"] = model
         

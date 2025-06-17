@@ -94,8 +94,6 @@ training:
   
   # Training loop
   num_epochs: 10
-  checkpoint_interval: 50
-  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play - Utilizing 12 cores/24 threads
   num_games_per_iteration: 200  # Full utilization

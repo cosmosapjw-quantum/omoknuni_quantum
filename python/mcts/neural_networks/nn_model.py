@@ -28,7 +28,7 @@ class ModelConfig:
         activation: Activation function ('relu' or 'elu')
         dropout_rate: Dropout rate (0.0 to disable)
     """
-    input_channels: int = 20  # Standard AlphaZero encoding
+    input_channels: int = 20  # Enhanced features for GPU game states
     input_height: int = 8
     input_width: int = 8
     num_actions: int = 4096  # Default for chess
@@ -304,7 +304,7 @@ def create_model(game_type: str = 'chess', **kwargs) -> AlphaZeroNetwork:
     # Default configurations for different games
     configs = {
         'chess': ModelConfig(
-            input_channels=17,  # 6 piece types * 2 colors + 5 auxiliary
+            input_channels=20,  # Enhanced features for GPU game states
             input_height=8,
             input_width=8,
             num_actions=4096,  # All possible moves
@@ -312,7 +312,7 @@ def create_model(game_type: str = 'chess', **kwargs) -> AlphaZeroNetwork:
             num_filters=256
         ),
         'go': ModelConfig(
-            input_channels=17,  # Stone positions + history
+            input_channels=20,  # Enhanced features for GPU game states
             input_height=19,
             input_width=19,
             num_actions=362,  # 19*19 + pass
@@ -320,7 +320,7 @@ def create_model(game_type: str = 'chess', **kwargs) -> AlphaZeroNetwork:
             num_filters=256
         ),
         'gomoku': ModelConfig(
-            input_channels=4,  # Current + last move
+            input_channels=20,  # Enhanced features for GPU game states
             input_height=15,
             input_width=15,
             num_actions=225,  # 15*15

@@ -168,7 +168,7 @@ The partition function sums over all paths with complex phase factors. Paths wit
 
 **Definition 3.4** (Effective Planck Constant):
 ```
-ℏ_eff(N) = c_puct(N+2)/(√(N+1)log(N+2))
+ℏ_eff(N) = c_puct/(√(N+1)log(N+2))
 ```
 
 **Physical Interpretation**:
@@ -756,7 +756,7 @@ Apply Euler-Lagrange equation δS/δφ = 0 to the action S = ∫dτ d²x L_eff �
 |----------|---------|--------|------------------|
 | τ(N) | log(N+2) | N ≥ 0 | Information time |
 | T(N) | T₀/log(N+2) | N ≥ 0 | Exploration temperature |
-| ℏ_eff(N) | c_puct(N+2)/(√(N+1)log(N+2)) | N ≥ 0 | Quantum fluctuation scale |
+| ℏ_eff(N) | c_puct/(√(N+1)log(N+2)) | N ≥ 0 | Quantum fluctuation scale |
 | c_puct | √(2 log b)[1 + 1/(4 log N_c)] | b ≥ 2 | Optimal exploration constant |
 | N_c | b·exp(√(2π)/c_puct)·(1+λ/(2π)) - 2 | All λ | Quantum-classical transition |
 | Γ₀ | 2c_puct σ²_eval T₀ | σ > 0 | Decoherence strength |

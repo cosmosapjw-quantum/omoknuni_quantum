@@ -109,8 +109,6 @@ training:
   
   # Training loop
   num_epochs: 10
-  checkpoint_interval: 50
-  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play with full quantum - 12 cores
   num_games_per_iteration: 100

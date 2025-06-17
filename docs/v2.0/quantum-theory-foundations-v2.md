@@ -88,7 +88,7 @@ Z_N = ∑_γ exp(iS[γ]/ℏ_eff(N))
 With effective Planck constant:
 
 ```
-ℏ_eff(N) = c_puct(N+2)/(√(N+1)log(N+2))
+ℏ_eff(N) = c_puct/(√(N+1)log(N+2))
 ```
 
 This scaling ensures:

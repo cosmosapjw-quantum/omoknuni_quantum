@@ -5,6 +5,7 @@ This module handles model battles, ELO tracking, and tournament organization.
 
 import logging
 import json
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Tuple, List, Optional, Any
@@ -17,6 +18,7 @@ import gc
 import psutil
 import os
 import traceback
+import queue
 
 import torch
 import torch.multiprocessing as mp
@@ -45,7 +47,9 @@ class ArenaConfig:
     use_progress_bar: bool = True
     save_game_records: bool = False
     enable_tree_reuse: bool = False  # Disable by default to avoid memory issues
-    gc_frequency: int = 10  # Run garbage collection every N games
+    gc_frequency: int = 5  # Run garbage collection every N games (reduced from 10)
+    memory_monitoring: bool = True  # Enable memory monitoring
+    max_memory_gb: float = 6.0  # Maximum GPU memory to use (leave 2GB buffer)
 
 
 class ELOTracker:
@@ -175,12 +179,25 @@ class ArenaManager:
         is_random1 = isinstance(model1, RandomEvaluator)
         is_random2 = isinstance(model2, RandomEvaluator)
         
-        if (is_random1 or is_random2) and self.arena_config.num_workers > 1:
-            # Use parallel arena for NN vs Random matches
-            return self._parallel_arena(model1, model2, num_games, silent)
-        else:
-            # Use sequential arena for NN vs NN matches to avoid CUDA issues
-            return self._sequential_arena(model1, model2, num_games, silent)
+        # Use default num_games if not specified
+        if num_games is None:
+            num_games = self.arena_config.num_games
+        
+        # Clean GPU memory before starting arena
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        try:
+            if (is_random1 or is_random2) and self.arena_config.num_workers > 1:
+                # Use parallel arena for NN vs Random matches
+                return self._parallel_arena(model1, model2, num_games, silent)
+            else:
+                # Use sequential arena for NN vs NN matches to avoid CUDA issues
+                return self._sequential_arena(model1, model2, num_games, silent)
+        finally:
+            # Always clean up after arena battles
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
     
     def _serialize_config(self, config):
         """Serialize config for multiprocessing, removing CUDA references"""
@@ -239,21 +256,44 @@ class ArenaManager:
         wins, draws, losses = 0, 0, 0
         
         # Create evaluators if needed
+        # Track if we created evaluators to clean them up later
+        created_evaluator1 = False
+        created_evaluator2 = False
+        
         if isinstance(model1, Evaluator):
             evaluator1 = model1
         else:
+            # Ensure model is in eval mode and gradients disabled
+            model1.eval()
             evaluator1 = AlphaZeroEvaluator(
                 model=model1,
                 device=self.arena_config.device
             )
+            created_evaluator1 = True
             
         if isinstance(model2, Evaluator):
             evaluator2 = model2
         else:
+            # Ensure model is in eval mode and gradients disabled
+            model2.eval()
             evaluator2 = AlphaZeroEvaluator(
                 model=model2,
                 device=self.arena_config.device
             )
+            created_evaluator2 = True
+        
+        # Warm up neural networks to trigger CUDA compilation before arena starts
+        if not silent and torch.cuda.is_available():
+            logger.debug("Warming up neural networks for CUDA compilation...")
+            dummy_state = torch.randn(1, 20, self.config.game.board_size, 
+                                     self.config.game.board_size, device=self.arena_config.device)
+            with torch.no_grad():
+                # Warm up both evaluators if they have models
+                if hasattr(evaluator1, 'model') and hasattr(evaluator1.model, 'forward'):
+                    _ = evaluator1.model(dummy_state)
+                if hasattr(evaluator2, 'model') and hasattr(evaluator2.model, 'forward'):
+                    _ = evaluator2.model(dummy_state)
+                torch.cuda.synchronize()
         
         # Progress bar
         disable_progress = silent or logger.level > logging.INFO or not self.arena_config.use_progress_bar
@@ -261,12 +301,14 @@ class ArenaManager:
         # Arena progress at position 4 to avoid overlap with other progress bars
         with tqdm(total=num_games, desc="Arena games", unit="game",
                  disable=disable_progress, position=4, leave=False) as pbar:
-            for game_idx in range(num_games):
-                # Alternate who plays first
-                if game_idx % 2 == 0:
-                    result = self._play_single_game(evaluator1, evaluator2, game_idx)
-                else:
-                    result = -self._play_single_game(evaluator2, evaluator1, game_idx)
+            # Run all games with no gradient tracking
+            with torch.no_grad():
+                for game_idx in range(num_games):
+                    # Alternate who plays first
+                    if game_idx % 2 == 0:
+                        result = self._play_single_game(evaluator1, evaluator2, game_idx)
+                    else:
+                        result = -self._play_single_game(evaluator2, evaluator1, game_idx)
                 
                 if result > 0:
                     wins += 1
@@ -283,104 +325,214 @@ class ArenaManager:
                     'WR': f'{wins/(wins+draws+losses):.1%}'
                 })
         
+        # Clean up evaluators if we created them
+        if created_evaluator1:
+            del evaluator1
+        if created_evaluator2:
+            del evaluator2
+            
+        # Final cleanup
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         return wins, draws, losses
     
     def _parallel_arena(self, model1, model2,
                        num_games: int, silent: bool = False) -> Tuple[int, int, int]:
-        """Run arena games in parallel"""
-        from mcts.utils.safe_multiprocessing import serialize_state_dict_for_multiprocessing
-        from mcts.core.evaluator import Evaluator, RandomEvaluator
+        """Run arena games in parallel using GPU evaluation service"""
+        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
+        from mcts.core.evaluator import Evaluator, RandomEvaluator, AlphaZeroEvaluator
+        import multiprocessing as mp
         
         wins, draws, losses = 0, 0, 0
         
-        # Handle evaluators vs models
-        if isinstance(model1, RandomEvaluator):
-            model1_state = None
-            is_random1 = True
-        elif isinstance(model1, Evaluator):
-            # Extract model from evaluator
-            model1_state = serialize_state_dict_for_multiprocessing(model1.model.state_dict())
-            is_random1 = False
-        else:
-            # Direct model
-            model1_state = serialize_state_dict_for_multiprocessing(model1.state_dict())
-            is_random1 = False
-            
-        if isinstance(model2, RandomEvaluator):
-            model2_state = None
-            is_random2 = True
-        elif isinstance(model2, Evaluator):
-            # Extract model from evaluator
-            model2_state = serialize_state_dict_for_multiprocessing(model2.model.state_dict())
-            is_random2 = False
-        else:
-            # Direct model
-            model2_state = serialize_state_dict_for_multiprocessing(model2.state_dict())
-            is_random2 = False
+        # Get resource allocation from config (similar to self-play)
+        allocation = getattr(self.config, '_resource_allocation', None)
+        if allocation is None:
+            # Fallback: calculate allocation if not already done
+            hardware = self.config.detect_hardware()
+            allocation = self.config.calculate_resource_allocation(hardware, self.arena_config.num_workers)
+            self.config._resource_allocation = allocation
         
-        # Use spawn context for CUDA compatibility
-        ctx = mp.get_context('spawn')
-        with ProcessPoolExecutor(max_workers=self.arena_config.num_workers, mp_context=ctx) as executor:
-            # Submit games
-            futures = []
-            for game_idx in range(num_games):
-                # Alternate who plays first
-                if game_idx % 2 == 0:
-                    future = executor.submit(
-                        _play_arena_game_worker,
-                        self._serialize_config(self.config),
-                        self._serialize_arena_config(self.arena_config),
-                        model1_state,
-                        model2_state,
-                        game_idx,
-                        False,  # model1 plays first
-                        is_random1,
-                        is_random2
-                    )
+        logger.info(f"[ARENA] Starting parallel arena with {self.arena_config.num_workers} workers")
+        logger.debug(f"[ARENA] Resource allocation: {allocation}")
+        
+        # Set up multiprocessing start method
+        try:
+            mp.set_start_method('spawn')
+        except RuntimeError:
+            # Already set, that's fine
+            pass
+        
+        # Check model types
+        is_random1 = isinstance(model1, RandomEvaluator)
+        is_random2 = isinstance(model2, RandomEvaluator)
+        
+        # Create GPU evaluation services for non-random models
+        gpu_service1 = None
+        gpu_service2 = None
+        
+        try:
+            # Service for model1 if it's not random
+            if not is_random1:
+                # Extract actual model
+                if isinstance(model1, Evaluator):
+                    actual_model1 = model1.model
                 else:
-                    future = executor.submit(
-                        _play_arena_game_worker,
-                        self._serialize_config(self.config),
-                        self._serialize_arena_config(self.arena_config),
-                        model2_state,
-                        model1_state,
-                        game_idx,
-                        True,  # model2 plays first, invert result
-                        is_random2,
-                        is_random1
-                    )
-                futures.append((future, game_idx % 2 == 1))
+                    actual_model1 = model1
+                
+                gpu_service1 = GPUEvaluatorService(
+                    model=actual_model1,
+                    device=self.config.mcts.device,
+                    batch_size=256,
+                    batch_timeout=0.01
+                )
+                gpu_service1.start()
+                logger.debug(f"[ARENA] GPU evaluation service 1 started")
             
-            # Collect results
-            disable_progress = logger.level > logging.INFO or not self.arena_config.use_progress_bar
+            # Service for model2 if it's not random
+            if not is_random2:
+                # Extract actual model
+                if isinstance(model2, Evaluator):
+                    actual_model2 = model2.model
+                else:
+                    actual_model2 = model2
+                
+                gpu_service2 = GPUEvaluatorService(
+                    model=actual_model2,
+                    device=self.config.mcts.device,
+                    batch_size=256,
+                    batch_timeout=0.01
+                )
+                gpu_service2.start()
+                logger.debug(f"[ARENA] GPU evaluation service 2 started")
             
-            # Arena progress at position 4 to avoid overlap with other progress bars
-            with tqdm(total=len(futures), desc="Arena games", unit="game",
+            # Get action space size
+            initial_state = self.game_interface.create_initial_state()
+            action_size = self.game_interface.get_action_space_size(initial_state)
+            
+            # Use Process directly for better control
+            processes = []
+            result_queues = []
+            
+            # Use hardware-aware concurrent worker limit
+            max_concurrent = allocation['max_concurrent_workers']
+            games_per_batch = min(max_concurrent, self.arena_config.num_workers)
+            
+            logger.debug(f"[ARENA] Processing games in batches of {games_per_batch}")
+            
+            # Progress bar setup
+            disable_progress = silent or logger.level > logging.INFO or not self.arena_config.use_progress_bar
+            
+            with tqdm(total=num_games, desc="Arena games", unit="game",
                      disable=disable_progress, position=4, leave=False) as pbar:
-                for future, should_invert in futures:
-                    try:
-                        result = future.result(timeout=self.arena_config.timeout_seconds)
-                        if should_invert:
-                            result = -result
+                
+                for batch_start in range(0, num_games, games_per_batch):
+                    batch_end = min(batch_start + games_per_batch, num_games)
+                    batch_processes = []
+                    batch_queues = []
+                    
+                    # Start processes for this batch
+                    for game_idx in range(batch_start, batch_end):
+                        # Create result queue for this game
+                        result_queue = mp.Queue()
+                        result_queues.append(result_queue)
+                        batch_queues.append(result_queue)
                         
-                        if result > 0:
-                            wins += 1
-                        elif result < 0:
-                            losses += 1
+                        # Determine which model plays first
+                        if game_idx % 2 == 0:
+                            # Model1 plays first
+                            request_queue1 = gpu_service1.get_request_queue() if gpu_service1 else None
+                            response_queue1 = gpu_service1.create_worker_queue(game_idx) if gpu_service1 else None
+                            request_queue2 = gpu_service2.get_request_queue() if gpu_service2 else None
+                            response_queue2 = gpu_service2.create_worker_queue(game_idx) if gpu_service2 else None
+                            
+                            p = mp.Process(
+                                target=_play_arena_game_worker_with_gpu_service,
+                                args=(self._serialize_config(self.config),
+                                      self._serialize_arena_config(self.arena_config),
+                                      request_queue1, response_queue1, is_random1,
+                                      request_queue2, response_queue2, is_random2,
+                                      action_size, game_idx, result_queue, allocation, False)
+                            )
                         else:
-                            draws += 1
+                            # Model2 plays first (swap queues)
+                            request_queue1 = gpu_service2.get_request_queue() if gpu_service2 else None
+                            response_queue1 = gpu_service2.create_worker_queue(game_idx) if gpu_service2 else None
+                            request_queue2 = gpu_service1.get_request_queue() if gpu_service1 else None
+                            response_queue2 = gpu_service1.create_worker_queue(game_idx) if gpu_service1 else None
+                            
+                            p = mp.Process(
+                                target=_play_arena_game_worker_with_gpu_service,
+                                args=(self._serialize_config(self.config),
+                                      self._serialize_arena_config(self.arena_config),
+                                      request_queue1, response_queue1, is_random2,
+                                      request_queue2, response_queue2, is_random1,
+                                      action_size, game_idx, result_queue, allocation, True)
+                            )
                         
-                        pbar.update(1)
-                        pbar.set_postfix({
-                            'W': wins,
-                            'D': draws,
-                            'L': losses,
-                            'WR': f'{wins/(wins+draws+losses):.1%}'
-                        })
-                    except Exception as e:
-                        logger.error(f"Arena game failed: {e}")
-                        draws += 1  # Count errors as draws
-                        pbar.update(1)
+                        p.start()
+                        processes.append(p)
+                        batch_processes.append(p)
+                        logger.debug(f"[ARENA] Started process for game {game_idx}")
+                    
+                    # Collect results from this batch
+                    logger.debug(f"[ARENA] Collecting results from batch of {len(batch_processes)} games...")
+                    
+                    for idx, (p, q) in enumerate(zip(batch_processes, batch_queues)):
+                        game_idx = batch_start + idx
+                        try:
+                            # Wait for result
+                            result = q.get(timeout=self.arena_config.timeout_seconds)
+                            
+                            # Handle inverted results for odd games
+                            if game_idx % 2 == 1:
+                                result = -result
+                            
+                            if result > 0:
+                                wins += 1
+                            elif result < 0:
+                                losses += 1
+                            else:
+                                draws += 1
+                            
+                            logger.debug(f"[ARENA] Game {game_idx} completed with result: {result}")
+                            
+                        except queue.Empty:
+                            logger.error(f"[ARENA] Timeout waiting for result from game {game_idx}")
+                            draws += 1  # Count timeout as draw
+                            
+                        except Exception as e:
+                            logger.error(f"[ARENA] Failed to get result from game {game_idx}: {e}")
+                            draws += 1
+                            
+                        finally:
+                            # Ensure process is terminated
+                            if p.is_alive():
+                                p.terminate()
+                            p.join(timeout=5)
+                            pbar.update(1)
+                            pbar.set_postfix({
+                                'W': wins,
+                                'D': draws,
+                                'L': losses,
+                                'WR': f'{wins/(wins+draws+losses):.1%}'
+                            })
+                            
+        finally:
+            # Stop GPU services
+            if gpu_service1:
+                gpu_service1.stop()
+                logger.debug("[ARENA] GPU evaluation service 1 stopped")
+            if gpu_service2:
+                gpu_service2.stop()
+                logger.debug("[ARENA] GPU evaluation service 2 stopped")
+            
+            # Clean up GPU memory
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
         return wins, draws, losses
     
@@ -391,32 +543,64 @@ class ArenaManager:
         Returns:
             1 if player 1 wins, -1 if player 2 wins, 0 for draw
         """
-        # Debug: Log memory usage at game start
-        if game_idx % 10 == 0:
+        # Enhanced memory monitoring
+        if self.arena_config.memory_monitoring and (game_idx % 5 == 0 or game_idx < 3):
             process = psutil.Process(os.getpid())
             mem_info = process.memory_info()
-            logger.debug(f"[ARENA] Game {game_idx} - Memory: RSS={mem_info.rss/1024/1024:.1f}MB, VMS={mem_info.vms/1024/1024:.1f}MB")
+            logger.debug(f"[ARENA] Game {game_idx} START - Process Memory: RSS={mem_info.rss/1024/1024:.1f}MB, VMS={mem_info.vms/1024/1024:.1f}MB")
             
             # Check GPU memory if CUDA available
             if torch.cuda.is_available():
-                logger.debug(f"[ARENA] Game {game_idx} - GPU Memory: Allocated={torch.cuda.memory_allocated()/1024/1024:.1f}MB, Reserved={torch.cuda.memory_reserved()/1024/1024:.1f}MB")
+                gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
+                gpu_reserved = torch.cuda.memory_reserved()/1024/1024/1024
+                gpu_cached = torch.cuda.memory_reserved()/1024/1024/1024
+                logger.debug(f"[ARENA] Game {game_idx} START - GPU Memory: Allocated={gpu_allocated:.3f}GB, Reserved={gpu_reserved:.3f}GB, Cached={gpu_cached:.3f}GB")
+                
+                # Log GPU memory summary
+                if game_idx < 3:
+                    logger.debug(f"[ARENA] GPU Memory Summary:\n{torch.cuda.memory_summary()}")
+                
+                # Check if we're approaching memory limit
+                if gpu_allocated > self.arena_config.max_memory_gb:
+                    logger.warning(f"[ARENA] GPU memory usage ({gpu_allocated:.2f}GB) exceeds limit ({self.arena_config.max_memory_gb}GB)")
+                    # Force cleanup
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    
+                    # Log memory after cleanup
+                    gpu_allocated_after = torch.cuda.memory_allocated()/1024/1024/1024
+                    logger.info(f"[ARENA] After cleanup - GPU Allocated: {gpu_allocated_after:.3f}GB")
         
         try:
             # Create MCTS instances
+            start_time = time.time()
             mcts1 = self._create_mcts(evaluator1)
             mcts2 = self._create_mcts(evaluator2)
+            mcts_creation_time = time.time() - start_time
             
             if game_idx % 10 == 0:
-                logger.debug(f"[ARENA] Game {game_idx} - MCTS instances created successfully")
+                logger.debug(f"[ARENA] Game {game_idx} - MCTS instances created in {mcts_creation_time:.3f}s")
+                
+                # Log MCTS memory usage
+                if hasattr(mcts1, 'get_memory_usage'):
+                    mcts1_mem = mcts1.get_memory_usage()
+                    mcts2_mem = mcts2.get_memory_usage()
+                    logger.debug(f"[ARENA] MCTS memory: Player1={mcts1_mem/1024/1024:.1f}MB, Player2={mcts2_mem/1024/1024:.1f}MB")
         
             # Play game
             state = self.game_interface.create_initial_state()
             current_player = 1
+            move_times = []
             
             for move_num in range(self.config.training.max_moves_per_game):
-                # Debug logging for specific games where crash occurs
-                if game_idx >= 100 and move_num % 10 == 0:
-                    logger.debug(f"[ARENA] Game {game_idx}, Move {move_num}, Player {current_player}")
+                move_start = time.time()
+                
+                # Periodic memory check during game
+                if self.arena_config.memory_monitoring and move_num > 0 and move_num % 20 == 0:
+                    if torch.cuda.is_available():
+                        gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
+                        logger.debug(f"[ARENA] Game {game_idx}, Move {move_num} - GPU Allocated: {gpu_allocated:.3f}GB")
                     
                 # Get current MCTS
                 current_mcts = mcts1 if current_player == 1 else mcts2
@@ -427,8 +611,17 @@ class ArenaManager:
                 else:
                     temp = 0.0
                 
+                # Clear MCTS tree before search to ensure fresh state
+                current_mcts.clear()
+                
                 # Run MCTS search
-                policy = current_mcts.search(state, num_simulations=self.arena_config.mcts_simulations)
+                with torch.no_grad():  # Ensure no gradients are tracked
+                    search_start = time.time()
+                    policy = current_mcts.search(state, num_simulations=self.arena_config.mcts_simulations)
+                    search_time = time.time() - search_start
+                    
+                    if game_idx < 3 and move_num < 5:
+                        logger.debug(f"[ARENA] Game {game_idx}, Move {move_num} - MCTS search took {search_time:.3f}s")
                 
                 if temp == 0:
                     # Deterministic - choose best action
@@ -443,61 +636,103 @@ class ArenaManager:
                 # Apply action
                 state = self.game_interface.get_next_state(state, action)
                 
+                # Track move time
+                move_time = time.time() - move_start
+                move_times.append(move_time)
+                
                 # Check terminal
                 if self.game_interface.is_terminal(state):
                     # Return from player 1's perspective
                     value = self.game_interface.get_value(state)
                     if current_player == 2:
                         value = -value
-                    return int(np.sign(value))
+                    result = int(np.sign(value))
+                    
+                    # Log game summary
+                    if game_idx % 10 == 0:
+                        avg_move_time = np.mean(move_times)
+                        total_time = sum(move_times)
+                        logger.debug(f"[ARENA] Game {game_idx} completed - Moves: {move_num+1}, Total time: {total_time:.2f}s, Avg move: {avg_move_time:.3f}s")
+                    
+                    return result
                 
                 # Switch player
                 current_player = 3 - current_player
             
             # Draw if max moves reached
+            if game_idx % 10 == 0:
+                logger.debug(f"[ARENA] Game {game_idx} ended in draw after {len(move_times)} moves")
             return 0
             
         except Exception as e:
             logger.error(f"[ARENA] Game {game_idx} failed with error: {e}")
             logger.error(f"[ARENA] Full traceback:\n{traceback.format_exc()}")
+            
+            # Log memory state on error
+            if torch.cuda.is_available():
+                gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
+                logger.error(f"[ARENA] GPU memory at error: {gpu_allocated:.3f}GB")
+            
             raise
         finally:
             # Explicit cleanup to prevent memory leaks
-            if game_idx % 10 == 0:
-                logger.debug(f"[ARENA] Game {game_idx} - Cleaning up MCTS instances")
+            if self.arena_config.memory_monitoring and game_idx % 5 == 0:
+                logger.debug(f"[ARENA] Game {game_idx} - Starting cleanup")
+                
+                # Log memory before cleanup
+                if torch.cuda.is_available():
+                    gpu_before = torch.cuda.memory_allocated()/1024/1024/1024
             
-            # Delete MCTS instances explicitly
-            del mcts1
-            del mcts2
+            # Clear MCTS trees before deletion if they exist
+            if 'mcts1' in locals():
+                if hasattr(mcts1, 'clear_tree'):
+                    mcts1.clear_tree()
+                elif hasattr(mcts1, 'reset_tree'):
+                    mcts1.reset_tree()
+                del mcts1
+            if 'mcts2' in locals():
+                if hasattr(mcts2, 'clear_tree'):
+                    mcts2.clear_tree()
+                elif hasattr(mcts2, 'reset_tree'):
+                    mcts2.reset_tree()
+                del mcts2
             
-            # Force garbage collection periodically
-            if game_idx % self.arena_config.gc_frequency == 0:
+            # Force garbage collection more aggressively
+            if game_idx % max(1, self.arena_config.gc_frequency // 2) == 0:
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                    logger.debug(f"[ARENA] Game {game_idx} - Forced garbage collection and CUDA cache clear")
+                    torch.cuda.synchronize()  # Ensure all CUDA operations complete
+                    
+                    if self.arena_config.memory_monitoring and game_idx % 5 == 0:
+                        gpu_after = torch.cuda.memory_allocated()/1024/1024/1024
+                        logger.debug(f"[ARENA] Game {game_idx} - Cleanup complete. GPU memory: {gpu_before:.3f}GB -> {gpu_after:.3f}GB")
+                else:
+                    if self.arena_config.memory_monitoring and game_idx % 5 == 0:
+                        logger.debug(f"[ARENA] Game {game_idx} - Cleanup complete (CPU only)")
     
     def _create_mcts(self, evaluator: Any):
         """Create MCTS instance for arena"""
         from mcts.core.mcts import MCTS, MCTSConfig
         
-        # Use same optimal settings as self-play for consistency
+        # Use same settings as self-play for consistency
         mcts_config = MCTSConfig(
             # Core MCTS parameters
             num_simulations=self.arena_config.mcts_simulations,
             c_puct=self.arena_config.c_puct,
             temperature=0.0,  # Arena always uses deterministic play
             
-            # Performance and wave parameters - use full config values for optimal performance
+            # Performance and wave parameters - same as self-play
             min_wave_size=self.config.mcts.min_wave_size,
             max_wave_size=self.config.mcts.max_wave_size,
             adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
             
-            # Memory and optimization - slightly reduced for arena but still substantial
-            memory_pool_size_mb=max(512, self.config.mcts.memory_pool_size_mb // 4),  # Same as self-play workers
-            max_tree_nodes=self.config.mcts.max_tree_nodes // 2,  # Same as self-play workers
+            # Memory and optimization - reduced for arena to prevent GPU OOM
+            # Arena typically runs fewer simulations and doesn't need huge trees
+            memory_pool_size_mb=min(256, self.config.mcts.memory_pool_size_mb // 4),
+            max_tree_nodes=min(10000, self.config.mcts.max_tree_nodes // 10),  # Much smaller
             use_mixed_precision=self.config.mcts.use_mixed_precision,
-            use_cuda_graphs=self.config.mcts.use_cuda_graphs,  # Enable for performance
+            use_cuda_graphs=False,  # Disable CUDA graphs to save memory in arena
             use_tensor_cores=self.config.mcts.use_tensor_cores,
             
             # Game and device configuration
@@ -645,173 +880,204 @@ class ArenaManager:
         logger.info("=" * 70)
 
 
-def _play_arena_game_worker(config_dict: Dict, arena_config_dict: Dict,
-                           model1_state: Optional[Dict], model2_state: Optional[Dict],
-                           game_idx: int, invert_result: bool,
-                           is_random1: bool, is_random2: bool) -> int:
-    """Worker function for parallel arena games"""
+
+
+def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dict: Dict,
+                                            request_queue1, response_queue1, is_random1: bool,
+                                            request_queue2, response_queue2, is_random2: bool,
+                                            action_size: int, game_idx: int, result_queue,
+                                            allocation: Dict, invert_result: bool) -> None:
+    """Worker function for parallel arena games using GPU evaluation service"""
     import os
     import sys
     
-    # Set up proper multiprocessing for CUDA
-    import torch.multiprocessing as mp
+    # Worker startup with hardware allocation
+    
+    # CRITICAL: Limit CUDA memory for workers to prevent OOM
+    max_split_mb = min(512, allocation.get('gpu_memory_per_worker_mb', 512)) if allocation.get('gpu_memory_per_worker_mb', 0) > 0 else 512
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = f'max_split_size_mb:{max_split_mb}'
+    
     try:
-        mp.set_start_method('spawn', force=True)
-    except RuntimeError:
-        pass  # Already set
-    
-    import torch
-    from mcts.core.game_interface import GameInterface, GameType
-    from mcts.core.mcts import MCTS, MCTSConfig
-    from mcts.utils.safe_multiprocessing import deserialize_state_dict_from_multiprocessing
-    
-    # Set up logging
-    logging.basicConfig(level=getattr(logging, config_dict['log_level']))
-    
-    # Determine device - use CUDA if available
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    logger.debug(f"[ARENA WORKER] PID: {os.getpid()}, Game: {game_idx}, Device: {device}")
-    
-    # Create game interface
-    game_type = GameType[config_dict['game']['game_type'].upper()]
-    game_interface = GameInterface(game_type, config_dict['game']['board_size'])
-    
-    # Get action space size
-    initial_state = game_interface.create_initial_state()
-    action_size = game_interface.get_action_space_size(initial_state)
-    
-    # Create evaluators
-    from mcts.neural_networks.nn_model import create_model
-    from mcts.core.evaluator import AlphaZeroEvaluator, RandomEvaluator, EvaluatorConfig
-    
-    # Create evaluator 1
-    if is_random1:
-        evaluator1 = RandomEvaluator(
-            config=EvaluatorConfig(device=device),
-            action_size=action_size
-        )
-    else:
-        model1 = create_model(
-            game_type=config_dict['game']['game_type'],
-            input_height=config_dict['game']['board_size'],
-            input_width=config_dict['game']['board_size'],
-            num_actions=action_size,
-            input_channels=config_dict['network']['input_channels'],
-            num_res_blocks=config_dict['network']['num_res_blocks'],
-            num_filters=config_dict['network']['num_filters'],
-            value_head_hidden_size=config_dict['network']['value_head_hidden_size'],
-            policy_head_filters=config_dict['network']['policy_head_filters']
-        )
-        # Deserialize and load state dict
-        model1_state_deserialized = deserialize_state_dict_from_multiprocessing(model1_state)
-        model1.load_state_dict(model1_state_deserialized)
-        model1.to(device)
-        model1.eval()
+        import torch
         
-        evaluator1 = AlphaZeroEvaluator(
-            model=model1,
-            device=device
-        )
-    
-    # Create evaluator 2
-    if is_random2:
-        evaluator2 = RandomEvaluator(
-            config=EvaluatorConfig(device=device),
-            action_size=action_size
-        )
-    else:
-        model2 = create_model(
-            game_type=config_dict['game']['game_type'],
-            input_height=config_dict['game']['board_size'],
-            input_width=config_dict['game']['board_size'],
-            num_actions=action_size,
-            input_channels=config_dict['network']['input_channels'],
-            num_res_blocks=config_dict['network']['num_res_blocks'],
-            num_filters=config_dict['network']['num_filters'],
-            value_head_hidden_size=config_dict['network']['value_head_hidden_size'],
-            policy_head_filters=config_dict['network']['policy_head_filters']
-        )
-        # Deserialize and load state dict
-        model2_state_deserialized = deserialize_state_dict_from_multiprocessing(model2_state)
-        model2.load_state_dict(model2_state_deserialized)
-        model2.to(device)
-        model2.eval()
+        # Set memory fraction for worker processes
+        if torch.cuda.is_available() and allocation.get('gpu_memory_fraction', 0) > 0:
+            worker_fraction = allocation['gpu_memory_fraction'] / allocation.get('num_workers', 4)
+            torch.cuda.set_per_process_memory_fraction(worker_fraction)
         
-        evaluator2 = AlphaZeroEvaluator(
-            model=model2,
-            device=device
-        )
-    
-    # Create MCTS instances with optimal settings
-    mcts_config = MCTSConfig(
-        # Core MCTS parameters
-        num_simulations=arena_config_dict['mcts_simulations'],
-        c_puct=arena_config_dict['c_puct'],
-        temperature=0.0,  # Arena always uses deterministic play
+        from mcts.core.game_interface import GameInterface, GameType
+        from mcts.core.mcts import MCTS, MCTSConfig
+        from mcts.gpu.gpu_game_states import GameType as GPUGameType
+        from mcts.utils.gpu_evaluator_service import RemoteEvaluator
+        from mcts.core.evaluator import RandomEvaluator, EvaluatorConfig
+        import numpy as np
         
-        # Performance and wave parameters - use full config values
-        min_wave_size=config_dict['mcts']['min_wave_size'],
-        max_wave_size=config_dict['mcts']['max_wave_size'],
-        adaptive_wave_sizing=config_dict['mcts']['adaptive_wave_sizing'],
+        # Set up logging
+        logging.basicConfig(level=getattr(logging, config_dict['log_level']))
+        logger = logging.getLogger(__name__)
         
-        # Memory and optimization - same as main process
-        memory_pool_size_mb=max(512, config_dict['mcts']['memory_pool_size_mb'] // 4),
-        max_tree_nodes=config_dict['mcts']['max_tree_nodes'] // 2,
-        use_mixed_precision=config_dict['mcts']['use_mixed_precision'],
-        use_cuda_graphs=config_dict['mcts']['use_cuda_graphs'],
-        use_tensor_cores=config_dict['mcts']['use_tensor_cores'],
+        logger.debug(f"[ARENA WORKER {game_idx}] Worker started - using GPU service for evaluations")
+        logger.debug(f"[ARENA WORKER {game_idx}] CUDA available: {torch.cuda.is_available()}")
         
-        # Game and device configuration
-        device=device,  # Use the detected device
-        game_type=game_type,
-        board_size=config_dict['game']['board_size'],
+        # Create game interface
+        game_type = GameType[config_dict['game']['game_type'].upper()]
+        game_interface = GameInterface(game_type, config_dict['game']['board_size'])
         
-        # Disable virtual loss for arena
-        enable_virtual_loss=False,
-        virtual_loss=0.0
-    )
-    
-    mcts1 = MCTS(mcts_config, evaluator1)
-    mcts1.optimize_for_hardware()
-    
-    mcts2 = MCTS(mcts_config, evaluator2)
-    mcts2.optimize_for_hardware()
-    
-    # Play game
-    state = game_interface.create_initial_state()
-    current_player = 1
-    
-    for move_num in range(config_dict['training']['max_moves_per_game']):
-        # Get current MCTS
-        current_mcts = mcts1 if current_player == 1 else mcts2
-        
-        # Run MCTS search first
-        policy = current_mcts.search(state, num_simulations=arena_config_dict['mcts_simulations'])
-        
-        # Get best action (deterministic)
-        action = current_mcts.get_best_action(state)
-        
-        # Apply action
-        state = game_interface.get_next_state(state, action)
-        
-        # Update MCTS trees for tree reuse
-        if current_player == 1:
-            mcts1.update_root(action)
-            mcts2.update_root(action)
+        # Create evaluators
+        if is_random1:
+            evaluator1 = RandomEvaluator(
+                config=EvaluatorConfig(device='cpu'),  # Random evaluator always on CPU
+                action_size=action_size
+            )
         else:
-            mcts2.update_root(action)
-            mcts1.update_root(action)
+            # Use remote evaluator for neural network
+            evaluator1 = RemoteEvaluator(request_queue1, response_queue1, action_size, worker_id=game_idx)
         
-        # Check terminal
-        if game_interface.is_terminal(state):
-            # Return from player 1's perspective
-            value = game_interface.get_value(state)
-            if current_player == 2:
-                value = -value
-            return int(np.sign(value))
+        if is_random2:
+            evaluator2 = RandomEvaluator(
+                config=EvaluatorConfig(device='cpu'),  # Random evaluator always on CPU
+                action_size=action_size
+            )
+        else:
+            # Use remote evaluator for neural network
+            evaluator2 = RemoteEvaluator(request_queue2, response_queue2, action_size, worker_id=game_idx)
         
-        # Switch player
-        current_player = 3 - current_player
-    
-    # Draw if max moves reached
-    return 0
+        # Wrap evaluators to return torch tensors if GPU is available
+        class TensorEvaluator:
+            def __init__(self, evaluator, device):
+                self.evaluator = evaluator
+                self.device = device
+                self._return_torch_tensors = True
+            
+            def evaluate(self, state, legal_mask=None, temperature=1.0):
+                policy, value = self.evaluator.evaluate(state, legal_mask, temperature)
+                # Convert numpy to torch tensors
+                policy_tensor = torch.from_numpy(policy).float().to(self.device)
+                value_tensor = torch.tensor(value, dtype=torch.float32, device=self.device)
+                return policy_tensor, value_tensor
+            
+            def evaluate_batch(self, states, legal_masks=None, temperature=1.0):
+                # Convert torch tensors to numpy for the remote evaluator
+                if isinstance(states, torch.Tensor):
+                    states = states.cpu().numpy()
+                if legal_masks is not None and isinstance(legal_masks, torch.Tensor):
+                    legal_masks = legal_masks.cpu().numpy()
+                
+                policies, values = self.evaluator.evaluate_batch(states, legal_masks, temperature)
+                
+                # Convert numpy to torch tensors
+                policies_tensor = torch.from_numpy(policies).float().to(self.device)
+                values_tensor = torch.from_numpy(values).float().to(self.device)
+                return policies_tensor, values_tensor
+        
+        # Determine device for tensors
+        tensor_device = 'cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu'
+        
+        # Wrap evaluators if they're remote evaluators (not random)
+        if not is_random1 and hasattr(evaluator1, 'request_queue'):
+            evaluator1 = TensorEvaluator(evaluator1, tensor_device)
+        if not is_random2 and hasattr(evaluator2, 'request_queue'):
+            evaluator2 = TensorEvaluator(evaluator2, tensor_device)
+        
+        logger.debug(f"[ARENA WORKER {game_idx}] Created evaluators, device: {tensor_device}")
+        
+        # Create MCTS instances with optimal settings
+        mcts_config = MCTSConfig(
+            # Core MCTS parameters
+            num_simulations=arena_config_dict['mcts_simulations'],
+            c_puct=arena_config_dict['c_puct'],
+            temperature=0.0,  # Arena always uses deterministic play
+            
+            # Performance and wave parameters
+            min_wave_size=config_dict['mcts']['min_wave_size'],
+            max_wave_size=config_dict['mcts']['max_wave_size'],
+            adaptive_wave_sizing=config_dict['mcts']['adaptive_wave_sizing'],
+            
+            # Dynamic memory pool based on hardware allocation
+            memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
+            use_mixed_precision=True,
+            use_cuda_graphs=False,  # Disable CUDA graphs in workers to save memory
+            use_tensor_cores=True,
+            max_tree_nodes=min(50000, config_dict['mcts']['max_tree_nodes'] // allocation.get('num_workers', 4)),
+            
+            # Game and device configuration
+            device='cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu',
+            game_type=GPUGameType[game_type.name],
+            board_size=config_dict['game']['board_size'],
+            
+            # Disable virtual loss for arena
+            enable_virtual_loss=False,
+            virtual_loss=0.0,
+            
+            # Debug options
+            enable_debug_logging=False,
+            profile_gpu_kernels=False
+        )
+        
+        mcts1 = MCTS(mcts_config, evaluator1)
+        mcts2 = MCTS(mcts_config, evaluator2)
+        
+        # Optimize MCTS for hardware
+        if hasattr(mcts1, 'optimize_for_hardware'):
+            try:
+                mcts1.optimize_for_hardware()
+                mcts2.optimize_for_hardware()
+                logger.debug(f"[ARENA WORKER {game_idx}] MCTS optimized for hardware")
+            except Exception as e:
+                logger.warning(f"[ARENA WORKER {game_idx}] Failed to optimize MCTS: {e}")
+        
+        logger.debug(f"[ARENA WORKER {game_idx}] MCTS configured - device: {mcts_config.device}, memory: {mcts_config.memory_pool_size_mb}MB")
+        
+        # Play game
+        state = game_interface.create_initial_state()
+        current_player = 1
+        
+        for move_num in range(config_dict['training']['max_moves_per_game']):
+            # Get current MCTS
+            current_mcts = mcts1 if current_player == 1 else mcts2
+            
+            # Run MCTS search
+            with torch.no_grad():  # Ensure no gradients are tracked
+                policy = current_mcts.search(state, num_simulations=arena_config_dict['mcts_simulations'])
+            
+            # Get best action (deterministic)
+            action = current_mcts.get_best_action(state)
+            
+            # Apply action
+            state = game_interface.get_next_state(state, action)
+            
+            # No tree reuse in arena to save memory
+            mcts1.reset_tree()
+            mcts2.reset_tree()
+            
+            # Check terminal
+            if game_interface.is_terminal(state):
+                # Return from player 1's perspective
+                value = game_interface.get_value(state)
+                if current_player == 2:
+                    value = -value
+                result = int(np.sign(value))
+                break
+            
+            # Switch player
+            current_player = 3 - current_player
+        else:
+            # Draw if max moves reached
+            result = 0
+        
+        logger.debug(f"[ARENA WORKER {game_idx}] Game completed with result: {result}")
+        
+        # Clean up GPU memory before returning
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Put result in queue
+        result_queue.put(result)
+        
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ARENA WORKER {game_idx}] Failed with error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Put draw result on error
+        result_queue.put(0)

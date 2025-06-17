@@ -117,9 +117,9 @@ class DiscreteTimeHandler:
         
         tau = self.information_time(N)
         if isinstance(N, torch.Tensor):
-            return c_puct * (N + 2) / (torch.sqrt(N + 1) * tau)
+            return c_puct / (torch.sqrt(N + 1) * tau)
         else:
-            return c_puct * (N + 2) / (math.sqrt(N + 1) * tau)
+            return c_puct / (math.sqrt(N + 1) * tau)
 
 
 class QuantumLookupTables:

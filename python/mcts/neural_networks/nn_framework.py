@@ -86,7 +86,7 @@ class BaseGameModel(nn.Module):
     
     def load_checkpoint(self, path: Path, optimizer: Optional[torch.optim.Optimizer] = None):
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location='cpu')
+        checkpoint = torch.load(path, map_location='cpu', weights_only=False)
         self.load_state_dict(checkpoint['model_state_dict'])
         if 'metadata' in checkpoint:
             self.metadata = ModelMetadata.from_dict(checkpoint['metadata'])
@@ -110,7 +110,7 @@ class ModelLoader:
             Tuple of (model, metadata)
         """
         # Load checkpoint
-        checkpoint = torch.load(path, map_location=device)
+        checkpoint = torch.load(path, map_location=device, weights_only=False)
         metadata = ModelMetadata.from_dict(checkpoint['metadata'])
         
         # Create model based on metadata

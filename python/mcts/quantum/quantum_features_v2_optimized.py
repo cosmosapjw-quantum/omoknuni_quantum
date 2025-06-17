@@ -80,7 +80,7 @@ class OptimizedQuantumMCTSV2:
             self.temperature_table = torch.full((max_N,), self.config.initial_temperature, device=self.device)
         
         # Pre-compute hbar_eff factors (without c_puct which varies)
-        self.hbar_factors = (N_values.float() + 2) / (torch.sqrt(N_values.float() + 1) * self.tau_table)
+        self.hbar_factors = 1.0 / (torch.sqrt(N_values.float() + 1) * self.tau_table)
         
         # Pre-compute phase kick probabilities
         self.phase_kick_table = torch.tensor(

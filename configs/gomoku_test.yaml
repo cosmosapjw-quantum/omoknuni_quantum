@@ -93,8 +93,6 @@ training:
   
   # Training loop
   num_epochs: 2
-  checkpoint_interval: 50
-  validation_interval: 1
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
   

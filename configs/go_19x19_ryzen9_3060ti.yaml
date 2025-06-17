@@ -96,8 +96,6 @@ training:
   
   # Training loop
   num_epochs: 10
-  checkpoint_interval: 25  # More frequent checkpoints
-  validation_interval: 1  # Arena evaluation every epoch
   
   # Self-play - Limited for Go complexity
   num_games_per_iteration: 100  # Fewer games

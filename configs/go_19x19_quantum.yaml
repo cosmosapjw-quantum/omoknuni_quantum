@@ -109,8 +109,6 @@ training:
   
   # Training loop
   num_epochs: 10
-  checkpoint_interval: 100
-  validation_interval: 1  # Arena evaluation every epoch
   
   # More self-play for Go - 12 cores
   num_games_per_iteration: 360  # 30 per worker

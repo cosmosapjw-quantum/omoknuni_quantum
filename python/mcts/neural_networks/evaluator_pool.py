@@ -461,7 +461,7 @@ class EvaluatorPool:
     
     def load_state(self, path: str):
         """Load pool state"""
-        state = torch.load(path, map_location=self.device)
+        state = torch.load(path, map_location=self.device, weights_only=False)
         
         self.meta_weight_module.load_state_dict(state['meta_weights'])
         self.meta_optimizer.load_state_dict(state['optimizer'])

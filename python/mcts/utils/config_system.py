@@ -233,8 +233,6 @@ class TrainingFullConfig:
     
     # Training loop
     num_epochs: int = 10
-    checkpoint_interval: int = 100
-    validation_interval: int = 10
     early_stopping_patience: int = 50
     early_stopping_min_delta: float = 1e-4
     

@@ -142,6 +142,47 @@ class CSRTree:
         # Update counters with current state
         self.node_counter[0] = self.num_nodes
         self.edge_counter[0] = self.num_edges
+    
+    def reset(self):
+        """Reset tree to initial state with only root node"""
+        # Reset counters
+        self.num_nodes = 0
+        self.num_edges = 0
+        
+        # Clear all storage
+        self.visit_counts.zero_()
+        self.value_sums.zero_()
+        self.node_priors.zero_()
+        self.node_actions.fill_(-1)
+        self.parent_nodes.fill_(-1)
+        
+        # Clear CSR storage
+        self.row_ptr.zero_()
+        self.col_indices.fill_(-1)
+        self.edge_actions.fill_(-1)
+        self.edge_priors.zero_()
+        
+        # Reset atomic counters
+        self.node_counter.zero_()
+        self.edge_counter.zero_()
+        
+        # Flag for deferred updates
+        self._needs_row_ptr_update = False
+        
+        # Add root node again
+        root_idx = self.add_root(prior=1.0)
+        
+        # Update counters
+        self.node_counter[0] = self.num_nodes
+        self.edge_counter[0] = self.num_edges
+        
+        # Clear stats
+        self.stats = {
+            'memory_reallocations': 0,
+            'batch_operations': 0,
+            'cache_hits': 0,
+            'batched_additions': 0
+        }
         
     def _init_node_storage(self):
         """Initialize node data storage"""
@@ -526,7 +567,10 @@ class CSRTree:
             # Not enough slots - log warning but continue
             if len(empty_indices) > 0:
                 self.children[parent_idx, empty_indices] = child_indices_tensor[:len(empty_indices)]
-            logger.warning(f"Children table nearly full for node {parent_idx}")
+            if parent_idx == 0:  # Only log debug for root node
+                logger.debug(f"Children table nearly full for root node (node 0) - this is normal for extensive exploration")
+            else:
+                logger.warning(f"Children table nearly full for node {parent_idx}")
         
         # Store game states if provided
         if states:

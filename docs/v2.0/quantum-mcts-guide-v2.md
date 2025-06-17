@@ -44,7 +44,7 @@ config = QuantumConfig(
     quantum_level='tree_level',  # or 'one_loop' for full corrections
     
     # Physics-derived parameters
-    hbar_eff=None,  # Auto-computed: c_puct(N+2)/(√(N+1)log(N+2))
+    hbar_eff=None,  # Auto-computed: c_puct/(√(N+1)log(N+2))
     coupling_strength=0.3,  # From RG fixed point
     temperature_mode='annealing',  # T(N) = T₀/log(N+2)
     

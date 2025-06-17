@@ -44,7 +44,7 @@ class QuantumConfigV2:
     quantum_level: str = 'tree_level'  # 'classical', 'tree_level', 'one_loop'
     
     # Physics parameters (None = auto-compute)
-    hbar_eff: Optional[float] = None  # Auto: c_puct(N+2)/(√(N+1)log(N+2))
+    hbar_eff: Optional[float] = None  # Auto: c_puct/(√(N+1)log(N+2))
     coupling_strength: float = 0.3     # From RG fixed point
     temperature_mode: str = 'annealing'  # 'fixed', 'annealing'
     initial_temperature: float = 1.0
@@ -128,9 +128,9 @@ class DiscreteTimeEvolution:
         
         tau = self.information_time(N)
         if isinstance(N, torch.Tensor):
-            return c_puct * (N + 2) / (torch.sqrt(N + 1) * tau)
+            return c_puct / (torch.sqrt(N + 1) * tau)
         else:
-            return c_puct * (N + 2) / (math.sqrt(N + 1) * tau)
+            return c_puct / (math.sqrt(N + 1) * tau)
 
 
 class PhaseDetector:
@@ -341,10 +341,10 @@ class QuantumMCTSV2:
             self.temperature_table = torch.full((max_N,), self.config.initial_temperature, device=self.device)
         
         # Pre-compute hbar_eff factors (without c_puct which may vary)
-        # hbar_eff = c_puct * (N+2) / (sqrt(N+1) * log(N+2))
+        # hbar_eff = c_puct / (sqrt(N+1) * log(N+2))
         self.hbar_factors = torch.where(
             N_range > 0,
-            (N_range + 2) / (torch.sqrt(N_range + 1) * self.tau_table),
+            1.0 / (torch.sqrt(N_range + 1) * self.tau_table),
             torch.ones_like(N_range)
         )
         

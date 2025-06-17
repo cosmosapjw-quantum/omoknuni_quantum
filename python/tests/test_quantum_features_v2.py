@@ -65,7 +65,7 @@ class TestDiscreteTimeEvolution:
         assert all(temps[i] > temps[i+1] for i in range(len(temps)-1))
     
     def test_hbar_eff_scaling(self):
-        """Test ℏ_eff(N) = c_puct(N+2)/(√(N+1)log(N+2))"""
+        """Test ℏ_eff(N) = c_puct/(√(N+1)log(N+2))"""
         config = QuantumConfigV2(hbar_eff=None)  # Auto-compute
         time_evo = DiscreteTimeEvolution(config)
         
@@ -73,23 +73,25 @@ class TestDiscreteTimeEvolution:
         
         # Early: large quantum effects
         hbar_early = time_evo.compute_hbar_eff(1, c_puct)
-        expected_early = c_puct * 3 / (math.sqrt(2) * math.log(3))
+        expected_early = c_puct / (math.sqrt(2) * math.log(3))
         assert abs(hbar_early - expected_early) < 1e-6
         
-        # Late: larger but slower growing quantum effects
+        # Late: smaller quantum effects as search progresses
         hbar_late = time_evo.compute_hbar_eff(1000, c_puct)
-        assert hbar_late > hbar_early  # Actually increases with N
+        assert hbar_late < hbar_early  # Decreases with N as expected
         
         # Correct asymptotic behavior
         N_large = 100000
         hbar_asymp = time_evo.compute_hbar_eff(N_large, c_puct)
-        # Should scale as √N/log(N) for large N
-        assert hbar_asymp < 100.0  # Reasonable bound
+        # Should scale as 1/(√N*log(N)) for large N
+        assert hbar_asymp < 0.01  # Very small for large N
         
-        # Check growth rate follows theoretical formula
-        # hbar_eff(N) = c_puct * (N+2) / (sqrt(N+1) * log(N+2))
-        # For large N, this grows like sqrt(N)/log(N)
-        # But the exact ratio calculation is more complex due to the +2 and +1 terms
+        # Check monotonic decrease with N
+        # hbar_eff(N) = c_puct / (sqrt(N+1) * log(N+2))
+        # For large N, this decreases like 1/(sqrt(N)*log(N))
+        N_values = [1, 10, 100, 1000]
+        hbar_values = [time_evo.compute_hbar_eff(N, c_puct) for N in N_values]
+        assert all(hbar_values[i] > hbar_values[i+1] for i in range(len(hbar_values)-1))
 
 
 class TestPhaseDetection:
@@ -387,8 +389,8 @@ class TestIntegration:
         assert phases_seen[0] == 'quantum'  # Early exploration
         assert phases_seen[-1] in ['critical', 'classical']  # Late convergence
         assert temperatures[0] > temperatures[-1]  # Temperature annealing
-        # Note: hbar_eff actually increases with N due to the (N+2)/sqrt(N+1) factor
-        assert hbar_values[0] < hbar_values[-1]  # hbar_eff grows with N
+        # hbar_eff should decrease with N: c_puct/(√(N+1)log(N+2))
+        assert hbar_values[0] > hbar_values[-1]  # hbar_eff decreases with N
     
     def test_performance_characteristics(self):
         """Test that overhead is within expected bounds"""
