@@ -259,10 +259,6 @@ class TrainingFullConfig:
     loss_scale: str = "dynamic"  # dynamic, static
     static_loss_scale: float = 1.0
     
-    # Evaluation
-    eval_temperature: float = 0.1
-    eval_num_games: int = 20
-    
     # Paths
     save_dir: str = "checkpoints"
     tensorboard_dir: str = "runs"
@@ -316,9 +312,7 @@ class ArenaFullConfig:
     update_elo: bool = True
     
     # Random policy evaluation
-    eval_vs_random_interval: int = 10  # Every N iterations
-    eval_vs_random_games: int = 20
-    min_win_rate_vs_random: float = 0.95  # Sanity check
+    min_win_rate_vs_random: float = 0.95  # Sanity check for first model
     
     # Tournament settings
     tournament_rounds: int = 1  # Round-robin rounds

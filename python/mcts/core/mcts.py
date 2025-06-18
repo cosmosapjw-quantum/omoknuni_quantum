@@ -251,9 +251,20 @@ class MCTS:
             logger.info(f"Wave size: {self.config.max_wave_size}")
         
         # Initialize tree with optimized settings
+        # Determine max_actions based on game type
+        if self.config.game_type == GameType.CHESS:
+            max_actions = 4096  # Chess has up to 4096 possible moves
+        elif self.config.game_type == GameType.GO:
+            max_actions = 362   # 19x19 + pass
+        elif self.config.game_type == GameType.GOMOKU:
+            max_actions = 225   # 15x15
+        else:
+            max_actions = 512   # Safe default
+            
         tree_config = CSRTreeConfig(
             max_nodes=self.config.max_tree_nodes,
             max_edges=self.config.max_tree_nodes * self.config.max_children_per_node,
+            max_actions=max_actions,
             device=self.config.device,
             enable_virtual_loss=self.config.enable_virtual_loss,
             virtual_loss_value=-abs(self.config.virtual_loss if hasattr(self.config, 'virtual_loss') else self.config.virtual_loss_value),

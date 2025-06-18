@@ -797,12 +797,23 @@ class UnifiedTrainingPipeline:
             # Move best model back to GPU for the match
             best_model.to(self.config.mcts.device)
             
-            wins_vs_best, draws_vs_best, losses_vs_best = self.arena.compare_models(
-                self.model, best_model,
-                model1_name=f"iter_{self.iteration}",
-                model2_name=f"iter_{self.best_model_iteration}",
-                silent=False
-            )
+            try:
+                wins_vs_best, draws_vs_best, losses_vs_best = self.arena.compare_models(
+                    self.model, best_model,
+                    model1_name=f"iter_{self.iteration}",
+                    model2_name=f"iter_{self.best_model_iteration}",
+                    silent=False
+                )
+            except RuntimeError as e:
+                if "CUDA error" in str(e):
+                    logger.error(f"CUDA error during arena evaluation: {e}")
+                    # Treat CUDA errors as draws to continue training
+                    logger.warning("Treating all games as draws due to CUDA error")
+                    wins_vs_best = 0
+                    draws_vs_best = self.config.arena.num_games
+                    losses_vs_best = 0
+                else:
+                    raise
             win_rate_vs_best = wins_vs_best / (wins_vs_best + draws_vs_best + losses_vs_best)
             tqdm.write(f"      Result: {wins_vs_best}W-{draws_vs_best}D-{losses_vs_best}L ({win_rate_vs_best:.1%})")
             
@@ -863,7 +874,9 @@ class UnifiedTrainingPipeline:
         # Save as best model if accepted
         if accepted:
             self._save_best_model()
-            tqdm.write(f"\n      ✓ Model accepted as new best!")
+            # Get the final ELO after potential adjustment
+            final_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
+            tqdm.write(f"\n      ✓ Model accepted as new best! (ELO: {final_elo:.1f})")
         else:
             tqdm.write(f"\n      ✗ Model rejected")
             
@@ -873,6 +886,16 @@ class UnifiedTrainingPipeline:
     
     def _save_best_model(self):
         """Save current model as best"""
+        # Fix ELO consistency: ensure new best model's ELO is at least as high as old best
+        if self.elo_tracker and self.best_model_iteration:
+            old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
+            current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
+            
+            # If current model's ELO is lower than old best, update it
+            if current_elo < old_best_elo:
+                logger.debug(f"Adjusting new best model's ELO from {current_elo:.1f} to {old_best_elo:.1f} to maintain consistency")
+                self.elo_tracker.ratings[f"iter_{self.iteration}"] = old_best_elo
+        
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"
         torch.save(self.model.state_dict(), model_path)

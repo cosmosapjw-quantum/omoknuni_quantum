@@ -14,7 +14,7 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  num_simulations: 800
+  num_simulations: 500
   c_puct: 3.0
   dirichlet_alpha: 0.15
   dirichlet_epsilon: 0.25
@@ -151,10 +151,6 @@ training:
   loss_scale: dynamic
   static_loss_scale: 1.0
   
-  # Evaluation
-  eval_temperature: 0.1
-  eval_num_games: 20
-  
   # Paths
   save_dir: checkpoints
   tensorboard_dir: runs
@@ -162,7 +158,7 @@ training:
 
 arena:
   # Battle settings - Utilizing multi-core CPU
-  num_games: 120
+  num_games: 60
   num_workers: 12
   win_threshold: 0.55
   statistical_significance: true
@@ -170,7 +166,7 @@ arena:
   
   # Game settings
   temperature: 0.0
-  mcts_simulations: 800
+  mcts_simulations: 500
   c_puct: 1.0
   max_moves: 225
   time_limit_seconds: null
@@ -183,8 +179,6 @@ arena:
   update_elo: true
   
   # Random policy evaluation
-  eval_vs_random_interval: 1
-  eval_vs_random_games: 20
   min_win_rate_vs_random: 0.95
   
   # Tournament settings

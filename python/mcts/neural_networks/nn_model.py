@@ -175,7 +175,7 @@ class AlphaZeroNetwork(nn.Module):
         self._init_kwargs = {'config': config}
         
         # Initial convolution
-        self.initial_conv = nn.Conv2d(
+        self.conv_input = nn.Conv2d(
             config.input_channels, 
             config.num_filters, 
             3, 
@@ -184,12 +184,12 @@ class AlphaZeroNetwork(nn.Module):
         )
         
         if config.use_batch_norm:
-            self.initial_bn = nn.BatchNorm2d(config.num_filters)
+            self.bn_input = nn.BatchNorm2d(config.num_filters)
             
         self.activation = nn.ReLU() if config.activation == 'relu' else nn.ELU()
         
         # Residual blocks
-        self.res_blocks = nn.ModuleList([
+        self.residual_blocks = nn.ModuleList([
             ResidualBlock(
                 config.num_filters, 
                 config.use_batch_norm,
@@ -231,13 +231,13 @@ class AlphaZeroNetwork(nn.Module):
             - value: (batch, 1)
         """
         # Initial convolution
-        out = self.initial_conv(x)
+        out = self.conv_input(x)
         if self.config.use_batch_norm:
-            out = self.initial_bn(out)
+            out = self.bn_input(out)
         out = self.activation(out)
         
         # Residual blocks
-        for block in self.res_blocks:
+        for block in self.residual_blocks:
             out = block(out)
             
         # Split to policy and value heads

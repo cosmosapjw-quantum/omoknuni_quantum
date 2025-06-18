@@ -42,6 +42,7 @@ class CSRTreeConfig:
     """Configuration for CSR tree format"""
     max_nodes: int = 0  # 0 means no limit (will use float('inf'))
     max_edges: int = 0  # 0 means no limit, will grow dynamically
+    max_actions: int = 512  # Maximum actions per node (game-specific)
     device: str = 'cuda'
     dtype_indices: 'torch.dtype' = None  # Will be set to torch.int32 in __post_init__
     dtype_actions: 'torch.dtype' = None  # Will be set to torch.int32 in __post_init__
@@ -190,6 +191,10 @@ class CSRTree:
         n = int(self.config.max_nodes) if self.config.max_nodes > 0 else 100000
         device = self.device
         
+        # Synchronize before allocation to ensure clean state
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        
         # Node statistics
         self.visit_counts = torch.zeros(n, device=device, dtype=torch.int32)
         self.value_sums = torch.zeros(n, device=device, dtype=self.config.dtype_values)
@@ -293,7 +298,10 @@ class CSRTree:
     def _init_batch_buffers(self):
         """Initialize buffers for batched operations"""
         batch_size = self.config.batch_size
-        max_children = 361  # Max for Go
+        
+        # Use the configured max_actions from config, or a safe default
+        # This should match the game's action space size
+        max_children = getattr(self.config, 'max_actions', 512)
         
         # Batch buffers for accumulating operations
         self.batch_parent_indices = torch.zeros(batch_size, dtype=torch.int32, device=self.device)
@@ -804,9 +812,19 @@ class CSRTree:
             self.flush_batch()
             
         # Use the children lookup table instead of CSR for single node queries
-        children_slice = self.children[node_idx]
-        valid_mask = children_slice >= 0
-        valid_children = children_slice[valid_mask]
+        try:
+            children_slice = self.children[node_idx]
+            valid_mask = children_slice >= 0
+            valid_children = children_slice[valid_mask]
+        except RuntimeError as e:
+            if "CUDA error" in str(e):
+                # Synchronize and retry once
+                torch.cuda.synchronize()
+                children_slice = self.children[node_idx]
+                valid_mask = children_slice >= 0
+                valid_children = children_slice[valid_mask]
+            else:
+                raise
         
         if len(valid_children) == 0:
             # No children

@@ -131,8 +131,6 @@ arena:
   update_elo: true
   
   # Random policy checks
-  eval_vs_random_interval: 25
-  eval_vs_random_games: 10
   min_win_rate_vs_random: 0.99
   
   # Tournament settings

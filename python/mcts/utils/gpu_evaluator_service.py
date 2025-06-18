@@ -4,6 +4,12 @@ This service runs in the main process and handles all neural network evaluations
 for self-play workers, maximizing GPU utilization through batching.
 """
 
+import os
+# Set CUDA initialization mode for multiprocessing
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+if 'CUDA_VISIBLE_DEVICES' not in os.environ:
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -67,9 +73,39 @@ class GPUEvaluatorService:
         self.batch_timeout = batch_timeout
         self.max_queue_size = max_queue_size
         
+        # Check CUDA availability and move model to device
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available, falling back to CPU")
+            self.device = torch.device('cpu')
+            device = 'cpu'
+            
+        # Initialize CUDA if needed
+        if device == 'cuda':
+            try:
+                # Test CUDA availability
+                torch.cuda.init()
+                torch.cuda.synchronize()
+                # Test tensor creation
+                test_tensor = torch.zeros(1, device=self.device)
+                del test_tensor
+                torch.cuda.empty_cache()
+            except Exception as e:
+                logger.error(f"CUDA initialization failed: {e}")
+                logger.warning("Falling back to CPU")
+                self.device = torch.device('cpu')
+                device = 'cpu'
+        
         # Move model to device and set to eval mode
-        self.model.to(self.device)
-        self.model.eval()
+        try:
+            self.model.to(self.device)
+            self.model.eval()
+        except Exception as e:
+            logger.error(f"Failed to move model to {device}: {e}")
+            if device == 'cuda':
+                logger.warning("Falling back to CPU")
+                self.device = torch.device('cpu')
+                self.model.to(self.device)
+                self.model.eval()
         
         # Create multiprocessing queues
         self.request_queue = mp.Queue(maxsize=max_queue_size)
@@ -211,14 +247,86 @@ class GPUEvaluatorService:
                 else:
                     legal_masks.append(None)
             
-            # Stack states
-            state_tensor = torch.stack(states).to(self.device)
-            
-            # Handle legal masks
-            if all(mask is not None for mask in legal_masks):
-                legal_mask_tensor = torch.stack(legal_masks).to(self.device)
-            else:
-                legal_mask_tensor = None
+            # Stack states with error handling
+            try:
+                state_tensor = torch.stack(states).to(self.device)
+                
+                # Handle legal masks
+                if all(mask is not None for mask in legal_masks):
+                    legal_mask_tensor = torch.stack(legal_masks).to(self.device)
+                else:
+                    legal_mask_tensor = None
+            except RuntimeError as e:
+                if "CUDA" in str(e) and self.device.type == 'cuda':
+                    logger.error(f"CUDA error during tensor transfer: {e}")
+                    logger.warning("Attempting to recover by clearing cache and retrying on CPU")
+                    
+                    # Clear CUDA cache
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                    
+                    # Fall back to CPU for this batch
+                    cpu_device = torch.device('cpu')
+                    state_tensor = torch.stack(states).to(cpu_device)
+                    
+                    if all(mask is not None for mask in legal_masks):
+                        legal_mask_tensor = torch.stack(legal_masks).to(cpu_device)
+                    else:
+                        legal_mask_tensor = None
+                    
+                    # Move model to CPU temporarily
+                    self.model.to(cpu_device)
+                    
+                    # Process on CPU
+                    with torch.no_grad():
+                        if hasattr(self.model, 'forward_batch'):
+                            policy_logits, values = self.model.forward_batch(state_tensor, legal_mask_tensor)
+                        else:
+                            policy_logits, values = self.model(state_tensor)
+                            if legal_mask_tensor is not None:
+                                policy_logits = policy_logits.masked_fill(~legal_mask_tensor, float('-inf'))
+                    
+                    # Try to move model back to GPU
+                    try:
+                        self.model.to(self.device)
+                    except:
+                        logger.error("Failed to move model back to GPU, continuing on CPU")
+                        self.device = cpu_device
+                    
+                    # Continue processing responses
+                    policies = []
+                    for i, req in enumerate(requests):
+                        logits = policy_logits[i]
+                        
+                        if req.temperature > 0:
+                            probs = torch.softmax(logits / req.temperature, dim=-1)
+                        else:
+                            probs = torch.zeros_like(logits)
+                            probs[logits.argmax()] = 1.0
+                        
+                        policies.append(probs.cpu().numpy())
+                    
+                    values_np = values.squeeze(-1).cpu().numpy()
+                    
+                    # Send responses
+                    for i, req in enumerate(requests):
+                        response = EvaluationResponse(
+                            request_id=req.request_id,
+                            policy=policies[i],
+                            value=float(values_np[i]),
+                            worker_id=req.worker_id
+                        )
+                        
+                        if req.worker_id in self.response_queues:
+                            try:
+                                self.response_queues[req.worker_id].put(response)
+                            except:
+                                logger.error(f"Failed to send response to worker {req.worker_id}")
+                    
+                    return
+                else:
+                    raise
             
             # Run evaluation
             with torch.no_grad():
@@ -288,12 +396,44 @@ class GPUEvaluatorService:
             import traceback
             traceback.print_exc()
             
+            # Check if this is a CUDA error
+            if "CUDA" in str(e) and self.device.type == 'cuda':
+                logger.warning("CUDA error detected, attempting recovery")
+                
+                # Clear CUDA cache and reset
+                if torch.cuda.is_available():
+                    try:
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                    except:
+                        pass
+                
+                # Check if we should permanently switch to CPU
+                self.cuda_error_count = getattr(self, 'cuda_error_count', 0) + 1
+                if self.cuda_error_count >= 3:
+                    logger.error("Multiple CUDA errors detected, permanently switching to CPU")
+                    self.device = torch.device('cpu')
+                    try:
+                        self.model.to(self.device)
+                    except:
+                        logger.error("Failed to move model to CPU")
+            
             # Send error responses
             for req in requests:
                 # Send dummy response to unblock workers
+                # Use appropriate action size based on game type
+                action_size = 225  # Default to Gomoku
+                if hasattr(req, 'game_type'):
+                    if req.game_type == 'chess':
+                        action_size = 4096
+                    elif req.game_type == 'go':
+                        action_size = 361
+                    elif req.game_type == 'gomoku':
+                        action_size = 225
+                
                 response = EvaluationResponse(
                     request_id=req.request_id,
-                    policy=np.ones(361) / 361,  # Uniform policy
+                    policy=np.ones(action_size) / action_size,  # Uniform policy
                     value=0.0,
                     worker_id=req.worker_id
                 )

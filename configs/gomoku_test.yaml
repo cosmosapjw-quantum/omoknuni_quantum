@@ -116,10 +116,6 @@ training:
   # Mixed precision
   mixed_precision: false
   
-  # Evaluation
-  eval_temperature: 0.1
-  eval_num_games: 2           # Minimal
-  
   # Paths
   save_dir: checkpoints
   tensorboard_dir: runs
@@ -148,8 +144,6 @@ arena:
   update_elo: true
   
   # Random policy evaluation
-  eval_vs_random_interval: 999  # Effectively disable
-  eval_vs_random_games: 2    # Only 2 games
   min_win_rate_vs_random: 0.5
   
   # Tournament settings

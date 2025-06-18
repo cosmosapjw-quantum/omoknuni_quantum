@@ -111,23 +111,89 @@ class ModelLoader:
         """
         # Load checkpoint
         checkpoint = torch.load(path, map_location=device, weights_only=False)
-        metadata = ModelMetadata.from_dict(checkpoint['metadata'])
+        
+        # Handle different checkpoint formats
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            # New format with model_state_dict and metadata
+            state_dict = checkpoint['model_state_dict']
+            has_metadata = 'metadata' in checkpoint
+        else:
+            # Legacy format - checkpoint is the state dict itself
+            state_dict = checkpoint
+            checkpoint = {'model_state_dict': state_dict}
+            has_metadata = False
+        
+        # Handle checkpoints with and without metadata
+        if has_metadata:
+            metadata = ModelMetadata.from_dict(checkpoint['metadata'])
+        else:
+            # Try to infer metadata from the model structure
+            logger.warning(f"No metadata found in checkpoint {path}, inferring from model structure")
+            
+            # Default values for older checkpoints
+            game_type = 'gomoku'  # Default to gomoku if not specified
+            board_size = 15  # Default board size
+            
+            # state_dict is already extracted above
+            
+            # Infer input channels from first conv layer
+            input_channels = 20  # Default
+            for key in state_dict:
+                if ('initial_conv' in key or 'conv_input' in key) and 'weight' in key:
+                    input_channels = state_dict[key].shape[1]
+                    break
+            
+            # Infer number of blocks by counting residual blocks
+            num_blocks = 10  # Default
+            block_count = sum(1 for key in state_dict if 'block' in key and '.0.weight' in key)
+            if block_count > 0:
+                num_blocks = block_count
+                
+            # Infer number of filters from conv layers
+            num_filters = 128  # Default
+            for key in state_dict:
+                if ('initial_conv' in key or 'conv_input' in key) and 'weight' in key:
+                    num_filters = state_dict[key].shape[0]
+                    break
+            
+            # Infer board size and num_actions from policy head
+            num_actions = board_size * board_size
+            for key in state_dict:
+                if 'policy_head' in key and 'fc' in key and 'weight' in key:
+                    num_actions = state_dict[key].shape[0]
+                    # Try to infer board size from num_actions
+                    import math
+                    sqrt_actions = int(math.sqrt(num_actions))
+                    if sqrt_actions * sqrt_actions == num_actions:
+                        board_size = sqrt_actions
+                    break
+            
+            metadata = ModelMetadata(
+                game_type=game_type,
+                board_size=board_size,
+                num_actions=num_actions,
+                input_channels=input_channels,
+                num_blocks=num_blocks,
+                num_filters=num_filters,
+                version="0.9",  # Mark as legacy version
+                training_steps=0,
+                elo_rating=1200.0
+            )
         
         # Create model based on metadata
-        if metadata.game_type == 'chess':
-            from .resnet_model import create_resnet_for_game
-            model = create_resnet_for_game('chess', input_channels=metadata.input_channels)
-        elif metadata.game_type == 'go':
-            from .resnet_model import create_resnet_for_game
-            model = create_resnet_for_game('go', input_channels=metadata.input_channels)
-        elif metadata.game_type == 'gomoku':
-            from .resnet_model import create_resnet_for_game
-            model = create_resnet_for_game('gomoku', input_channels=metadata.input_channels)
-        else:
-            raise ValueError(f"Unknown game type: {metadata.game_type}")
+        from .resnet_model import create_resnet_for_game
+        
+        # Pass all relevant parameters from metadata
+        model = create_resnet_for_game(
+            metadata.game_type,
+            input_channels=metadata.input_channels,
+            num_blocks=metadata.num_blocks,
+            num_filters=metadata.num_filters
+        )
         
         # Load weights
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(state_dict)
+                
         model.metadata = metadata
         model.to(device)
         model.eval()

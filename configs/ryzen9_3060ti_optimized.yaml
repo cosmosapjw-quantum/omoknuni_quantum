@@ -135,8 +135,6 @@ arena:
   update_elo: true
   
   # Random policy checks
-  eval_vs_random_interval: 10
-  eval_vs_random_games: 40  # More games for statistical significance
   min_win_rate_vs_random: 0.95
   
   # Logging

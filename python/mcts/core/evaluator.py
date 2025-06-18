@@ -584,10 +584,20 @@ class AlphaZeroEvaluator(Evaluator):
         # Get action size from model if not provided
         if action_size is None:
             # Try to infer from model's policy head
-            if hasattr(model, 'policy_head') and hasattr(model.policy_head, 'fc'):
-                action_size = model.policy_head.fc.out_features
+            if hasattr(model, 'policy_head'):
+                # Check for different possible final layer names
+                if hasattr(model.policy_head, 'fc'):
+                    action_size = model.policy_head.fc.out_features
+                elif hasattr(model.policy_head, 'fc2'):
+                    action_size = model.policy_head.fc2.out_features
+                elif hasattr(model.policy_head, 'final_fc'):
+                    action_size = model.policy_head.final_fc.out_features
             elif hasattr(model, 'config') and hasattr(model.config, 'num_actions'):
                 action_size = model.config.num_actions
+            elif hasattr(model, 'num_actions'):
+                action_size = model.num_actions
+            elif hasattr(model, 'metadata') and hasattr(model.metadata, 'num_actions'):
+                action_size = model.metadata.num_actions
             else:
                 raise ValueError("Cannot infer action_size from model. Please provide it explicitly.")
         

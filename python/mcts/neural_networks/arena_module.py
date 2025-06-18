@@ -194,10 +194,25 @@ class ArenaManager:
             else:
                 # Use sequential arena for NN vs NN matches to avoid CUDA issues
                 return self._sequential_arena(model1, model2, num_games, silent)
+        except Exception as e:
+            logger.error(f"[ARENA] Error in compare_models: {e}")
+            # Handle CUDA errors gracefully
+            if "CUDA error" in str(e):
+                logger.warning("[ARENA] CUDA error encountered, attempting recovery")
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                        torch.cuda.empty_cache()
+                except:
+                    logger.warning("[ARENA] Could not clear CUDA cache during cleanup")
+            raise
         finally:
             # Always clean up after arena battles
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                try:
+                    torch.cuda.empty_cache()
+                except:
+                    logger.warning("[ARENA] Could not clear CUDA cache during cleanup")
     
     def _serialize_config(self, config):
         """Serialize config for multiprocessing, removing CUDA references"""
@@ -265,9 +280,13 @@ class ArenaManager:
         else:
             # Ensure model is in eval mode and gradients disabled
             model1.eval()
+            # Get action size from game interface
+            initial_state = self.game_interface.create_initial_state()
+            action_size = self.game_interface.get_action_space_size(initial_state)
             evaluator1 = AlphaZeroEvaluator(
                 model=model1,
-                device=self.arena_config.device
+                device=self.arena_config.device,
+                action_size=action_size
             )
             created_evaluator1 = True
             
@@ -276,9 +295,13 @@ class ArenaManager:
         else:
             # Ensure model is in eval mode and gradients disabled
             model2.eval()
+            # Get action size from game interface
+            initial_state = self.game_interface.create_initial_state()
+            action_size = self.game_interface.get_action_space_size(initial_state)
             evaluator2 = AlphaZeroEvaluator(
                 model=model2,
-                device=self.arena_config.device
+                device=self.arena_config.device,
+                action_size=action_size
             )
             created_evaluator2 = True
         
@@ -680,43 +703,105 @@ class ArenaManager:
             
             # Log memory state on error
             if torch.cuda.is_available():
-                gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
-                logger.error(f"[ARENA] GPU memory at error: {gpu_allocated:.3f}GB")
+                try:
+                    gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
+                    logger.error(f"[ARENA] GPU memory at error: {gpu_allocated:.3f}GB")
+                except:
+                    logger.error("[ARENA] Could not query GPU memory due to CUDA error")
+            
+            # For CUDA errors, attempt recovery
+            if "CUDA error" in str(e):
+                logger.warning(f"[ARENA] Attempting CUDA error recovery for game {game_idx}")
+                try:
+                    # Synchronize to ensure all operations complete
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                except:
+                    pass
+                
+                # Force cleanup of MCTS instances
+                if 'mcts1' in locals():
+                    try:
+                        if hasattr(mcts1, 'clear_tree'):
+                            mcts1.clear_tree()
+                        del mcts1
+                    except:
+                        pass
+                        
+                if 'mcts2' in locals():
+                    try:
+                        if hasattr(mcts2, 'clear_tree'):
+                            mcts2.clear_tree()
+                        del mcts2
+                    except:
+                        pass
+                
+                # Clear CUDA cache
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                except:
+                    pass
+                
+                # Return draw on CUDA error to continue tournament
+                logger.warning(f"[ARENA] Treating game {game_idx} as draw due to CUDA error")
+                return 0
             
             raise
         finally:
             # Explicit cleanup to prevent memory leaks
+            cuda_available = False
+            try:
+                cuda_available = torch.cuda.is_available()
+            except:
+                # CUDA may be in error state
+                pass
+                
             if self.arena_config.memory_monitoring and game_idx % 5 == 0:
                 logger.debug(f"[ARENA] Game {game_idx} - Starting cleanup")
                 
                 # Log memory before cleanup
-                if torch.cuda.is_available():
-                    gpu_before = torch.cuda.memory_allocated()/1024/1024/1024
+                gpu_before = 0
+                if cuda_available:
+                    try:
+                        gpu_before = torch.cuda.memory_allocated()/1024/1024/1024
+                    except:
+                        pass
             
             # Clear MCTS trees before deletion if they exist
             if 'mcts1' in locals():
-                if hasattr(mcts1, 'clear_tree'):
-                    mcts1.clear_tree()
-                elif hasattr(mcts1, 'reset_tree'):
-                    mcts1.reset_tree()
+                try:
+                    if hasattr(mcts1, 'clear_tree'):
+                        mcts1.clear_tree()
+                    elif hasattr(mcts1, 'reset_tree'):
+                        mcts1.reset_tree()
+                except Exception as e:
+                    logger.warning(f"Error during MCTS cleanup: {e}")
                 del mcts1
             if 'mcts2' in locals():
-                if hasattr(mcts2, 'clear_tree'):
-                    mcts2.clear_tree()
-                elif hasattr(mcts2, 'reset_tree'):
-                    mcts2.reset_tree()
+                try:
+                    if hasattr(mcts2, 'clear_tree'):
+                        mcts2.clear_tree()
+                    elif hasattr(mcts2, 'reset_tree'):
+                        mcts2.reset_tree()
+                except Exception as e:
+                    logger.warning(f"Error during MCTS cleanup: {e}")
                 del mcts2
             
             # Force garbage collection more aggressively
             if game_idx % max(1, self.arena_config.gc_frequency // 2) == 0:
                 gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()  # Ensure all CUDA operations complete
-                    
-                    if self.arena_config.memory_monitoring and game_idx % 5 == 0:
-                        gpu_after = torch.cuda.memory_allocated()/1024/1024/1024
-                        logger.debug(f"[ARENA] Game {game_idx} - Cleanup complete. GPU memory: {gpu_before:.3f}GB -> {gpu_after:.3f}GB")
+                if cuda_available:
+                    try:
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()  # Ensure all CUDA operations complete
+                        
+                        if self.arena_config.memory_monitoring and game_idx % 5 == 0:
+                            gpu_after = torch.cuda.memory_allocated()/1024/1024/1024
+                            logger.debug(f"[ARENA] Game {game_idx} - Cleanup complete. GPU memory: {gpu_before:.3f}GB -> {gpu_after:.3f}GB")
+                    except Exception as e:
+                        logger.warning(f"[ARENA] Could not clear CUDA cache during cleanup")
                 else:
                     if self.arena_config.memory_monitoring and game_idx % 5 == 0:
                         logger.debug(f"[ARENA] Game {game_idx} - Cleanup complete (CPU only)")
