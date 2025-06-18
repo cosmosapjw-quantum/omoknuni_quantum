@@ -9,7 +9,6 @@ import yaml
 import logging
 import psutil
 import platform
-import torch
 from dataclasses import dataclass, field, asdict, fields
 from typing import Dict, Any, Optional, List, Union, get_origin, get_args
 from enum import Enum
@@ -501,16 +500,21 @@ class AlphaZeroConfig:
         available_ram_gb = mem.available / (1024**3)
         
         # GPU information
-        gpu_available = torch.cuda.is_available()
+        # Lazy import torch to avoid importing it in worker processes
         gpu_count = 0
         gpu_memory_mb = 0
         gpu_name = "None"
         
-        if gpu_available:
-            gpu_count = torch.cuda.device_count()
-            gpu_props = torch.cuda.get_device_properties(0)
-            gpu_name = gpu_props.name
-            gpu_memory_mb = gpu_props.total_memory // (1024*1024)
+        try:
+            import torch
+            gpu_available = torch.cuda.is_available()
+            if gpu_available:
+                gpu_count = torch.cuda.device_count()
+                gpu_props = torch.cuda.get_device_properties(0)
+                gpu_name = gpu_props.name
+                gpu_memory_mb = gpu_props.total_memory // (1024*1024)
+        except ImportError:
+            gpu_available = False
         
         hardware_info = {
             'cpu_count': cpu_count,

@@ -73,25 +73,45 @@ class BaseGameModel(nn.Module):
         """
         raise NotImplementedError
     
-    def save_checkpoint(self, path: Path, optimizer: Optional[torch.optim.Optimizer] = None):
-        """Save model checkpoint"""
-        checkpoint = {
-            'model_state_dict': self.state_dict(),
-            'metadata': self.metadata.to_dict() if self.metadata else {},
-        }
-        if optimizer is not None:
-            checkpoint['optimizer_state_dict'] = optimizer.state_dict()
-        torch.save(checkpoint, path)
+    def save_checkpoint(self, path: Path, optimizer: Optional[torch.optim.Optimizer] = None, save_metadata: bool = True):
+        """Save model checkpoint
+        
+        Args:
+            path: Path to save checkpoint
+            optimizer: Optional optimizer to save state
+            save_metadata: Whether to include metadata in checkpoint (default: True)
+        """
+        if save_metadata and self.metadata:
+            # Save as full checkpoint with metadata
+            checkpoint = {
+                'model_state_dict': self.state_dict(),
+                'metadata': self.metadata.to_dict(),
+            }
+            if optimizer is not None:
+                checkpoint['optimizer_state_dict'] = optimizer.state_dict()
+            torch.save(checkpoint, path)
+        else:
+            # Save just the state dict (for compatibility with unified_training_pipeline)
+            torch.save(self.state_dict(), path)
         logger.info(f"Saved checkpoint to {path}")
     
     def load_checkpoint(self, path: Path, optimizer: Optional[torch.optim.Optimizer] = None):
         """Load model checkpoint"""
         checkpoint = torch.load(path, map_location='cpu', weights_only=False)
-        self.load_state_dict(checkpoint['model_state_dict'])
-        if 'metadata' in checkpoint:
-            self.metadata = ModelMetadata.from_dict(checkpoint['metadata'])
-        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # Handle both checkpoint formats
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            # Full checkpoint format
+            self.load_state_dict(checkpoint['model_state_dict'])
+            if 'metadata' in checkpoint:
+                self.metadata = ModelMetadata.from_dict(checkpoint['metadata'])
+            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        else:
+            # Pure state dict format
+            self.load_state_dict(checkpoint)
+            # Metadata should be set by the model class itself
+            
         logger.info(f"Loaded checkpoint from {path}")
 
 
@@ -113,12 +133,18 @@ class ModelLoader:
         checkpoint = torch.load(path, map_location=device, weights_only=False)
         
         # Handle different checkpoint formats
-        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            # New format with model_state_dict and metadata
-            state_dict = checkpoint['model_state_dict']
-            has_metadata = 'metadata' in checkpoint
+        if isinstance(checkpoint, dict):
+            # Check if it's a full checkpoint with model_state_dict
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+                has_metadata = 'metadata' in checkpoint
+            else:
+                # It's a state dict wrapped in a dict (shouldn't happen, but handle it)
+                state_dict = checkpoint
+                checkpoint = {'model_state_dict': state_dict}
+                has_metadata = False
         else:
-            # Legacy format - checkpoint is the state dict itself
+            # It's a pure state dict (from torch.save(model.state_dict(), path))
             state_dict = checkpoint
             checkpoint = {'model_state_dict': state_dict}
             has_metadata = False
@@ -128,13 +154,11 @@ class ModelLoader:
             metadata = ModelMetadata.from_dict(checkpoint['metadata'])
         else:
             # Try to infer metadata from the model structure
-            logger.warning(f"No metadata found in checkpoint {path}, inferring from model structure")
+            logger.info(f"No metadata found in checkpoint {path}, inferring from model structure")
             
-            # Default values for older checkpoints
+            # Default values
             game_type = 'gomoku'  # Default to gomoku if not specified
             board_size = 15  # Default board size
-            
-            # state_dict is already extracted above
             
             # Infer input channels from first conv layer
             input_channels = 20  # Default
@@ -145,7 +169,7 @@ class ModelLoader:
             
             # Infer number of blocks by counting residual blocks
             num_blocks = 10  # Default
-            block_count = sum(1 for key in state_dict if 'block' in key and '.0.weight' in key)
+            block_count = sum(1 for key in state_dict if 'residual_blocks' in key and '.conv1.weight' in key)
             if block_count > 0:
                 num_blocks = block_count
                 
@@ -159,9 +183,18 @@ class ModelLoader:
             # Infer board size and num_actions from policy head
             num_actions = board_size * board_size
             for key in state_dict:
-                if 'policy_head' in key and 'fc' in key and 'weight' in key:
+                if 'policy_head' in key and 'fc2' in key and 'weight' in key:
+                    # Modern architecture has fc2 as final layer
                     num_actions = state_dict[key].shape[0]
                     # Try to infer board size from num_actions
+                    import math
+                    sqrt_actions = int(math.sqrt(num_actions))
+                    if sqrt_actions * sqrt_actions == num_actions:
+                        board_size = sqrt_actions
+                    break
+                elif 'policy_head' in key and 'fc' in key and 'weight' in key and 'fc2' not in key:
+                    # Fallback for models that might use just 'fc'
+                    num_actions = state_dict[key].shape[0]
                     import math
                     sqrt_actions = int(math.sqrt(num_actions))
                     if sqrt_actions * sqrt_actions == num_actions:
@@ -175,7 +208,7 @@ class ModelLoader:
                 input_channels=input_channels,
                 num_blocks=num_blocks,
                 num_filters=num_filters,
-                version="0.9",  # Mark as legacy version
+                version="1.0",
                 training_steps=0,
                 elo_rating=1200.0
             )
@@ -272,10 +305,12 @@ class MixedPrecisionWrapper(nn.Module):
         self.model = model
         self.metadata = model.metadata
     
-    @torch.amp.autocast('cuda')
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass with mixed precision"""
-        return self.model(x)
+        from mcts.utils.autocast_utils import safe_autocast
+        device = x.device if x.is_cuda else 'cpu'
+        with safe_autocast(device=device, enabled=True):
+            return self.model(x)
 
 
 def create_model_from_config(config: Dict[str, Any]) -> BaseGameModel:

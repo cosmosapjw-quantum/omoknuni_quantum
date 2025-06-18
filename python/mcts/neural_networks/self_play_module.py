@@ -462,26 +462,24 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                                       game_idx: int, iteration: int,
                                       allocation) -> List[Any]:
     """Worker function for parallel self-play using GPU evaluation service"""
+    # CRITICAL: Disable CUDA before ANY imports that might load torch
     import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
+    
+    # Now safe to import worker init directly (not through mcts.utils to avoid loading mcts package)
     import sys
-    
-    # Worker startup with hardware allocation
-    
-    # CRITICAL: Limit CUDA memory for workers to prevent OOM
-    # Workers use GPU for MCTS tree operations but not for models
-    max_split_mb = min(512, allocation.get('gpu_memory_per_worker_mb', 512)) if allocation.get('gpu_memory_per_worker_mb', 0) > 0 else 512
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = f'max_split_size_mb:{max_split_mb}'
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from mcts.utils.worker_init import init_worker_process, verify_cuda_disabled
+    init_worker_process()
     
     try:
+        # Now safe to import torch and other modules
         import torch
-        # Torch imported, CUDA availability checked
         
-        # Set memory fraction for worker processes based on allocation
-        if torch.cuda.is_available() and allocation.get('gpu_memory_fraction', 0) > 0:
-            # Use the calculated fraction for this worker
-            worker_fraction = allocation['gpu_memory_fraction'] / allocation['num_workers']
-            torch.cuda.set_per_process_memory_fraction(worker_fraction)
-            # CUDA memory fraction set silently
+        # Verify CUDA is properly disabled
+        verify_cuda_disabled()
         
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
@@ -497,9 +495,6 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         logger = logging.getLogger(__name__)
         
         logger.debug(f"[WORKER {game_idx}] Worker started - using GPU service for evaluations")
-        
-        # Debug CUDA availability
-        logger.debug(f"[WORKER {game_idx}] CUDA available: {torch.cuda.is_available()}, devices: {torch.cuda.device_count()}")
         
         # Create game interface
         game_type = GameType[config.game.game_type.upper()]
@@ -537,10 +532,11 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                 values_tensor = torch.from_numpy(values).float().to(self.device)
                 return policies_tensor, values_tensor
         
-        # Determine device for tensors
-        tensor_device = 'cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu'
+        # CRITICAL: Workers must use CPU for tensors to avoid CUDA multiprocessing issues
+        # Neural network evaluation happens in main process via GPU service
+        tensor_device = 'cpu'  # Always use CPU in workers
         evaluator = TensorEvaluator(remote_evaluator, tensor_device)
-        logger.debug(f"[WORKER {game_idx}] Created tensor evaluator wrapper")
+        logger.debug(f"[WORKER {game_idx}] Created tensor evaluator wrapper on device: {tensor_device}")
         
         # Create MCTS
         # Workers CAN use GPU for tree operations (custom CUDA kernels)
@@ -552,8 +548,8 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             num_simulations=config.mcts.num_simulations,
             c_puct=config.mcts.c_puct,
             temperature=1.0,  # Will be adjusted during play
-            # Use hardware-aware device selection
-            device='cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu',
+            # CRITICAL: Always use CPU in workers to avoid CUDA multiprocessing issues
+            device='cpu',  # Workers must use CPU
             game_type=GPUGameType[game_type.name],  # Convert to GPU game type enum
             min_wave_size=config.mcts.min_wave_size,
             max_wave_size=config.mcts.max_wave_size,
@@ -561,9 +557,9 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             # use_optimized_implementation=True,  # This parameter doesn't exist in MCTSConfig
             # Dynamic memory pool based on hardware allocation
             memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
-            use_mixed_precision=True,
-            use_cuda_graphs=False,  # Disable CUDA graphs in workers to save memory
-            use_tensor_cores=True,
+            use_mixed_precision=False,  # Disabled for CPU workers
+            use_cuda_graphs=False,  # Disabled for CPU workers
+            use_tensor_cores=False,  # Disabled for CPU workers
             # Dynamic tree size based on available memory
             max_tree_nodes=min(100000, config.mcts.max_tree_nodes // allocation.get('num_workers', 1)),
             dirichlet_epsilon=0.25,  # Add exploration noise to root
@@ -708,9 +704,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         
         logger.debug(f"[WORKER {game_idx}] Game completed with {len(examples)} moves")
         
-        # Clean up GPU memory before returning
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Workers use CPU, no need to clean GPU memory
         
         return examples
         

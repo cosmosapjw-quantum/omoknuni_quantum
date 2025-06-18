@@ -186,7 +186,7 @@ arena:
   tournament_games_per_pair: 10
   
   # Data saving
-  save_game_records: true
+  save_game_records: false
   save_arena_logs: true
   arena_log_dir: arena_logs
   elo_save_path: elo_ratings.json

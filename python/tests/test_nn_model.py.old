@@ -5,9 +5,9 @@ import torch
 import numpy as np
 from unittest.mock import patch
 
-from mcts.neural_networks.nn_model import (
-    ModelConfig, ResidualBlock, PolicyHead, ValueHead,
-    AlphaZeroNetwork, EnsembleNetwork, create_model
+from mcts.neural_networks.resnet_model import (
+    ResNetConfig, ResidualBlock, PolicyHead, ValueHead,
+    ResNetModel, create_resnet_for_game
 )
 
 

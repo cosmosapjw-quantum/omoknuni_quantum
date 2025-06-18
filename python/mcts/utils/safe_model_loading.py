@@ -24,11 +24,11 @@ def safe_create_model(game_type: str, **kwargs):
     #     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     
     # Import here to ensure clean import in worker
-    from mcts.neural_networks.nn_model import create_model
+    from mcts.neural_networks.resnet_model import create_resnet_for_game
     
     # Create model with no_grad to avoid autograd issues
     with torch.no_grad():
-        model = create_model(game_type=game_type, **kwargs)
+        model = create_resnet_for_game(game_type=game_type, **kwargs)
     
     # Ensure model is in eval mode
     model.eval()

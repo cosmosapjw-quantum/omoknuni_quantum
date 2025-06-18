@@ -192,7 +192,7 @@ class UnifiedTrainingPipeline:
     
     def _create_model(self):
         """Create neural network model"""
-        from mcts.neural_networks.nn_model import create_model
+        from mcts.neural_networks.resnet_model import create_resnet_for_game
         
         # Get network config
         network_config = self.config.network
@@ -201,15 +201,11 @@ class UnifiedTrainingPipeline:
         initial_state = self.game_interface.create_initial_state()
         action_size = self.game_interface.get_action_space_size(initial_state)
         
-        model = create_model(
+        model = create_resnet_for_game(
             game_type=self.config.game.game_type,
-            input_height=self.config.game.board_size,
-            input_width=self.config.game.board_size,
-            num_actions=action_size,
             input_channels=network_config.input_channels,  # Configurable input channels
-            num_res_blocks=network_config.num_res_blocks,
-            num_filters=network_config.num_filters,
-            value_head_hidden_size=network_config.value_head_hidden_size
+            num_blocks=network_config.num_res_blocks,
+            num_filters=network_config.num_filters
         )
         
         # Move model to device
@@ -898,11 +894,30 @@ class UnifiedTrainingPipeline:
         
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"
-        torch.save(self.model.state_dict(), model_path)
         
-        # Also save as 'best_model.pt' for easy access
-        best_path = self.best_model_dir / "best_model.pt"
-        torch.save(self.model.state_dict(), best_path)
+        # Save model with metadata if available
+        if hasattr(self.model, 'metadata') and self.model.metadata:
+            # Update metadata before saving
+            self.model.metadata.training_steps = self.iteration
+            if hasattr(self, 'elo_tracker') and self.elo_tracker:
+                current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
+                if current_elo is not None:
+                    self.model.metadata.elo_rating = current_elo
+            
+            # Save with metadata
+            checkpoint = {
+                'model_state_dict': self.model.state_dict(),
+                'metadata': self.model.metadata.to_dict()
+            }
+            torch.save(checkpoint, model_path)
+            
+            # Also save as 'best_model.pt' for easy access
+            best_path = self.best_model_dir / "best_model.pt"
+            torch.save(checkpoint, best_path)
+        else:
+            # Fallback to saving just state dict
+            torch.save(self.model.state_dict(), model_path)
+            torch.save(self.model.state_dict(), best_path)
     
     def _save_arena_results(self, results: Dict):
         """Save arena evaluation results"""

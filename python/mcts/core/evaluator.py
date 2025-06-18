@@ -24,7 +24,8 @@ except ImportError:
 try:
     from ..gpu.cuda_kernels import OptimizedCUDAKernels
     HAS_GPU_KERNELS = True
-    CUDA_AVAILABLE = torch.cuda.is_available() if HAS_TORCH else False
+    # Only check CUDA if torch was successfully imported
+    CUDA_AVAILABLE = HAS_TORCH and torch.cuda.is_available()
 except ImportError:
     HAS_GPU_KERNELS = False
     CUDA_AVAILABLE = False

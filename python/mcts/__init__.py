@@ -27,8 +27,6 @@ from .neural_networks import (
     ModelRegistry, ModelLoader, BaseGameModel, ModelMetadata,
     ModelEnsemble, AdapterWrapper, MixedPrecisionWrapper,
     create_model_from_config, load_model_for_game,
-    # AlphaZero model
-    AlphaZeroNetwork, ModelConfig, ResidualBlock, PolicyHead, ValueHead,
     # ResNet
     ResNetModel, ResNetConfig, create_resnet_for_game,
     ResNetEvaluator, create_evaluator_for_game,
@@ -86,7 +84,6 @@ __all__ = [
     "ModelRegistry", "ModelLoader", "BaseGameModel", "ModelMetadata",
     "ModelEnsemble", "AdapterWrapper", "MixedPrecisionWrapper",
     "create_model_from_config", "load_model_for_game",
-    "AlphaZeroNetwork", "ModelConfig", "ResidualBlock", "PolicyHead", "ValueHead",
     "ResNetModel", "ResNetConfig", "create_resnet_for_game",
     "ResNetEvaluator", "create_evaluator_for_game",
     "create_chess_evaluator", "create_go_evaluator", "create_gomoku_evaluator",

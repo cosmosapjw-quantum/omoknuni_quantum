@@ -5,10 +5,7 @@ from .nn_framework import (
     ModelEnsemble, AdapterWrapper, MixedPrecisionWrapper,
     create_model_from_config, load_model_for_game
 )
-from .nn_model import (
-    AlphaZeroNetwork, ModelConfig, ResidualBlock, PolicyHead, ValueHead,
-    create_model
-)
+# Removed old nn_model imports - use resnet_model instead
 from .resnet_model import ResNetModel, ResNetConfig, create_resnet_for_game
 from .resnet_evaluator import (
     ResNetEvaluator, create_evaluator_for_game,
@@ -29,13 +26,6 @@ __all__ = [
     "MixedPrecisionWrapper",
     "create_model_from_config",
     "load_model_for_game",
-    # AlphaZero model
-    "AlphaZeroNetwork",
-    "ModelConfig",
-    "ResidualBlock",
-    "PolicyHead",
-    "ValueHead",
-    "create_model",
     # ResNet
     "ResNetModel",
     "ResNetConfig",

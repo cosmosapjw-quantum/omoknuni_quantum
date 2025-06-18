@@ -984,22 +984,21 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
                                             action_size: int, game_idx: int, result_queue,
                                             allocation: Dict, invert_result: bool) -> None:
     """Worker function for parallel arena games using GPU evaluation service"""
+    # CRITICAL: Disable CUDA before ANY imports that might load torch
     import os
-    import sys
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
     
-    # Worker startup with hardware allocation
-    
-    # CRITICAL: Limit CUDA memory for workers to prevent OOM
-    max_split_mb = min(512, allocation.get('gpu_memory_per_worker_mb', 512)) if allocation.get('gpu_memory_per_worker_mb', 0) > 0 else 512
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = f'max_split_size_mb:{max_split_mb}'
+    # Now safe to import worker init
+    from mcts.utils.worker_init import init_worker_process, verify_cuda_disabled
+    init_worker_process()
     
     try:
+        # Now safe to import torch and other modules
         import torch
         
-        # Set memory fraction for worker processes
-        if torch.cuda.is_available() and allocation.get('gpu_memory_fraction', 0) > 0:
-            worker_fraction = allocation['gpu_memory_fraction'] / allocation.get('num_workers', 4)
-            torch.cuda.set_per_process_memory_fraction(worker_fraction)
+        # Verify CUDA is properly disabled
+        verify_cuda_disabled()
         
         from mcts.core.game_interface import GameInterface, GameType
         from mcts.core.mcts import MCTS, MCTSConfig
@@ -1066,8 +1065,8 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
                 values_tensor = torch.from_numpy(values).float().to(self.device)
                 return policies_tensor, values_tensor
         
-        # Determine device for tensors
-        tensor_device = 'cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu'
+        # CRITICAL: Workers must use CPU for tensors to avoid CUDA multiprocessing issues
+        tensor_device = 'cpu'  # Always use CPU in workers
         
         # Wrap evaluators if they're remote evaluators (not random)
         if not is_random1 and hasattr(evaluator1, 'request_queue'):
@@ -1075,7 +1074,7 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
         if not is_random2 and hasattr(evaluator2, 'request_queue'):
             evaluator2 = TensorEvaluator(evaluator2, tensor_device)
         
-        logger.debug(f"[ARENA WORKER {game_idx}] Created evaluators, device: {tensor_device}")
+        logger.debug(f"[ARENA WORKER {game_idx}] Created evaluators on device: {tensor_device}")
         
         # Create MCTS instances with optimal settings
         mcts_config = MCTSConfig(
@@ -1091,13 +1090,13 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
             
             # Dynamic memory pool based on hardware allocation
             memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
-            use_mixed_precision=True,
-            use_cuda_graphs=False,  # Disable CUDA graphs in workers to save memory
-            use_tensor_cores=True,
+            use_mixed_precision=False,  # Disabled for CPU workers
+            use_cuda_graphs=False,  # Disabled for CPU workers
+            use_tensor_cores=False,  # Disabled for CPU workers
             max_tree_nodes=min(50000, config_dict['mcts']['max_tree_nodes'] // allocation.get('num_workers', 4)),
             
             # Game and device configuration
-            device='cuda' if (torch.cuda.is_available() and allocation.get('use_gpu_for_workers', True)) else 'cpu',
+            device='cpu',  # Workers must use CPU
             game_type=GPUGameType[game_type.name],
             board_size=config_dict['game']['board_size'],
             
@@ -1112,6 +1111,8 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
         
         mcts1 = MCTS(mcts_config, evaluator1)
         mcts2 = MCTS(mcts_config, evaluator2)
+        
+        logger.debug(f"[ARENA WORKER {game_idx}] MCTS configured - device: {mcts_config.device}, memory: {mcts_config.memory_pool_size_mb}MB")
         
         # Optimize MCTS for hardware
         if hasattr(mcts1, 'optimize_for_hardware'):

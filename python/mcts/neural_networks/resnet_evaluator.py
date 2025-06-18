@@ -147,10 +147,8 @@ class ResNetEvaluator(Evaluator):
             states_tensor = states_tensor.unsqueeze(0)
         
         # Forward pass
-        if self.use_amp:
-            with torch.amp.autocast('cuda'):
-                log_policies, values = self.model(states_tensor)
-        else:
+        from mcts.utils.autocast_utils import safe_autocast
+        with safe_autocast(device=self.device, enabled=self.use_amp):
             log_policies, values = self.model(states_tensor)
         
         # Convert log probabilities to probabilities
