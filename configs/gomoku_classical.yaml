@@ -30,8 +30,8 @@ mcts:
   virtual_loss: 3.0
   
   # Memory and optimization
-  memory_pool_size_mb: 1536   # Optimized for RTX 3060 Ti stability
-  max_tree_nodes: 400000      # Reduced for better memory headroom
+  memory_pool_size_mb: 2048   # Optimized for RTX 3060 Ti stability
+  max_tree_nodes: 500000      # Reduced for better memory headroom
   tree_reuse: true
   tree_reuse_fraction: 0.5
   

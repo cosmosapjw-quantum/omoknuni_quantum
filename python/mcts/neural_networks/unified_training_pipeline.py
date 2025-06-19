@@ -761,7 +761,11 @@ class UnifiedTrainingPipeline:
             best_model = self._create_model()
             
             # Load best model directly to GPU
-            best_model.load_state_dict(torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False))
+            checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                best_model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                best_model.load_state_dict(checkpoint)
             best_model.eval()
             
             wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
@@ -1059,7 +1063,11 @@ class UnifiedTrainingPipeline:
         for model_file in model_files[-10:]:  # Last 10 models
             iteration = int(model_file.stem.split('_')[-1])
             model = self._create_model()
-            model.load_state_dict(torch.load(model_file, weights_only=False))
+            checkpoint = torch.load(model_file, weights_only=False)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                model.load_state_dict(checkpoint)
             model.eval()
             models[f"iter_{iteration}"] = model
         
