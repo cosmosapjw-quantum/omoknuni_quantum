@@ -725,6 +725,21 @@ class UnifiedTrainingPipeline:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
+        # Implement ELO inheritance: new models start from previous model's ELO
+        current_key = f"iter_{self.iteration}"
+        if current_key not in self.elo_tracker.ratings:
+            if self.iteration == 1:
+                # First model starts at 0 (same as random)
+                initial_elo = 0.0
+                logger.info(f"First model (iter_1) starting at ELO {initial_elo:.1f} (same as random)")
+            else:
+                # Inherit ELO from previous iteration
+                previous_key = f"iter_{self.iteration - 1}"
+                initial_elo = self.elo_tracker.get_rating(previous_key)
+                logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from {previous_key}")
+            
+            self.elo_tracker.ratings[current_key] = initial_elo
+        
         # Match 1: Current vs Random
         tqdm.write("      Current vs Random...")
         wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
@@ -756,8 +771,18 @@ class UnifiedTrainingPipeline:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
-            tqdm.write("      Best vs Random...")
-            best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
+            # Use sophisticated adaptive logic to determine if best model should play random
+            best_model_key = f"iter_{self.best_model_iteration}"
+            best_model_elo = self.elo_tracker.get_rating(best_model_key)
+            
+            # Check if best model should play against random using adaptive criteria
+            should_best_play_random = self.elo_tracker.should_play_vs_random(
+                self.best_model_iteration, best_model_elo
+            )
+            
+            if should_best_play_random:
+                tqdm.write(f"      Best vs Random (adaptive check)...")
+                best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
             best_model = self._create_model()
             
             # Load best model directly to GPU
@@ -766,21 +791,35 @@ class UnifiedTrainingPipeline:
                 best_model.load_state_dict(checkpoint['model_state_dict'])
             else:
                 best_model.load_state_dict(checkpoint)
-            best_model.eval()
-            
-            wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
-                best_model, random_evaluator,
-                model1_name=f"iter_{self.best_model_iteration}",
-                model2_name="random",
-                silent=False
-            )
-            win_rate_best_random = wins_best_random / (wins_best_random + draws_best_random + losses_best_random)
-            tqdm.write(f"      Result: {wins_best_random}W-{draws_best_random}D-{losses_best_random}L ({win_rate_best_random:.1%})")
-            
-            self.elo_tracker.update_ratings(
-                f"iter_{self.best_model_iteration}", "random",
-                wins_best_random, draws_best_random, losses_best_random
-            )
+                best_model.eval()
+                
+                wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
+                    best_model, random_evaluator,
+                    model1_name=f"iter_{self.best_model_iteration}",
+                    model2_name="random",
+                    silent=False
+                )
+                win_rate_best_random = wins_best_random / (wins_best_random + draws_best_random + losses_best_random)
+                tqdm.write(f"      Result: {wins_best_random}W-{draws_best_random}D-{losses_best_random}L ({win_rate_best_random:.1%})")
+                
+                self.elo_tracker.update_ratings(
+                    f"iter_{self.best_model_iteration}", "random",
+                    wins_best_random, draws_best_random, losses_best_random
+                )
+            else:
+                # Skip re-evaluation based on adaptive criteria
+                tqdm.write(f"      Best model (iter {self.best_model_iteration}, ELO {best_model_elo:.1f}) skipping random match")
+                tqdm.write(f"        Reason: Adaptive criteria (iteration={self.best_model_iteration}, ELO={best_model_elo:.1f})")
+                best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
+                best_model = self._create_model()
+                
+                # Still need to load the model for current vs best comparison
+                checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    best_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    best_model.load_state_dict(checkpoint)
+                best_model.eval()
             
             # Move best model to CPU before loading current model back
             best_model.cpu()
@@ -886,15 +925,25 @@ class UnifiedTrainingPipeline:
     
     def _save_best_model(self):
         """Save current model as best"""
-        # Fix ELO consistency: ensure new best model's ELO is at least as high as old best
+        # With ELO inheritance, we now have a more nuanced approach
         if self.elo_tracker and self.best_model_iteration:
             old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
             current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
             
-            # If current model's ELO is lower than old best, update it
+            # Since models inherit ELO and then get adjusted based on performance,
+            # we only need to log the natural progression
             if current_elo < old_best_elo:
-                logger.debug(f"Adjusting new best model's ELO from {current_elo:.1f} to {old_best_elo:.1f} to maintain consistency")
-                self.elo_tracker.ratings[f"iter_{self.iteration}"] = old_best_elo
+                # This is expected when a model barely beats the best (e.g., 55% win rate)
+                # The ELO system correctly shows it's only slightly better
+                logger.info(f"New best model has lower ELO ({current_elo:.1f}) than old best ({old_best_elo:.1f})")
+                logger.info(f"This indicates the new model is only marginally better (won ~{self.config.arena.win_threshold*100}% of games)")
+                # We do NOT adjust the ELO here - let the natural ELO progression show true strength
+            else:
+                logger.info(f"New best model has higher ELO ({current_elo:.1f}) than old best ({old_best_elo:.1f})")
+            
+            # Log the progression with more detail
+            elo_gain = current_elo - old_best_elo
+            logger.info(f"Best model progression: iter {self.best_model_iteration} -> iter {self.iteration} (ELO gain: {elo_gain:+.1f})")
         
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"

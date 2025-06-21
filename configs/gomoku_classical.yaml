@@ -64,7 +64,7 @@ mcts:
   
   
   # CSR Tree parameters
-  csr_max_actions: 10
+  csr_max_actions: 225
   csr_use_sparse_operations: true
   
   # Interference thresholds
@@ -74,7 +74,7 @@ mcts:
   
   # Device configuration
   device: cuda
-  num_threads: 20
+  num_threads: 22
 
 network:
   # Smaller network for Gomoku
@@ -137,10 +137,10 @@ training:
   resign_start_iteration: 10  # Start resignation after 10 iterations for better early learning
   
   # Data handling - Optimized for 64GB RAM
-  window_size: 500000  # Large buffer with ample RAM
+  window_size: 50000
   sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 20000  # Larger shuffle buffer
+  shuffle_buffer_size: 10000 
   dataloader_workers: 12  # Utilize CPU threads
   pin_memory: true
   persistent_workers: true  # Keep workers alive
@@ -166,7 +166,7 @@ arena:
   
   # Game settings
   temperature: 0.0
-  mcts_simulations: 500
+  mcts_simulations: 100
   c_puct: 1.0
   max_moves: 225
   time_limit_seconds: null

@@ -53,7 +53,7 @@ class ArenaConfig:
 
 
 class ELOTracker:
-    """Tracks ELO ratings for models"""
+    """Tracks ELO ratings for models with adaptive K-factor and match scheduling"""
     
     def __init__(self, k_factor: float = 32.0, initial_rating: float = 1500.0):
         self.k_factor = k_factor
@@ -61,10 +61,161 @@ class ELOTracker:
         # Use a regular dict instead of defaultdict with lambda
         self.ratings: Dict[str, float] = {}
         self.game_history: List[Dict] = []
+        self.iteration_elos: Dict[int, float] = {}  # Track ELO by iteration
+    
+    def get_adaptive_k_factor(self, player: str, opponent: str, base_k: float = None) -> float:
+        """Calculate adaptive K-factor based on player strength and opponent"""
+        if base_k is None:
+            base_k = self.k_factor
+            
+        # Special handling for matches against random
+        if opponent == "random":
+            player_elo = self.ratings.get(player, self.initial_rating)
+            
+            # Sophisticated adaptive K-factor for random matches
+            # Phase 1 (ELO 0-200): High K-factor for rapid initial learning
+            # Phase 2 (ELO 200-500): Moderate K-factor for calibration
+            # Phase 3 (ELO 500-1000): Reduced K-factor to prevent inflation
+            # Phase 4 (ELO 1000+): Minimal K-factor, mostly for verification
+            
+            if player_elo < 200:
+                # Early phase: Full K-factor for rapid ELO growth
+                k_multiplier = 1.0
+            elif player_elo < 500:
+                # Calibration phase: Gradual reduction
+                k_multiplier = 1.0 - 0.3 * (player_elo - 200) / 300
+            elif player_elo < 1000:
+                # Stabilization phase: Further reduction
+                k_multiplier = 0.7 - 0.4 * (player_elo - 500) / 500
+            else:
+                # Mature phase: Minimal gains from beating random
+                # Use logarithmic decay to ensure smooth transition
+                k_multiplier = 0.3 * (1000 / player_elo) ** 0.5
+            
+            # Apply win rate adjustment: if model dominates random, reduce K further
+            # Get recent performance vs random
+            recent_vs_random = self.get_recent_performance(player, "random", last_n=3)
+            if recent_vs_random is not None and recent_vs_random > 0.95:
+                # Near-perfect performance: reduce K-factor by additional 50%
+                k_multiplier *= 0.5
+            elif recent_vs_random is not None and recent_vs_random > 0.98:
+                # Essentially solved: reduce K-factor by 80%
+                k_multiplier *= 0.2
+            
+            return base_k * k_multiplier
+        
+        # For non-random opponents, use standard K-factor with minor adjustments
+        # Reduce K-factor for very high-rated players to prevent volatility
+        player_elo = self.ratings.get(player, self.initial_rating)
+        if player_elo > 2000:
+            return base_k * 0.8
+        elif player_elo > 2500:
+            return base_k * 0.6
+        else:
+            return base_k
+    
+    def get_recent_performance(self, player: str, opponent: str, last_n: int = 5) -> Optional[float]:
+        """Get recent win rate of player vs opponent in last N matches"""
+        recent_games = []
+        for record in reversed(self.game_history):
+            if (record["player1"] == player and record["player2"] == opponent) or \
+               (record["player1"] == opponent and record["player2"] == player):
+                recent_games.append(record)
+                if len(recent_games) >= last_n:
+                    break
+        
+        if not recent_games:
+            return None
+        
+        total_wins = 0
+        total_games = 0
+        for game in recent_games:
+            if game["player1"] == player:
+                total_wins += game["wins"] + 0.5 * game["draws"]
+                total_games += game["wins"] + game["draws"] + game["losses"]
+            else:
+                total_wins += game["losses"] + 0.5 * game["draws"]
+                total_games += game["wins"] + game["draws"] + game["losses"]
+        
+        return total_wins / total_games if total_games > 0 else None
+    
+    def should_play_vs_random(self, iteration: int, current_elo: float) -> bool:
+        """Determine if model should play against random based on sophisticated criteria"""
+        # Always play in first few iterations for calibration
+        if iteration <= 3:
+            return True
+        
+        # Phase-based approach with ELO consideration
+        # Phase 1 (iter 1-10): Frequent matches for calibration
+        # Phase 2 (iter 11-50): Reduce frequency based on ELO growth
+        # Phase 3 (iter 51-100): Sparse matches for verification
+        # Phase 4 (iter 100+): Rare matches only when needed
+        
+        # Get ELO growth rate
+        elo_growth_rate = self.get_elo_growth_rate(iteration)
+        
+        if iteration <= 10:
+            # Early phase: Play frequently but skip if ELO is growing steadily
+            if elo_growth_rate > 20 and current_elo > 200:
+                return iteration % 3 == 0
+            return True
+        
+        elif iteration <= 50:
+            # Mid phase: Adaptive frequency based on ELO and growth
+            if current_elo < 500:
+                # Still calibrating: play every 3 iterations
+                return iteration % 3 == 0
+            elif current_elo < 1000:
+                # Stabilizing: play every 5 iterations
+                return iteration % 5 == 0
+            else:
+                # Strong model: play every 10 iterations
+                return iteration % 10 == 0
+        
+        elif iteration <= 100:
+            # Late phase: Only for verification
+            if elo_growth_rate < 5 and iteration % 20 == 0:
+                # Stagnating: check against random
+                return True
+            elif current_elo < 1500:
+                # Not yet expert level: occasional checks
+                return iteration % 15 == 0
+            else:
+                # Expert level: rare checks
+                return iteration % 25 == 0
+        
+        else:
+            # Very late phase: Minimal random matches
+            # Only when concerning patterns emerge
+            if elo_growth_rate < 0 and iteration % 30 == 0:
+                # Declining ELO: verify against baseline
+                return True
+            elif iteration % 50 == 0:
+                # Periodic sanity check
+                return True
+            else:
+                return False
+    
+    def get_elo_growth_rate(self, iteration: int, window: int = 5) -> float:
+        """Calculate average ELO growth rate over recent iterations"""
+        if iteration < window:
+            return 0.0
+        
+        recent_elos = []
+        for i in range(max(1, iteration - window), iteration + 1):
+            if i in self.iteration_elos:
+                recent_elos.append(self.iteration_elos[i])
+        
+        if len(recent_elos) < 2:
+            return 0.0
+        
+        # Calculate average growth per iteration
+        growth = (recent_elos[-1] - recent_elos[0]) / len(recent_elos)
+        return growth
     
     def update_ratings(self, player1: str, player2: str,
                       wins: int, draws: int, losses: int):
-        """Update ELO ratings based on match results"""
+        """Update ELO ratings based on match results with adaptive K-factor"""
         total_games = wins + draws + losses
         if total_games == 0:
             return
@@ -72,6 +223,10 @@ class ELOTracker:
         # Get current ratings (use initial_rating if not found)
         r1 = self.ratings.get(player1, self.initial_rating)
         r2 = self.ratings.get(player2, self.initial_rating)
+        
+        # Get adaptive K-factors for both players
+        k1 = self.get_adaptive_k_factor(player1, player2)
+        k2 = self.get_adaptive_k_factor(player2, player1)
         
         # Calculate expected scores
         e1 = 1 / (1 + 10 ** ((r2 - r1) / 400))
@@ -81,13 +236,45 @@ class ELOTracker:
         s1 = (wins + 0.5 * draws) / total_games
         s2 = (losses + 0.5 * draws) / total_games
         
+        # Calculate rating changes with adaptive K-factors
+        delta1 = k1 * (s1 - e1)
+        delta2 = k2 * (s2 - e2)
+        
         # Update ratings (but keep "random" fixed at 0 as anchor)
         # Standard ELO formula: new_rating = old_rating + K * (actual_score - expected_score)
         # Note: We do NOT multiply by total_games - K factor already accounts for match weight
         if player1 != "random":
-            self.ratings[player1] = r1 + self.k_factor * (s1 - e1)
+            new_r1 = r1 + delta1
+            self.ratings[player1] = new_r1
+            
+            # Track iteration ELO if player is an iteration model
+            if player1.startswith("iter_"):
+                try:
+                    iter_num = int(player1.split("_")[1])
+                    self.iteration_elos[iter_num] = new_r1
+                except (ValueError, IndexError):
+                    pass
+            
+            # Log with adaptive K-factor info
+            logger.debug(f"ELO Update: {player1} {r1:.1f} -> {new_r1:.1f} (Δ{delta1:+.1f}, K={k1:.1f}) after {wins}W-{draws}D-{losses}L vs {player2}")
+        else:
+            new_r1 = r1
+            
         if player2 != "random":
-            self.ratings[player2] = r2 + self.k_factor * (s2 - e2)
+            new_r2 = r2 + delta2
+            self.ratings[player2] = new_r2
+            
+            # Track iteration ELO if player is an iteration model
+            if player2.startswith("iter_"):
+                try:
+                    iter_num = int(player2.split("_")[1])
+                    self.iteration_elos[iter_num] = new_r2
+                except (ValueError, IndexError):
+                    pass
+            
+            logger.debug(f"ELO Update: {player2} {r2:.1f} -> {new_r2:.1f} (Δ{delta2:+.1f}, K={k2:.1f}) after {losses}W-{draws}D-{wins}L vs {player1}")
+        else:
+            new_r2 = r2
         
         # Record history
         self.game_history.append({
@@ -99,8 +286,10 @@ class ELOTracker:
             "losses": losses,
             "old_rating1": r1,
             "old_rating2": r2,
-            "new_rating1": self.ratings[player1],
-            "new_rating2": self.ratings[player2]
+            "new_rating1": new_r1,
+            "new_rating2": new_r2,
+            "k_factor1": k1,
+            "k_factor2": k2
         })
     
     def get_rating(self, player: str) -> float:
