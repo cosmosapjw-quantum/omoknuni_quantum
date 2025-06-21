@@ -733,12 +733,19 @@ class UnifiedTrainingPipeline:
                 initial_elo = 0.0
                 logger.info(f"First model (iter_1) starting at ELO {initial_elo:.1f} (same as random)")
             else:
-                # Inherit ELO from previous iteration
+                # Start from previous iteration's ELO by default
                 previous_key = f"iter_{self.iteration - 1}"
-                initial_elo = self.elo_tracker.get_rating(previous_key)
-                logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from {previous_key}")
+                if previous_key in self.elo_tracker.ratings:
+                    initial_elo = self.elo_tracker.get_rating(previous_key)
+                    logger.info(f"Model iter_{self.iteration} initially inheriting ELO {initial_elo:.1f} from {previous_key}")
+                else:
+                    # If previous doesn't exist, start from initial rating
+                    initial_elo = self.config.arena.elo_initial_rating
+                    logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
             
             self.elo_tracker.ratings[current_key] = initial_elo
+            # Store initial ELO for potential adjustment
+            self._initial_inherited_elo = initial_elo
         
         # Match 1: Current vs Random
         tqdm.write("      Current vs Random...")
@@ -861,6 +868,10 @@ class UnifiedTrainingPipeline:
                 wins_vs_best, draws_vs_best, losses_vs_best
             )
             
+            # Store wins vs best for ELO adjustment if needed
+            self._last_wins_vs_best = wins_vs_best
+            self._last_games_vs_best = wins_vs_best + draws_vs_best + losses_vs_best
+            
             # Check if current model should be accepted
             accepted = win_rate_vs_best >= self.config.arena.win_threshold
             
@@ -925,25 +936,38 @@ class UnifiedTrainingPipeline:
     
     def _save_best_model(self):
         """Save current model as best"""
-        # With ELO inheritance, we now have a more nuanced approach
+        # Implement inheritance from best model when beating it
         if self.elo_tracker and self.best_model_iteration:
             old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
             current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
             
-            # Since models inherit ELO and then get adjusted based on performance,
-            # we only need to log the natural progression
-            if current_elo < old_best_elo:
-                # This is expected when a model barely beats the best (e.g., 55% win rate)
-                # The ELO system correctly shows it's only slightly better
-                logger.info(f"New best model has lower ELO ({current_elo:.1f}) than old best ({old_best_elo:.1f})")
-                logger.info(f"This indicates the new model is only marginally better (won ~{self.config.arena.win_threshold*100}% of games)")
-                # We do NOT adjust the ELO here - let the natural ELO progression show true strength
-            else:
-                logger.info(f"New best model has higher ELO ({current_elo:.1f}) than old best ({old_best_elo:.1f})")
+            # Check if we initially inherited from a non-best model
+            inherited_from_best = hasattr(self, '_initial_inherited_elo') and \
+                                self._initial_inherited_elo == old_best_elo
             
-            # Log the progression with more detail
+            if not inherited_from_best and hasattr(self, '_initial_inherited_elo'):
+                # We beat the best but inherited from previous iteration
+                # Adjust our ELO to reflect we're at least as good as the best
+                
+                # Calculate what our ELO would have been if we started from best's ELO
+                elo_gained_from_matches = current_elo - self._initial_inherited_elo
+                adjusted_elo = old_best_elo + elo_gained_from_matches
+                
+                # Update our rating
+                self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
+                
+                logger.info(f"Adjusting ELO inheritance for new best model:")
+                logger.info(f"  Initially inherited: {self._initial_inherited_elo:.1f} (from previous iteration)")
+                logger.info(f"  Should have inherited: {old_best_elo:.1f} (from best model)")
+                logger.info(f"  ELO gained from matches: {elo_gained_from_matches:+.1f}")
+                logger.info(f"  Final adjusted ELO: {adjusted_elo:.1f}")
+                
+                current_elo = adjusted_elo
+            
+            # Log the progression
             elo_gain = current_elo - old_best_elo
-            logger.info(f"Best model progression: iter {self.best_model_iteration} -> iter {self.iteration} (ELO gain: {elo_gain:+.1f})")
+            logger.info(f"Best model progression: iter {self.best_model_iteration} (ELO: {old_best_elo:.1f}) -> iter {self.iteration} (ELO: {current_elo:.1f})")
+            logger.info(f"Net ELO gain: {elo_gain:+.1f}")
         
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"
