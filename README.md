@@ -38,7 +38,7 @@ nvidia-smi  # Should show your GPU
 
 # Install required dependencies
 sudo apt update
-sudo apt install g++-12 gcc-12 build-essential cmake ninja-build
+sudo apt install build-essential cmake ninja-build
 
 # Install CUDA Toolkit 12.2 (if not already installed)
 # Follow: https://developer.nvidia.com/cuda-12-2-2-download-archive
@@ -77,16 +77,12 @@ python compile_kernels.py
 
 ### Troubleshooting CUDA Compilation
 
-If you encounter GCC version errors during CUDA kernel compilation:
+If you encounter compiler errors during CUDA kernel compilation:
 
 ```bash
-# The project automatically uses GCC 12, but if issues persist:
-export CUDAHOSTCXX=g++-12
-export NVCC_APPEND_FLAGS="-ccbin g++-12"
-
-# Verify correct GCC version is being used
-g++-12 --version  # Should show GCC 12.x
-nvcc --version    # Should show CUDA 12.2
+# Verify your system compiler and CUDA versions are compatible
+g++ --version    # Check system compiler version
+nvcc --version   # Should show CUDA 12.2
 ```
 
 ### Training a Model

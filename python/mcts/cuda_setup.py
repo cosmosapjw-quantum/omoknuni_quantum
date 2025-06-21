@@ -1,12 +1,11 @@
-"""CUDA setup module to ensure GCC 12 is used for compilation"""
+"""CUDA setup module for CUDA environment configuration"""
 
 import os
 
 def setup_cuda_env():
-    """Set up CUDA environment to use GCC 12"""
-    # Set GCC 12 as host compiler
-    os.environ['CUDAHOSTCXX'] = 'g++-12'
-    os.environ['CUDACXX'] = 'g++-12'
+    """Set up CUDA environment"""
+    # Let CUDA use system default compiler
+    # CUDAHOSTCXX and CUDACXX will use defaults if not set
     
     # Set CUDA architecture for RTX 3060 Ti
     os.environ['TORCH_CUDA_ARCH_LIST'] = '8.6'
@@ -14,11 +13,8 @@ def setup_cuda_env():
     # Memory allocation config
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # nvcc flags
-    os.environ['NVCC_APPEND_FLAGS'] = '-ccbin g++-12'
-    
-    # Suppress GCC version warnings
-    os.environ['TORCH_CUDA_CC'] = 'g++-12'
+    # nvcc will use default compiler settings
+    # No need to override compiler choice
 
 # Auto-setup when imported
 setup_cuda_env()

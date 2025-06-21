@@ -83,9 +83,9 @@ class CMakeBuild(build_ext):
             # Add CUDA-specific optimization flags if CUDA is available
             if self.check_cuda_availability():
                 cmake_args.extend([
-                    "-DCMAKE_CUDA_FLAGS=-O3 --use_fast_math --ptxas-options=-v --generate-line-info -ccbin g++-12",
+                    "-DCMAKE_CUDA_FLAGS=-O3 --use_fast_math --ptxas-options=-v --generate-line-info",
                     "-DCMAKE_CUDA_ARCHITECTURES=60;61;70;75;80;86;89;90",  # Support multiple GPU architectures
-                    "-DCMAKE_CUDA_HOST_COMPILER=g++-12",  # Use GCC 12 as host compiler
+                    # Let CMake use the system default CUDA host compiler
                 ])
         
         # Check for CUDA availability
@@ -273,9 +273,8 @@ class InstallCommand(install):
             kernel_script = Path("python/compile_kernels.py")
             if kernel_script.exists():
                 print("🔧 Compiling CUDA kernels...")
-                # Set GCC 12 as host compiler
+                # Use system default compiler
                 env = os.environ.copy()
-                env['CUDAHOSTCXX'] = 'g++-12'
                 result = subprocess.run([sys.executable, str(kernel_script)], 
                                       capture_output=True, text=True, env=env)
                 if result.returncode == 0:
