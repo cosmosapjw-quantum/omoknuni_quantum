@@ -783,14 +783,14 @@ class UnifiedTrainingPipeline:
             if should_best_play_random:
                 tqdm.write(f"      Best vs Random (adaptive check)...")
                 best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
-            best_model = self._create_model()
-            
-            # Load best model directly to GPU
-            checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
-            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                best_model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                best_model.load_state_dict(checkpoint)
+                best_model = self._create_model()
+                
+                # Load best model directly to GPU
+                checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    best_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    best_model.load_state_dict(checkpoint)
                 best_model.eval()
                 
                 wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
