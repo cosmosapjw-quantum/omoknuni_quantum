@@ -72,6 +72,7 @@ public:
     int getActionSpaceSize() const override;
     std::vector<std::vector<std::vector<float>>> getTensorRepresentation() const override;
     std::vector<std::vector<std::vector<float>>> getEnhancedTensorRepresentation() const override;
+    std::vector<std::vector<std::vector<float>>> getBasicTensorRepresentation() const;
     uint64_t getHash() const override;
     std::unique_ptr<core::IGameState> clone() const override;
     void copyFrom(const core::IGameState& source) override;

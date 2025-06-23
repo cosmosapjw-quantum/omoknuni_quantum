@@ -165,6 +165,7 @@ class NeuralNetworkConfig:
     # Architecture
     model_type: str = "resnet"  # resnet, simple, lightweight
     input_channels: int = 20
+    input_representation: str = "standard"  # standard, enhanced, compact
     num_res_blocks: int = 10
     num_filters: int = 256
     value_head_hidden_size: int = 256
@@ -322,6 +323,12 @@ class ArenaFullConfig:
     save_arena_logs: bool = True
     arena_log_dir: str = "arena_logs"
     elo_save_path: str = "elo_ratings.json"
+    
+    # New arena features
+    enable_current_vs_previous: bool = True  # Enable current vs previous model arena matches
+    enable_adaptive_random_matches: bool = True  # Use adaptive logic for random matches
+    enable_elo_consistency_checks: bool = True  # Check for ELO inconsistencies
+    enable_elo_auto_adjustment: bool = True  # Automatically adjust ELO when inconsistencies are detected
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

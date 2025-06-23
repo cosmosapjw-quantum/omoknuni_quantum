@@ -395,7 +395,9 @@ class GPUGameStates:
             state_indices: State indices to get features for
             
         Returns:
-            Feature tensor ready for neural network (20 channels for enhanced representation)
+            Feature tensor ready for neural network:
+            - Enhanced representation: 18 or 20 channels (configurable)
+            - Basic representation: 4 channels for Gomoku, 5 for Go, 12 for Chess
         """
         batch_size = len(state_indices)
         
@@ -454,7 +456,7 @@ class GPUGameStates:
     def get_feature_planes(self) -> int:
         """Get number of feature planes for the current game type"""
         if hasattr(self, '_use_enhanced_features') and self._use_enhanced_features:
-            return 20  # Enhanced representation
+            return getattr(self, '_enhanced_channels', 20)  # Enhanced representation
         if self.game_type == GameType.GOMOKU:
             return 4  # current player, opponent, empty, current player constant
         elif self.game_type == GameType.GO:
@@ -483,32 +485,41 @@ class GPUGameStates:
         return info
     
     def enable_enhanced_features(self):
-        """Enable 20-channel enhanced feature representation for all games"""
+        """Enable enhanced feature representation for all games"""
         self._use_enhanced_features = True
+        self._enhanced_channels = 20  # Default to 20 channels
         self._cpp_states_cache = {}
         self._cpp_states_pool = []  # Pool of reusable states
     
+    def set_enhanced_channels(self, channels: int):
+        """Set the number of channels for enhanced features (18 or 20)"""
+        if channels not in [18, 20]:
+            raise ValueError(f"Enhanced features only support 18 or 20 channels, got {channels}")
+        self._enhanced_channels = channels
+    
     def _get_enhanced_nn_features(self, state_indices: torch.Tensor) -> torch.Tensor:
         """
-        Get 20-channel enhanced neural network features using C++ implementation
+        Get enhanced neural network features using C++ implementation
         
         Channel layout (same for all games - Chess, Go, Gomoku):
         0: Current board state
         1: Current player indicator
         2-17: Previous 8 moves for each player (16 channels)
-        18-19: Attack/defense planes
+        18-19: Attack/defense planes (only included if _enhanced_channels == 20)
         
         Args:
             state_indices: State indices to get features for
             
         Returns:
-            Feature tensor of shape (batch_size, 20, board_size, board_size)
+            Feature tensor of shape (batch_size, channels, board_size, board_size)
+            where channels is either 18 or 20 depending on configuration
         """
         batch_size = len(state_indices)
+        target_channels = getattr(self, '_enhanced_channels', 20)
         
-        # Create tensor to hold all features
-        features = torch.zeros((batch_size, 20, self.board_size, self.board_size), 
-                             device=self.device, dtype=torch.float32)
+        # Create tensor to hold all features (always start with 20 channels from C++)
+        features_20 = torch.zeros((batch_size, 20, self.board_size, self.board_size), 
+                                device=self.device, dtype=torch.float32)
         
         # Process each state
         for i, state_idx in enumerate(state_indices):
@@ -546,9 +557,15 @@ class GPUGameStates:
                 enhanced_tensor = correct_tensor
             
             # Convert numpy array to torch tensor and copy to GPU
-            features[i] = torch.from_numpy(enhanced_tensor).to(self.device)
+            features_20[i] = torch.from_numpy(enhanced_tensor).to(self.device)
         
-        return features
+        # Return the appropriate number of channels based on configuration
+        if target_channels == 18:
+            # Remove attack/defense planes (channels 18-19) to get 18 channels
+            return features_20[:, :18, :, :]
+        else:
+            # Return all 20 channels
+            return features_20
     
     def _get_cpp_state(self, state_idx: int):
         """Get or create C++ game state for given index using exact reconstruction"""

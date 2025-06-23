@@ -67,12 +67,17 @@ class GameInterface:
     handling state conversions and move representations.
     """
     
-    def __init__(self, game_type: GameType, board_size: Optional[int] = None, **kwargs):
+    def __init__(self, game_type: GameType, board_size: Optional[int] = None, 
+                 input_representation: str = 'enhanced', **kwargs):
         """Initialize game interface
         
         Args:
             game_type: Type of game to create
             board_size: Board size (for Go and Gomoku)
+            input_representation: Type of tensor representation to use
+                - 'enhanced': 20-channel enhanced representation with attack/defense
+                - 'basic': 18-channel basic representation without attack/defense
+                - 'standard': 3-channel standard representation
             **kwargs: Game-specific options:
                 For Chess:
                     chess960 (bool): Enable Chess960/Fischer Random Chess
@@ -89,6 +94,7 @@ class GameInterface:
         """
         self.game_type = game_type
         self.board_size = board_size
+        self.input_representation = input_representation
         self.game_options = kwargs
         
         # Map our GameType enum to C++ GameType enum
@@ -223,34 +229,51 @@ class GameInterface:
         else:
             return self._game_class(self.board_size)
             
-    def state_to_numpy(self, state: Any, use_enhanced: bool = True) -> np.ndarray:
+    def state_to_numpy(self, state: Any, representation_type: str = None) -> np.ndarray:
         """Convert game state to numpy array
         
         Args:
             state: Game state object
-            use_enhanced: If True, use 20-channel enhanced representation
+            representation_type: Type of representation to use:
+                - 'enhanced': 20-channel enhanced representation with attack/defense
+                - 'basic': 18-channel basic representation without attack/defense  
+                - 'standard': 3-channel standard representation
             
         Returns:
             Numpy array of shape (channels, height, width) for NN input
         """
         if HAS_CPP_GAMES:
-            # Get enhanced representation with all 20 channels
-            if use_enhanced:
+            # Use configured representation if not specified
+            if representation_type is None:
+                representation_type = self.input_representation
+                
+            if representation_type == 'enhanced':
                 tensor = state.get_enhanced_tensor_representation()
-            else:
+            elif representation_type == 'basic':
+                tensor = state.get_basic_tensor_representation()
+            elif representation_type == 'standard':
                 tensor = state.get_tensor_representation()
+            else:
+                # Legacy support: use_enhanced parameter
+                if representation_type is True:
+                    tensor = state.get_enhanced_tensor_representation()
+                else:
+                    tensor = state.get_tensor_representation()
             # Keep in CHW format for neural network
             return tensor
         else:
             # Mock implementation
             return state.get_board()
             
-    def state_to_tensor(self, state: Any, use_enhanced: bool = True) -> 'torch.Tensor':
+    def state_to_tensor(self, state: Any, representation_type: str = None) -> 'torch.Tensor':
         """Convert game state to PyTorch tensor
         
         Args:
             state: Game state object
-            use_enhanced: If True, use 20-channel enhanced representation
+            representation_type: Type of representation to use:
+                - 'enhanced': 20-channel enhanced representation with attack/defense
+                - 'basic': 18-channel basic representation without attack/defense
+                - 'standard': 3-channel standard representation
             
         Returns:
             PyTorch tensor representation
@@ -258,11 +281,23 @@ class GameInterface:
         import torch
         
         if HAS_CPP_GAMES:
+            # Use configured representation if not specified
+            if representation_type is None:
+                representation_type = self.input_representation
+                
             # Get tensor representation directly
-            if use_enhanced:
+            if representation_type == 'enhanced':
                 tensor_data = state.get_enhanced_tensor_representation()
-            else:
+            elif representation_type == 'basic':
+                tensor_data = state.get_basic_tensor_representation()
+            elif representation_type == 'standard':
                 tensor_data = state.get_tensor_representation()
+            else:
+                # Legacy support: use_enhanced parameter
+                if representation_type is True:
+                    tensor_data = state.get_enhanced_tensor_representation()
+                else:
+                    tensor_data = state.get_tensor_representation()
             return torch.from_numpy(tensor_data).float()
         else:
             # Mock implementation - convert board to tensor
@@ -806,7 +841,7 @@ class GameInterface:
         """
         # The state is already from the current player's perspective
         # The neural network input will handle any necessary transformations
-        return self.state_to_numpy(state, use_enhanced=True)
+        return self.state_to_numpy(state, representation_type=self.input_representation)
     
     def get_next_state(self, state: Any, action: int) -> Any:
         """Apply move to state (alias for apply_move)

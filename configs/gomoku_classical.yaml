@@ -1,10 +1,10 @@
-# Gomoku Classical Configuration
-# Basic AlphaZero training without quantum features
+# Gomoku Classical Configuration - Master/Expert Level
+# Optimized for tournament-strength Gomoku AI
 
-experiment_name: gomoku_classical
+experiment_name: gomoku_master
 seed: 42
 log_level: INFO
-num_iterations: 500
+num_iterations: 1000  # Increased for master-level strength
 
 game:
   game_type: gomoku
@@ -14,13 +14,13 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  num_simulations: 500
-  c_puct: 3.0
-  dirichlet_alpha: 0.15
-  dirichlet_epsilon: 0.25
+  num_simulations: 800   # Increased for master-level tactical depth
+  c_puct: 1.414          # Optimized exploration constant (√2)
+  dirichlet_alpha: 0.15  # Reduced for more focused exploration in Gomoku
+  dirichlet_epsilon: 0.2 # Slightly reduced noise
   temperature: 1.0
-  temperature_threshold: 30
-  temperature_final: 0.1
+  temperature_threshold: 30  # Balanced exploration vs exploitation
+  temperature_final: 0.1     # Low but not zero for slight stochasticity
   
   # Performance optimizatio
   min_wave_size: 3072      # Optimal for 80k+ sims/sec
@@ -29,9 +29,9 @@ mcts:
   batch_size: 1024 
   virtual_loss: 3.0
   
-  # Memory and optimization
-  memory_pool_size_mb: 2048   # Optimized for RTX 3060 Ti stability
-  max_tree_nodes: 500000      # Reduced for better memory headroom
+  # Memory and optimization - Adjusted for larger network
+  memory_pool_size_mb: 3072   # Increased for larger network capacity
+  max_tree_nodes: 750000      # Increased for deeper search trees
   tree_reuse: true
   tree_reuse_fraction: 0.5
   
@@ -77,32 +77,33 @@ mcts:
   num_threads: 22
 
 network:
-  # Smaller network for Gomoku
+  # Optimized network for master-level Gomoku (no attack/defense overhead)
   model_type: resnet
-  input_channels: 20
-  num_res_blocks: 10
-  num_filters: 128
-  value_head_hidden_size: 256
-  policy_head_filters: 2
+  input_channels: 18         # Standard AlphaZero representation (removed attack/defense)
+  input_representation: basic  # 'basic' (18ch), 'enhanced' (20ch), or 'standard' (3ch)
+  num_res_blocks: 15         # Increased for deeper tactical understanding
+  num_filters: 192           # Increased capacity for complex pattern recognition
+  value_head_hidden_size: 512 # Larger value head for precise position evaluation
+  policy_head_filters: 4     # Increased for better move prediction
   
-  # Regularization
-  dropout_rate: 0.1
+  # Regularization - tuned for larger network
+  dropout_rate: 0.15         # Slightly increased to prevent overfitting
   batch_norm: true
-  batch_norm_momentum: 0.997
-  l2_regularization: 0.0001
+  batch_norm_momentum: 0.995 # Slower moving average for stability
+  l2_regularization: 0.0002  # Increased regularization
   
   # Activation
   activation: relu
   weight_init: he_normal
 
 training:
-  # Training parameters optimized for RTX 3060 Ti + Ryzen 9 5900X
-  batch_size: 1024
-  learning_rate: 0.01
-  learning_rate_schedule: cosine  # Better for longer training
-  lr_decay_steps: 50
+  # Training parameters optimized for master-level learning
+  batch_size: 1024          # Reduced for better gradient estimates with larger network
+  learning_rate: 0.01       # Reduced for more stable training with larger network
+  learning_rate_schedule: cosine  # Smooth decay for long training
+  lr_decay_steps: 100       # Longer cycles for deeper learning
   lr_decay_rate: 0.1
-  min_learning_rate: 0.00001
+  min_learning_rate: 0.000001  # Lower minimum for fine-tuning
   
   # Optimization
   optimizer: adam
@@ -114,7 +115,7 @@ training:
   weight_decay: 0.0001
   
   # Gradient handling
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 2
   max_grad_norm: 5.0
   gradient_clip_value: null
   
@@ -124,26 +125,26 @@ training:
   final_tournament_max_models: 10
   
   # Training loop
-  num_epochs: 10
-  early_stopping_patience: 50
+  num_epochs: 7
+  early_stopping_patience: 20
   early_stopping_min_delta: 0.0001
   
-  # Self-play - Utilizing 12 cores/24 threads
-  num_games_per_iteration: 120
+  # Self-play - Optimized for master-level training
+  num_games_per_iteration: 120  # Increased for more diverse training data
   num_workers: 12  # Match CPU cores for optimal utilization
   max_moves_per_game: 225
-  resign_threshold: -0.95
-  resign_check_moves: 10
-  resign_start_iteration: 10  # Start resignation after 10 iterations for better early learning
+  resign_threshold: -0.98      # More conservative resignation for master play
+  resign_check_moves: 15       # Longer evaluation before resignation
+  resign_start_iteration: 20   # Later resignation start for better early learning
   
-  # Data handling - Optimized for 64GB RAM
-  window_size: 50000
+  # Data handling - Optimized for master-level training
+  window_size: 50000        # Larger window for more diverse training
   sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 10000 
-  dataloader_workers: 20  # Utilize CPU threads
+  shuffle_buffer_size: 15000  # Increased buffer size
+  dataloader_workers: 16     # Optimized for larger batches
   pin_memory: true
-  persistent_workers: true  # Keep workers alive
+  persistent_workers: true
   
   # Mixed precision
   mixed_precision: true
@@ -157,17 +158,17 @@ training:
   data_dir: self_play_data
 
 arena:
-  # Battle settings - Utilizing multi-core CPU
-  num_games: 60
+  # Battle settings - Rigorous evaluation for master level
+  num_games: 100            # More games for statistical significance
   num_workers: 12
-  win_threshold: 0.55
+  win_threshold: 0.6        # Higher threshold for model acceptance
   statistical_significance: true
-  confidence_level: 0.95
+  confidence_level: 0.99    # Higher confidence level
   
-  # Game settings
-  temperature: 0.0
-  mcts_simulations: 100
-  c_puct: 1.0
+  # Game settings - Tournament strength
+  temperature: 0.0          # Deterministic play for evaluation
+  mcts_simulations: 400     # Match training simulation count
+  c_puct: 1.414            # Match training c_puct
   max_moves: 225
   time_limit_seconds: null
   randomize_start_player: true
@@ -178,8 +179,8 @@ arena:
   elo_anchor_rating: 0.0
   update_elo: true
   
-  # Random policy evaluation
-  min_win_rate_vs_random: 0.95
+  # Random policy evaluation - Master level expectation
+  min_win_rate_vs_random: 0.99  # Near-perfect performance against random
   
   # Tournament settings
   tournament_rounds: 1
@@ -190,3 +191,9 @@ arena:
   save_arena_logs: true
   arena_log_dir: arena_logs
   elo_save_path: elo_ratings.json
+  
+  # New arena features
+  enable_current_vs_previous: true  # Enable current vs previous model arena matches
+  enable_adaptive_random_matches: true  # Use adaptive logic for random matches
+  enable_elo_consistency_checks: true  # Check for ELO inconsistencies
+  enable_elo_auto_adjustment: true  # Automatically adjust ELO when inconsistencies are detected

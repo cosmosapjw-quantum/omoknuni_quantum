@@ -16,8 +16,63 @@ import time
 from mcts.core.evaluator import Evaluator, EvaluatorConfig
 from .nn_framework import ModelLoader, BaseGameModel, ModelMetadata
 from .resnet_model import ResNetModel, create_resnet_for_game
+from mcts.utils.config_system import AlphaZeroConfig, NeuralNetworkConfig
 
 logger = logging.getLogger(__name__)
+
+
+def load_config_for_model(checkpoint_path: str) -> Optional[NeuralNetworkConfig]:
+    """
+    Automatically detect and load neural network config for a model checkpoint
+    
+    Args:
+        checkpoint_path: Path to model checkpoint file
+        
+    Returns:
+        NeuralNetworkConfig if found, None otherwise
+    """
+    from pathlib import Path
+    
+    try:
+        checkpoint_path = Path(checkpoint_path)
+        
+        # Look for config.yaml in experiment directory
+        # Try different possible locations based on checkpoint path structure
+        search_paths = []
+        
+        # If checkpoint is in experiments/experiment_name/best_models/model.pt
+        if 'experiments' in checkpoint_path.parts:
+            exp_idx = checkpoint_path.parts.index('experiments')
+            if exp_idx + 1 < len(checkpoint_path.parts):
+                exp_dir = Path(*checkpoint_path.parts[:exp_idx+2])  # experiments/experiment_name
+                search_paths.append(exp_dir / "config.yaml")
+        
+        # If checkpoint is in experiment_name/best_models/model.pt
+        search_paths.append(checkpoint_path.parent.parent / "config.yaml")
+        
+        # If checkpoint is in best_models/model.pt
+        search_paths.append(checkpoint_path.parent / "config.yaml")
+        
+        # Look for gomoku_classical.yaml in configs directory (relative to project root)
+        project_root = Path(__file__).parent.parent.parent.parent
+        search_paths.append(project_root / "configs" / "gomoku_classical.yaml")
+        
+        for config_path in search_paths:
+            if config_path.exists():
+                try:
+                    logger.info(f"Loading neural network config from {config_path}")
+                    full_config = AlphaZeroConfig.load(str(config_path))
+                    return full_config.network
+                except Exception as config_error:
+                    logger.warning(f"Failed to load config from {config_path}: {config_error}")
+                    continue  # Try next config path
+        
+        logger.warning(f"No config file found for checkpoint {checkpoint_path}")
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Failed to load config for {checkpoint_path}: {e}")
+        return None
 
 
 class ResNetEvaluator(Evaluator):
@@ -29,7 +84,8 @@ class ResNetEvaluator(Evaluator):
         config: Optional[EvaluatorConfig] = None,
         game_type: str = 'gomoku',
         checkpoint_path: Optional[str] = None,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        network_config: Optional[NeuralNetworkConfig] = None
     ):
         """
         Initialize ResNet evaluator
@@ -40,6 +96,7 @@ class ResNetEvaluator(Evaluator):
             game_type: Type of game if creating new model
             checkpoint_path: Path to model checkpoint
             device: Device to run on (auto-detect if None)
+            network_config: Neural network architecture config (optional)
         """
         # Determine device from config or parameter
         if device is not None:
@@ -55,12 +112,26 @@ class ResNetEvaluator(Evaluator):
             self.model = model
             action_size = model.metadata.num_actions
         elif checkpoint_path is not None:
+            # Try to automatically load network config for the checkpoint
+            if network_config is None:
+                network_config = load_config_for_model(checkpoint_path)
+            
             self.model, metadata = ModelLoader.load_checkpoint(checkpoint_path, device)
             action_size = metadata.num_actions
         else:
             # Create new model for game
-            # Override input channels to use enhanced representation (20 channels)
-            self.model = create_resnet_for_game(game_type, input_channels=20)
+            # Use network_config if provided, otherwise use function defaults
+            if network_config is not None:
+                # Use config values for architecture
+                self.model = create_resnet_for_game(
+                    game_type=game_type,
+                    input_channels=network_config.input_channels,
+                    num_blocks=network_config.num_res_blocks,
+                    num_filters=network_config.num_filters
+                )
+            else:
+                # Fallback to function defaults (maintains backward compatibility)
+                self.model = create_resnet_for_game(game_type, input_channels=20)
             action_size = self.model.metadata.num_actions
         
         # Move model to device
@@ -315,6 +386,7 @@ def create_evaluator_for_game(
     device: Optional[str] = None,
     num_blocks: Optional[int] = None,
     num_filters: Optional[int] = None,
+    config_path: Optional[str] = None,
     **kwargs
 ) -> ResNetEvaluator:
     """
@@ -324,32 +396,36 @@ def create_evaluator_for_game(
         game_type: Type of game ('chess', 'go', 'gomoku')
         checkpoint_path: Optional path to model checkpoint
         device: Device to run on (auto-detect if None)
-        num_blocks: Number of ResNet blocks
-        num_filters: Number of filters in ResNet
+        num_blocks: Number of ResNet blocks (legacy, use config_path instead)
+        num_filters: Number of filters in ResNet (legacy, use config_path instead)
+        config_path: Path to YAML config file with network architecture
         **kwargs: Additional arguments for ResNetEvaluator
         
     Returns:
         ResNetEvaluator configured for the game
     """
-    # If creating a new model, we need to patch create_resnet_for_game call
-    if checkpoint_path is None and (num_blocks is not None or num_filters is not None):
-        # Create model with specified parameters
-        model_kwargs = {'input_channels': 20}
-        if num_blocks is not None:
-            model_kwargs['num_blocks'] = num_blocks
-        if num_filters is not None:
-            model_kwargs['num_filters'] = num_filters
-        model = create_resnet_for_game(game_type, **model_kwargs)
-        return ResNetEvaluator(
-            model=model,
-            device=device,
-            **kwargs
+    # Load network config if provided
+    network_config = None
+    if config_path is not None:
+        try:
+            full_config = AlphaZeroConfig.load(config_path)
+            network_config = full_config.network
+        except Exception as e:
+            logger.warning(f"Failed to load config from {config_path}: {e}")
+    
+    # Legacy support: create network config from individual parameters
+    if network_config is None and (num_blocks is not None or num_filters is not None):
+        network_config = NeuralNetworkConfig(
+            num_res_blocks=num_blocks or 10,
+            num_filters=num_filters or 256,
+            input_channels=20
         )
     
     return ResNetEvaluator(
         game_type=game_type,
         checkpoint_path=checkpoint_path,
         device=device,
+        network_config=network_config,
         **kwargs
     )
 

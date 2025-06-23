@@ -16,8 +16,11 @@ import threading
 import queue
 import logging
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
+# Add parent directory to path for imports and prioritize it
+python_path = str(Path(__file__).parent.parent)
+if python_path in sys.path:
+    sys.path.remove(python_path)
+sys.path.insert(0, python_path)  # Insert at beginning to prioritize local code
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -28,6 +31,7 @@ try:
     from mcts.gpu.gpu_game_states import GameType
     from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
     from mcts.neural_networks.nn_framework import ModelLoader, ModelMetadata
+    from mcts.utils.config_system import AlphaZeroConfig
 except ImportError as e:
     messagebox.showerror("Import Error", f"Failed to import required modules: {e}\n\nMake sure to build the C++ extensions first.")
     sys.exit(1)
@@ -91,6 +95,7 @@ class GomokuGUI:
         self.model_label = ttk.Label(model_frame, text="No model loaded", foreground="red")
         self.model_label.grid(row=0, column=1, padx=(0, 10))
         ttk.Button(model_frame, text="Load Model", command=self.load_model).grid(row=0, column=2)
+        ttk.Button(model_frame, text="Load with Config", command=self.load_model_with_config).grid(row=0, column=3)
         
         # Player color selection
         color_frame = ttk.Frame(control_frame)
@@ -164,25 +169,95 @@ class GomokuGUI:
             # Load model and detect board size
             device = "cuda" if torch.cuda.is_available() else "cpu"
             
-            # Load the model
-            model, metadata = ModelLoader.load_checkpoint(filename, device=device)
+            # Create evaluator with automatic config loading
+            # Handle both old and new ResNetEvaluator APIs
+            try:
+                # Try new API with network_config parameter
+                from mcts.neural_networks.resnet_evaluator import load_config_for_model
+                network_config = load_config_for_model(filename)
+                
+                self.ai_evaluator = ResNetEvaluator(
+                    checkpoint_path=filename,
+                    device=device,
+                    game_type='gomoku',
+                    network_config=network_config
+                )
+                if network_config:
+                    self.status_var.set(f"Loaded with config: {network_config.num_res_blocks} blocks, {network_config.num_filters} filters")
+                
+            except TypeError as e:
+                if "unexpected keyword argument 'network_config'" in str(e):
+                    # Fallback to old API without network_config
+                    logger.info("Using legacy ResNetEvaluator API")
+                    self.ai_evaluator = ResNetEvaluator(
+                        checkpoint_path=filename,
+                        device=device,
+                        game_type='gomoku'
+                    )
+                    self.status_var.set("Loaded with legacy API (may use default architecture)")
+                else:
+                    raise
+            except Exception as e:
+                # If checkpoint loading fails completely, try to create new model with config
+                logger.warning(f"Checkpoint loading failed: {e}")
+                self.status_var.set("Checkpoint failed, trying with manual config...")
+                self.root.update()
+                
+                try:
+                    from mcts.neural_networks.resnet_evaluator import load_config_for_model
+                    network_config = load_config_for_model(filename)
+                    
+                    if network_config is not None:
+                        try:
+                            # Try new API
+                            self.ai_evaluator = ResNetEvaluator(
+                                checkpoint_path=None,
+                                device=device,
+                                game_type='gomoku',
+                                network_config=network_config
+                            )
+                            self.status_var.set("Created new model with detected config")
+                        except TypeError:
+                            # Fallback to old API
+                            self.ai_evaluator = ResNetEvaluator(
+                                checkpoint_path=None,
+                                device=device,
+                                game_type='gomoku'
+                            )
+                            self.status_var.set("Created new model with default config (legacy API)")
+                    else:
+                        # No config found, use default
+                        self.ai_evaluator = ResNetEvaluator(
+                            checkpoint_path=None,
+                            device=device,
+                            game_type='gomoku'
+                        )
+                        self.status_var.set("Created new model with default config")
+                except ImportError:
+                    # load_config_for_model not available in old version
+                    self.ai_evaluator = ResNetEvaluator(
+                        checkpoint_path=None,
+                        device=device,
+                        game_type='gomoku'
+                    )
+                    self.status_var.set("Created new model with default config (legacy version)")
+                
+                self.root.update()
+            
+            # Get model metadata for board size detection
+            metadata = self.ai_evaluator.model.metadata
             
             # Try to detect board size from model architecture
-            if hasattr(model, 'board_size'):
-                detected_size = model.board_size
-            elif hasattr(metadata, 'board_size'):
+            if hasattr(metadata, 'board_size'):
                 detected_size = metadata.board_size
             else:
-                # Try to infer from input channels or default to 15
+                # Default to 15 for Gomoku
                 detected_size = 15
                 
             # Update board size if different
             if detected_size != self.board_size:
                 self.board_size = detected_size
                 self.setup_board_canvas()
-                
-            # Create evaluator
-            self.ai_evaluator = ResNetEvaluator(model=model, device=device)
             
             # Configure MCTS
             config = MCTSConfig(
@@ -192,7 +267,9 @@ class GomokuGUI:
                 min_wave_size=3072,
                 max_wave_size=3072,
                 adaptive_wave_sizing=False,
-                temperature=0.1,  # Lower temperature for stronger play
+                temperature=0.0,  # Zero temperature for deterministic play
+                dirichlet_alpha=0.3,  # Keep default valid value (must be > 0)
+                dirichlet_epsilon=0.0,  # Zero epsilon disables noise completely
                 device=device,
                 use_mixed_precision=True,
                 use_cuda_graphs=True,
@@ -223,6 +300,107 @@ class GomokuGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load model:\n{str(e)}")
             self.status_var.set("Failed to load model")
+    
+    def load_model_with_config(self):
+        """Load a model and explicitly specify a config file"""
+        model_filename = filedialog.askopenfilename(
+            title="Select AI Model",
+            filetypes=[("PyTorch Models", "*.pt"), ("All Files", "*.*")]
+        )
+        
+        if not model_filename:
+            return
+            
+        config_filename = filedialog.askopenfilename(
+            title="Select Config File",
+            filetypes=[("YAML Config", "*.yaml"), ("YAML Config", "*.yml"), ("All Files", "*.*")]
+        )
+        
+        if not config_filename:
+            return
+            
+        try:
+            # Show loading message
+            self.status_var.set("Loading model with custom config...")
+            self.root.update()
+            
+            # Load config and extract network config
+            full_config = AlphaZeroConfig.load(config_filename)
+            network_config = full_config.network
+            
+            # Load model and detect board size
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            
+            # Create evaluator with specified config
+            self.ai_evaluator = ResNetEvaluator(
+                checkpoint_path=model_filename,
+                device=device,
+                game_type='gomoku',
+                network_config=network_config
+            )
+            
+            # Get model metadata for board size detection
+            metadata = self.ai_evaluator.model.metadata
+            
+            # Try to detect board size from config or model
+            if hasattr(full_config.game, 'board_size'):
+                detected_size = full_config.game.board_size
+            elif hasattr(metadata, 'board_size'):
+                detected_size = metadata.board_size
+            else:
+                detected_size = 15
+                
+            # Update board size if different
+            if detected_size != self.board_size:
+                self.board_size = detected_size
+                self.setup_board_canvas()
+                
+            # Configure MCTS using config values
+            config = MCTSConfig(
+                game_type=GameType.GOMOKU,
+                board_size=self.board_size,
+                num_simulations=self.difficulty_levels[self.current_difficulty],
+                min_wave_size=getattr(full_config.mcts, 'min_wave_size', 3072),
+                max_wave_size=getattr(full_config.mcts, 'max_wave_size', 3072),
+                adaptive_wave_sizing=getattr(full_config.mcts, 'adaptive_wave_sizing', False),
+                temperature=0.0,  # Zero temperature for deterministic play
+                dirichlet_alpha=getattr(full_config.mcts, 'dirichlet_alpha', 0.3),
+                dirichlet_epsilon=0.0,  # Zero epsilon disables noise completely
+                device=device,
+                use_mixed_precision=getattr(full_config.mcts, 'use_mixed_precision', True),
+                use_cuda_graphs=getattr(full_config.mcts, 'use_cuda_graphs', True),
+                use_tensor_cores=getattr(full_config.mcts, 'use_tensor_cores', True),
+                memory_pool_size_mb=getattr(full_config.mcts, 'memory_pool_size_mb', 2048),
+                max_tree_nodes=getattr(full_config.mcts, 'max_tree_nodes', 500000)
+            )
+            
+            # Create MCTS instance
+            self.mcts = MCTS(config, self.ai_evaluator)
+            self.mcts.optimize_for_hardware()
+            
+            # Update UI
+            model_name = Path(model_filename).name
+            config_name = Path(config_filename).name
+            self.model_label.config(
+                text=f"{model_name} + {config_name} (Board: {self.board_size}x{self.board_size})", 
+                foreground="green"
+            )
+            self.status_var.set(f"Model loaded with config! Board size: {self.board_size}x{self.board_size}")
+            
+            # Update info
+            self.update_info(f"Loaded model: {model_name}\n"
+                           f"Config: {config_name}\n"
+                           f"Architecture: {network_config.num_res_blocks} blocks, {network_config.num_filters} filters\n"
+                           f"Board size: {self.board_size}x{self.board_size}\n"
+                           f"Device: {device.upper()}\n"
+                           f"Difficulty: {self.current_difficulty} ({self.difficulty_levels[self.current_difficulty]} simulations)")
+            
+            # Start new game
+            self.new_game()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load model with config:\n{str(e)}")
+            self.status_var.set("Failed to load model with config")
             
     def setup_board_canvas(self):
         """Reconfigure canvas for new board size"""

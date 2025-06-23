@@ -202,6 +202,109 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getTensorRepresentatio
     return tensor;
 }
 
+std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresentation() const {
+    // Basic tensor representation without attack/defense planes
+    // Channel 0: Current board state  
+    // Channel 1: Current player indicator
+    // Channels 2-17: Previous 8 moves for each player (16 channels)
+    // Total: 18 channels (no attack/defense overhead)
+    
+    try {
+        const int num_feature_planes = 18; // Basic representation without attack/defense
+        
+        // Create fresh tensor without pooling to avoid memory retention
+        auto tensor = std::vector<std::vector<std::vector<float>>>(
+            num_feature_planes, std::vector<std::vector<float>>(
+                board_size_, std::vector<float>(board_size_, 0.0f)));
+
+        // Channel 0: Current board state
+        // BLACK stones = 1.0, WHITE stones = 2.0, empty = 0.0
+        for (int r = 0; r < board_size_; ++r) {
+            for (int c = 0; c < board_size_; ++c) {
+                int action = coords_to_action(r, c);
+                if (is_bit_set(0, action)) { // BLACK (player 1)
+                    tensor[0][r][c] = 1.0f;
+                } else if (is_bit_set(1, action)) { // WHITE (player 2)
+                    tensor[0][r][c] = 2.0f;
+                }
+                // Empty squares remain 0.0f
+            }
+        }
+
+        // Channel 1: Current player indicator
+        float color_plane_val = (current_player_ == BLACK) ? 1.0f : 0.0f;
+        for (int r = 0; r < board_size_; ++r) {
+            for (int c = 0; c < board_size_; ++c) {
+                tensor[1][r][c] = color_plane_val;
+            }
+        }
+
+        // Channels 2-17: Move history (8 pairs)
+        int history_len = move_history_.size();
+        std::vector<int> current_player_moves_in_history;
+        std::vector<int> opponent_player_moves_in_history;
+
+        for(int k=0; k < history_len; ++k) {
+            int move_action = move_history_[history_len - 1 - k];
+            if (k % 2 == 0) { 
+                opponent_player_moves_in_history.push_back(move_action);
+            } else { 
+                current_player_moves_in_history.push_back(move_action);
+            }
+        }
+
+        // Fill history channels starting from channel 2
+        const int num_history_pairs = 8;
+        for(int i=0; i < num_history_pairs && i < current_player_moves_in_history.size(); ++i) {
+            auto coords = action_to_coords_pair(current_player_moves_in_history[i]);
+            int r = coords.first;
+            int c = coords.second;
+            if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
+                tensor[2 + i*2][r][c] = 1.0f;  // Channels 2, 4, 6, ..., 16
+            }
+        }
+        
+        for(int i=0; i < num_history_pairs && i < opponent_player_moves_in_history.size(); ++i) {
+            auto coords = action_to_coords_pair(opponent_player_moves_in_history[i]);
+            int r = coords.first;
+            int c = coords.second;
+            if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
+                tensor[3 + i*2][r][c] = 1.0f;  // Channels 3, 5, 7, ..., 17
+            }
+        }
+        
+        // No attack/defense planes - basic representation ends here
+        return tensor;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in getBasicTensorRepresentation: " << e.what() << std::endl;
+        
+        // Return a default tensor with the correct dimensions (18 channels)
+        const int num_feature_planes = 18; // Basic representation
+        
+        return std::vector<std::vector<std::vector<float>>>(
+            num_feature_planes, 
+            std::vector<std::vector<float>>(
+                board_size_, 
+                std::vector<float>(board_size_, 0.0f)
+            )
+        );
+    } catch (...) {
+        std::cerr << "Unknown exception in getBasicTensorRepresentation" << std::endl;
+        
+        // Return a default tensor with the correct dimensions (18 channels)
+        const int num_feature_planes = 18; // Basic representation
+        
+        return std::vector<std::vector<std::vector<float>>>(
+            num_feature_planes, 
+            std::vector<std::vector<float>>(
+                board_size_, 
+                std::vector<float>(board_size_, 0.0f)
+            )
+        );
+    }
+}
+
 std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepresentation() const {
     // CRITICAL FIX: Don't cache tensors to prevent memory accumulation
     

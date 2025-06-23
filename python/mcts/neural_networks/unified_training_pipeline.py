@@ -126,9 +126,11 @@ class UnifiedTrainingPipeline:
         
         # Initialize game interface
         self.game_type = GameType[config.game.game_type.upper()]
+        input_representation = getattr(config.network, 'input_representation', 'enhanced')
         self.game_interface = GameInterface(
             self.game_type,
-            board_size=config.game.board_size
+            board_size=config.game.board_size,
+            input_representation=input_representation
         )
         
         # Initialize components
@@ -138,7 +140,8 @@ class UnifiedTrainingPipeline:
         self.scheduler = self._create_scheduler()
         
         # Loss functions (will be moved to device automatically when needed)
-        self.policy_loss_fn = nn.CrossEntropyLoss()
+        # For AlphaZero, we need to use KL divergence for policy loss since targets are distributions
+        self.policy_loss_fn = self._policy_loss_kl_div
         self.value_loss_fn = nn.MSELoss()
         
         # Mixed precision scaler
@@ -284,6 +287,26 @@ class UnifiedTrainingPipeline:
             # No scheduler
             return None
     
+    def _policy_loss_kl_div(self, pred_log_probs, target_probs):
+        """Calculate KL divergence loss for policy
+        
+        AlphaZero uses the MCTS visit counts as a probability distribution target.
+        We need to calculate the cross-entropy between the network's output and this distribution.
+        
+        Args:
+            pred_log_probs: Network output (already log probabilities) (batch_size, action_size)
+            target_probs: Target probability distributions from MCTS (batch_size, action_size)
+            
+        Returns:
+            KL divergence loss
+        """
+        # The network already outputs log probabilities, so we don't need to apply log_softmax
+        # Calculate cross-entropy: -sum(target * log(pred))
+        # This is equivalent to KL divergence when target sums to 1
+        loss = -(target_probs * pred_log_probs).sum(dim=1).mean()
+        
+        return loss
+    
     def _create_arena(self):
         """Create arena for model evaluation"""
         from mcts.neural_networks.arena_module import ArenaManager, ArenaConfig
@@ -340,9 +363,16 @@ class UnifiedTrainingPipeline:
             self_play_examples = self.generate_self_play_data()
             self_play_time = time.time() - self_play_start
             
-            # Add to replay buffer
-            self.replay_buffer.add(self_play_examples)
-            tqdm.write(f"      Generated {len(self_play_examples)} examples in {self_play_time:.1f}s")
+            # Apply data augmentation if enabled
+            if self.config.training.augment_data:
+                augmented_examples = self._augment_training_data(self_play_examples)
+                tqdm.write(f"      Applied data augmentation: {len(self_play_examples)} → {len(augmented_examples)} examples")
+                self.replay_buffer.add(augmented_examples)
+            else:
+                self.replay_buffer.add(self_play_examples)
+            
+            final_examples = len(augmented_examples) if self.config.training.augment_data else len(self_play_examples)
+            tqdm.write(f"      Generated {final_examples} examples in {self_play_time:.1f}s")
             tqdm.write(f"      Replay buffer size: {len(self.replay_buffer)}")
             
             # Phase 2: Neural network training  
@@ -518,13 +548,13 @@ class UnifiedTrainingPipeline:
         
         for move_num in range(self.config.training.max_moves_per_game):
             # AlphaZero-style temperature annealing
-            # Use exploration temperature for first N moves, then switch to deterministic
+            # Use exploration temperature for first N moves, then switch to lower temperature
             if move_num < self.config.mcts.temperature_threshold:
                 # Exploration phase - use stochastic temperature
-                mcts.config.temperature = 1.0
+                mcts.config.temperature = self.config.mcts.temperature
             else:
-                # Exploitation phase - deterministic play
-                mcts.config.temperature = 0.0
+                # Exploitation phase - lower temperature but not fully deterministic
+                mcts.config.temperature = getattr(self.config.mcts, 'temperature_final', 0.1)
             
             # Search with MCTS
             policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
@@ -582,6 +612,31 @@ class UnifiedTrainingPipeline:
                 break
         
         return examples
+    
+    def _augment_training_data(self, examples: List[GameExample]) -> List[GameExample]:
+        """Apply data augmentation to training examples using board symmetries"""
+        augmented_examples = []
+        
+        for example in examples:
+            # Get board and policy from the example
+            board = example.state
+            policy = example.policy
+            
+            # Apply symmetries (rotations and reflections)
+            symmetries = self.game_interface.get_symmetries(board, policy)
+            
+            for aug_board, aug_policy in symmetries:
+                # Create augmented example
+                augmented_example = GameExample(
+                    state=aug_board,
+                    policy=aug_policy,
+                    value=example.value,  # Value doesn't change with symmetry
+                    game_id=example.game_id + f"_sym{len(augmented_examples)}",
+                    move_number=example.move_number
+                )
+                augmented_examples.append(augmented_example)
+        
+        return augmented_examples
     
     def train_neural_network(self) -> Dict[str, float]:
         """Train the neural network on replay buffer"""
@@ -725,7 +780,7 @@ class UnifiedTrainingPipeline:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
-        # Implement ELO inheritance: new models start from previous model's ELO
+        # Implement improved ELO inheritance: use best baseline for inheritance
         current_key = f"iter_{self.iteration}"
         if current_key not in self.elo_tracker.ratings:
             if self.iteration == 1:
@@ -733,43 +788,155 @@ class UnifiedTrainingPipeline:
                 initial_elo = 0.0
                 logger.info(f"First model (iter_1) starting at ELO {initial_elo:.1f} (same as random)")
             else:
-                # Start from previous iteration's ELO by default
-                previous_key = f"iter_{self.iteration - 1}"
-                if previous_key in self.elo_tracker.ratings:
-                    initial_elo = self.elo_tracker.get_rating(previous_key)
-                    logger.info(f"Model iter_{self.iteration} initially inheriting ELO {initial_elo:.1f} from {previous_key}")
+                # Improved inheritance: use best model ELO as baseline if available, 
+                # otherwise use previous model ELO
+                if self.best_model_iteration:
+                    best_key = f"iter_{self.best_model_iteration}"
+                    if best_key in self.elo_tracker.ratings:
+                        initial_elo = self.elo_tracker.get_rating(best_key)
+                        logger.info(f"Model iter_{self.iteration} initially inheriting ELO {initial_elo:.1f} from best model {best_key}")
+                    else:
+                        # Fallback to previous model
+                        previous_key = f"iter_{self.iteration - 1}"
+                        if previous_key in self.elo_tracker.ratings:
+                            initial_elo = self.elo_tracker.get_rating(previous_key)
+                            logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key} (best model ELO not found)")
+                        else:
+                            initial_elo = self.config.arena.elo_initial_rating
+                            logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
                 else:
-                    # If previous doesn't exist, start from initial rating
-                    initial_elo = self.config.arena.elo_initial_rating
-                    logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
+                    # No best model yet, use previous model
+                    previous_key = f"iter_{self.iteration - 1}"
+                    if previous_key in self.elo_tracker.ratings:
+                        initial_elo = self.elo_tracker.get_rating(previous_key)
+                        logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key}")
+                    else:
+                        initial_elo = self.config.arena.elo_initial_rating
+                        logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
             
             self.elo_tracker.ratings[current_key] = initial_elo
             # Store initial ELO for potential adjustment
             self._initial_inherited_elo = initial_elo
         
-        # Match 1: Current vs Random
-        tqdm.write("      Current vs Random...")
-        wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
-            self.model, random_evaluator,
-            model1_name=f"iter_{self.iteration}",
-            model2_name="random",
-            silent=False
-        )
-        win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
-        tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
+        # Match 1: Current vs Random (using adaptive logic like best model)
+        current_model_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
         
-        # Update ELO
-        self.elo_tracker.update_ratings(
-            f"iter_{self.iteration}", "random",
-            wins_vs_random, draws_vs_random, losses_vs_random
-        )
+        # Use adaptive logic if enabled in config
+        if self.config.arena.enable_adaptive_random_matches:
+            should_current_play_random = self.elo_tracker.should_play_vs_random(
+                self.iteration, current_model_elo
+            )
+        else:
+            # Always play random matches if adaptive logic is disabled
+            should_current_play_random = True
+        
+        wins_vs_random = 0
+        draws_vs_random = 0
+        losses_vs_random = 0
+        win_rate_vs_random = 0.0
+        
+        if should_current_play_random:
+            tqdm.write("      Current vs Random (adaptive check)...")
+            wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
+                self.model, random_evaluator,
+                model1_name=f"iter_{self.iteration}",
+                model2_name="random",
+                silent=False
+            )
+            win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
+            tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
+            
+            # Update ELO
+            self.elo_tracker.update_ratings(
+                f"iter_{self.iteration}", "random",
+                wins_vs_random, draws_vs_random, losses_vs_random
+            )
+        else:
+            tqdm.write("      Current vs Random: Skipped (adaptive criteria)")
+            # For first model or when forced, still run the match
+            if self.iteration == 1 or not self.best_model_iteration:
+                tqdm.write("      Current vs Random (forced for first model)...")
+                wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
+                    self.model, random_evaluator,
+                    model1_name=f"iter_{self.iteration}",
+                    model2_name="random",
+                    silent=False
+                )
+                win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
+                tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
+                
+                # Update ELO
+                self.elo_tracker.update_ratings(
+                    f"iter_{self.iteration}", "random",
+                    wins_vs_random, draws_vs_random, losses_vs_random
+                )
         
         # Clean up after first match
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Match 2: Best vs Random (if we have a best model)
+        # Match 2: Current vs Previous Model (for ELO calibration)
+        wins_vs_previous = 0
+        draws_vs_previous = 0
+        losses_vs_previous = 0
+        win_rate_vs_previous = 0.0
+        
+        if self.iteration > 1 and self.config.arena.enable_current_vs_previous:
+            # Check if previous model exists
+            previous_model_path = self.experiment_dir / "checkpoints" / f"model_iter_{self.iteration - 1}.pt"
+            
+            if previous_model_path.exists():
+                tqdm.write(f"      Current vs Previous (iter_{self.iteration - 1})...")
+                
+                # Move current model to CPU temporarily to free GPU memory
+                current_device = next(self.model.parameters()).device
+                self.model.cpu()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # Load previous model
+                previous_model = self._create_model()
+                checkpoint = torch.load(previous_model_path, map_location=self.config.mcts.device, weights_only=False)
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    previous_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    previous_model.load_state_dict(checkpoint)
+                previous_model.eval()
+                
+                # Move current model back to device for comparison
+                self.model.to(current_device)
+                
+                # Run arena match
+                wins_vs_previous, draws_vs_previous, losses_vs_previous = self.arena.compare_models(
+                    self.model, previous_model,
+                    model1_name=f"iter_{self.iteration}",
+                    model2_name=f"iter_{self.iteration - 1}",
+                    silent=False
+                )
+                win_rate_vs_previous = wins_vs_previous / (wins_vs_previous + draws_vs_previous + losses_vs_previous)
+                tqdm.write(f"      Result: {wins_vs_previous}W-{draws_vs_previous}D-{losses_vs_previous}L ({win_rate_vs_previous:.1%})")
+                
+                # Update ELO based on actual performance vs previous model
+                self.elo_tracker.update_ratings(
+                    f"iter_{self.iteration}", f"iter_{self.iteration - 1}",
+                    wins_vs_previous, draws_vs_previous, losses_vs_previous
+                )
+                
+                # Clean up previous model
+                del previous_model
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            else:
+                tqdm.write(f"      Current vs Previous: Previous model iter_{self.iteration - 1} not found")
+        elif self.iteration > 1:
+            tqdm.write("      Current vs Previous: Disabled in config")
+        else:
+            tqdm.write("      Current vs Previous: Skipped (first model)")
+        
+        # Match 3: Best vs Random (if we have a best model)
         if self.best_model_iteration:
             # First, move current model to CPU temporarily to free GPU memory
             current_device = next(self.model.parameters()).device
@@ -837,7 +1004,7 @@ class UnifiedTrainingPipeline:
             # Move current model back to GPU
             self.model.to(current_device)
             
-            # Match 3: Current vs Best
+            # Match 4: Current vs Best
             tqdm.write("      Current vs Best...")
             
             # Move best model back to GPU for the match
@@ -908,6 +1075,20 @@ class UnifiedTrainingPipeline:
             "accepted": accepted
         }
         
+        # Add vs_previous results if we have them
+        if self.iteration > 1:
+            results["vs_previous"] = {
+                "wins": wins_vs_previous,
+                "draws": draws_vs_previous,
+                "losses": losses_vs_previous,
+                "win_rate": win_rate_vs_previous
+            }
+            # Add previous model ELO if it exists
+            previous_elo = self.elo_tracker.get_rating(f"iter_{self.iteration - 1}")
+            if previous_elo is not None:
+                results["elo_ratings"]["previous"] = previous_elo
+                tqdm.write(f"        Previous (iter {self.iteration - 1}): {previous_elo:.1f}")
+        
         if self.best_model_iteration:
             best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
             tqdm.write(f"        Best (iter {self.best_model_iteration}): {best_elo:.1f}")
@@ -920,6 +1101,75 @@ class UnifiedTrainingPipeline:
                 "win_rate": win_rate_vs_best
             }
             results["elo_ratings"]["best"] = best_elo
+            
+            # ELO consistency check and automatic adjustment
+            if self.config.arena.enable_elo_consistency_checks and current_elo > best_elo and win_rate_vs_best < 0.5:
+                logger.warning(f"ELO inconsistency detected: Current model (ELO {current_elo:.1f}) has higher ELO than best model (ELO {best_elo:.1f}) "
+                              f"but only achieved {win_rate_vs_best:.1%} win rate against best model.")
+                
+                if self.config.arena.enable_elo_auto_adjustment:
+                    # Calculate appropriate ELO adjustment
+                    # If current model can't beat best model, its ELO should be lower than best model
+                    # Adjust current model ELO to be slightly below best model ELO
+                    elo_gap = current_elo - best_elo
+                    
+                    # Set current ELO to best ELO minus a penalty based on performance
+                    performance_penalty = (0.5 - win_rate_vs_best) * 100  # Scale penalty by how much worse than 50%
+                    adjusted_current_elo = best_elo - performance_penalty
+                    
+                    # Ensure the adjustment is reasonable (not too extreme)
+                    max_adjustment = min(200, elo_gap * 1.5)  # Cap the adjustment
+                    if (current_elo - adjusted_current_elo) > max_adjustment:
+                        adjusted_current_elo = current_elo - max_adjustment
+                        performance_penalty = current_elo - adjusted_current_elo
+                    
+                    # Apply the adjustment
+                    old_current_elo = current_elo
+                    self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_current_elo
+                    current_elo = adjusted_current_elo  # Update local variable for display
+                    
+                    tqdm.write(f"        🔧 ELO Adjustment Applied:")
+                    tqdm.write(f"           Current model: {old_current_elo:.1f} → {adjusted_current_elo:.1f} (Δ{adjusted_current_elo - old_current_elo:+.1f})")
+                    tqdm.write(f"           Best model: {best_elo:.1f} (unchanged)")
+                    tqdm.write(f"           Reason: Current won only {win_rate_vs_best:.1%} vs best, penalty = {performance_penalty:.1f}")
+                    
+                    logger.info(f"ELO adjustment applied: Current model ELO {old_current_elo:.1f} → {adjusted_current_elo:.1f} "
+                               f"(penalty: {performance_penalty:.1f} based on {win_rate_vs_best:.1%} win rate vs best)")
+                    
+                    # Update the results with the corrected ELO
+                    results["elo_ratings"]["current"] = adjusted_current_elo
+                    results["elo_adjustment"] = {
+                        "applied": True,
+                        "old_elo": old_current_elo,
+                        "new_elo": adjusted_current_elo,
+                        "penalty": performance_penalty,
+                        "reason": f"Win rate vs best: {win_rate_vs_best:.1%}",
+                        "max_adjustment_capped": (current_elo - adjusted_current_elo) >= max_adjustment
+                    }
+                else:
+                    # Just log the inconsistency without adjusting
+                    tqdm.write(f"        ⚠️  ELO inconsistency: Current ELO {current_elo:.1f} > Best ELO {best_elo:.1f} but current only won {win_rate_vs_best:.1%} vs best")
+                    tqdm.write(f"           Auto-adjustment disabled in config")
+                    
+                    results["elo_adjustment"] = {
+                        "applied": False,
+                        "detected_inconsistency": True,
+                        "reason": "Auto-adjustment disabled in configuration"
+                    }
+            else:
+                # No inconsistency detected or checks disabled
+                results["elo_adjustment"] = {
+                    "applied": False,
+                    "detected_inconsistency": False,
+                    "reason": "No ELO inconsistency detected"
+                }
+        else:
+            # No best model yet - first model case
+            results["elo_adjustment"] = {
+                "applied": False,
+                "detected_inconsistency": False,
+                "reason": "No best model exists yet (first model)"
+            }
         
         # Save as best model if accepted
         if accepted:

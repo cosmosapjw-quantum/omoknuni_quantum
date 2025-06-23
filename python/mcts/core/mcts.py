@@ -222,7 +222,7 @@ class MCTS:
             elif config.game_type == GameType.GO:
                 legacy_game_type = LegacyGameType.GO
                 
-            self.cached_game = GameInterface(legacy_game_type, board_size=config.board_size)
+            self.cached_game = GameInterface(legacy_game_type, board_size=config.board_size, input_representation='basic')
         else:
             self.cached_game = game_interface
             
@@ -287,8 +287,13 @@ class MCTS:
             logger.info(f"GPUGameStates initialized with game_type={self.config.game_type}, board_size={self.config.board_size}")
             logger.info(f"Has boards attribute: {hasattr(self.game_states, 'boards')}")
         
-        # Enable enhanced 20-channel features for neural network compatibility
-        self.game_states.enable_enhanced_features()
+        # Enable enhanced features if evaluator expects 18 or 20 channels
+        expected_channels = self._get_evaluator_input_channels()
+        if expected_channels >= 18:
+            self.game_states.enable_enhanced_features()
+            # Set the target channel count for enhanced features
+            if hasattr(self.game_states, 'set_enhanced_channels'):
+                self.game_states.set_enhanced_channels(expected_channels)
         
         # Pre-allocate all buffers
         self._allocate_buffers()
@@ -1429,6 +1434,33 @@ class MCTS:
             stats['gpu_memory_reserved_mb'] = torch.cuda.memory_reserved() / 1024**2
         
         return stats
+    
+    def _get_evaluator_input_channels(self) -> int:
+        """Get the expected number of input channels from the evaluator"""
+        try:
+            # Check if evaluator has a model with metadata
+            if hasattr(self.evaluator, 'model') and hasattr(self.evaluator.model, 'metadata'):
+                return self.evaluator.model.metadata.input_channels
+            
+            # Check if evaluator has base_evaluator (for wrappers)
+            if hasattr(self.evaluator, 'base_evaluator'):
+                base_eval = self.evaluator.base_evaluator
+                if hasattr(base_eval, 'model') and hasattr(base_eval.model, 'metadata'):
+                    return base_eval.model.metadata.input_channels
+            
+            # Check if evaluator has evaluator attribute (for RemoteEvaluator wrappers)
+            if hasattr(self.evaluator, 'evaluator'):
+                inner_eval = self.evaluator.evaluator
+                if hasattr(inner_eval, 'model') and hasattr(inner_eval.model, 'metadata'):
+                    return inner_eval.model.metadata.input_channels
+                    
+            # Default to 18 channels (basic representation) if can't determine
+            logger.warning("Could not determine evaluator input channels, defaulting to 18 (basic representation)")
+            return 18
+            
+        except Exception as e:
+            logger.warning(f"Error getting evaluator input channels: {e}, defaulting to 18")
+            return 18
     
     def optimize_for_hardware(self):
         """Auto-optimize settings based on hardware"""

@@ -331,9 +331,11 @@ class ArenaManager:
         self.config = config
         self.arena_config = arena_config or ArenaConfig()
         self.game_type = GameType[config.game.game_type.upper()]
+        input_representation = getattr(config.network, 'input_representation', 'basic')
         self.game_interface = GameInterface(
             self.game_type,
-            board_size=config.game.board_size
+            board_size=config.game.board_size,
+            input_representation=input_representation
         )
         self.elo_tracker = ELOTracker(k_factor=config.arena.elo_k_factor)
     
@@ -1205,7 +1207,8 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
         
         # Create game interface
         game_type = GameType[config_dict['game']['game_type'].upper()]
-        game_interface = GameInterface(game_type, config_dict['game']['board_size'])
+        input_representation = config_dict.get('network', {}).get('input_representation', 'basic')
+        game_interface = GameInterface(game_type, config_dict['game']['board_size'], input_representation=input_representation)
         
         # Create evaluators
         if is_random1:

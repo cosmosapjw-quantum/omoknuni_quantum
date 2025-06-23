@@ -36,9 +36,11 @@ class SelfPlayManager:
         
         self.config = config
         self.game_type = GameType[config.game.game_type.upper()]
+        input_representation = getattr(config.network, 'input_representation', 'basic')
         self.game_interface = GameInterface(
             self.game_type,
-            board_size=config.game.board_size
+            board_size=config.game.board_size,
+            input_representation=input_representation
         )
     
     def generate_games(self, model: torch.nn.Module, iteration: int,
@@ -498,7 +500,8 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         
         # Create game interface
         game_type = GameType[config.game.game_type.upper()]
-        game_interface = GameInterface(game_type, config.game.board_size)
+        input_representation = getattr(config.network, 'input_representation', 'basic')
+        game_interface = GameInterface(game_type, config.game.board_size, input_representation=input_representation)
         
         # Create remote evaluator that sends requests to GPU service
         remote_evaluator = RemoteEvaluator(request_queue, response_queue, action_size, worker_id=game_idx)
