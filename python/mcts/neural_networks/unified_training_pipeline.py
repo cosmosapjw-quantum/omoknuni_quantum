@@ -360,6 +360,11 @@ class UnifiedTrainingPipeline:
         pbar = trange(target_iteration, desc="Training iterations", 
                      initial=start_iteration, unit="iter", position=0, leave=True)
         
+        # Pre-compile CUDA kernels to avoid JIT overhead during training
+        if self.config.mcts.device == 'cuda' and start_iteration == 0:
+            logger.info("🔧 Pre-compiling CUDA kernels...")
+            self._precompile_cuda_kernels()
+        
         for _ in range(remaining_iterations):
             self.iteration += 1
             pbar.update(1)
@@ -1618,6 +1623,42 @@ class UnifiedTrainingPipeline:
         results_file = self.arena_log_dir / "tournament_results.json"
         with open(results_file, 'w') as f:
             json.dump(tournament_results, f, indent=2)
+    
+    def _precompile_cuda_kernels(self):
+        """Pre-compile CUDA kernels to avoid JIT overhead during training"""
+        try:
+            from mcts.gpu.unified_kernels import get_unified_kernels
+            from mcts.core.mcts import MCTS, MCTSConfig
+            from mcts.neural_networks.mock_evaluator import MockEvaluator
+            import torch
+            
+            # Force kernel loading
+            logger.info("  📦 Loading unified kernels...")
+            kernels = get_unified_kernels(torch.device(self.config.mcts.device))
+            
+            # Create minimal MCTS instance to trigger kernel compilation
+            logger.info("  ⚙️  Initializing MCTS system...")
+            mcts_config = MCTSConfig(
+                num_simulations=10,  # Minimal simulations
+                wave_size=100,       # Small wave size
+                device=self.config.mcts.device,
+                enable_quantum=False  # Keep it simple
+            )
+            
+            evaluator = MockEvaluator()
+            mcts = MCTS(mcts_config, evaluator)
+            
+            # Run a minimal search to trigger any lazy compilation
+            logger.info("  🔥 Warming up kernels...")
+            import alphazero_py
+            game_state = alphazero_py.GomokuState()
+            mcts.search(game_state, 5)  # Very small search to trigger compilation
+            
+            logger.info("  ✅ CUDA kernels pre-compiled successfully!")
+            
+        except Exception as e:
+            logger.warning(f"Kernel pre-compilation failed: {e}")
+            logger.info("  📝 Continuing with PyTorch fallback...")
 
 
 # Old wrapper function removed - now using GPU service architecture from self_play_module

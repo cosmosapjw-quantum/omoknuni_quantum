@@ -177,12 +177,20 @@ class RealMCTSDataCollector:
         
         # Create evaluator
         if self.evaluator_type == "mock":
-            self.evaluator = MockEvaluator()
-            pass  # Using mock evaluator
+            self.evaluator = MockEvaluator(game_type='gomoku', device=self.device)
+        elif self.evaluator_type == "resnet":
+            try:
+                from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
+                # Use a lightweight ResNet evaluator
+                self.evaluator = ResNetEvaluator(device=self.device)
+                logger.info("Using ResNet evaluator")
+            except Exception as e:
+                logger.warning(f"Failed to load ResNet evaluator: {e}")
+                logger.warning("Falling back to mock evaluator")
+                self.evaluator = MockEvaluator()
         else:
-            # Would use real ResNet evaluator here
+            logger.warning(f"Unknown evaluator type: {self.evaluator_type}, using mock evaluator")
             self.evaluator = MockEvaluator()
-            logger.warning("ResNet evaluator not implemented, using mock evaluator")
         
         # MCTS configuration optimized for data collection - CLASSICAL MODE
         self.mcts_config = MCTSConfig(
@@ -597,6 +605,60 @@ class RealMCTSDataCollector:
         return output_path
 
 
+def _precompile_cuda_kernels(device: str):
+    """Pre-compile CUDA kernels to avoid JIT overhead during data collection"""
+    try:
+        import torch
+        
+        # Clear GPU cache first
+        if device == 'cuda':
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        from mcts.gpu.unified_kernels import get_unified_kernels
+        from mcts.core.mcts import MCTS, MCTSConfig
+        
+        # Force kernel loading
+        print("  📦 Loading unified kernels...")
+        kernels = get_unified_kernels(torch.device(device))
+        
+        # Create ultra-minimal MCTS instance to trigger kernel compilation
+        print("  ⚙️  Initializing minimal MCTS system...")
+        mcts_config = MCTSConfig(
+            num_simulations=3,    # Ultra-minimal simulations
+            wave_size=32,         # Very small wave size to avoid memory issues
+            min_wave_size=32,
+            max_wave_size=32,
+            device=device,
+            enable_quantum=False,  # Keep it simple
+            max_tree_nodes=1000,   # Minimal tree size
+            use_mixed_precision=False,  # Disable to save memory
+            use_cuda_graphs=False,      # Disable to save memory
+            use_tensor_cores=False      # Disable to save memory
+        )
+        
+        evaluator = MockEvaluator()
+        mcts = MCTS(mcts_config, evaluator)
+        
+        # Run a ultra-minimal search to trigger any lazy compilation
+        print("  🔥 Warming up kernels...")
+        import alphazero_py
+        game_state = alphazero_py.GomokuState()
+        mcts.search(game_state, 3)  # Ultra-small search to trigger compilation
+        
+        # Clean up immediately
+        del mcts
+        del evaluator
+        if device == 'cuda':
+            torch.cuda.empty_cache()
+        
+        print("  ✅ CUDA kernels pre-compiled successfully!")
+        
+    except Exception as e:
+        logger.warning(f"Kernel pre-compilation failed: {e}")
+        print("  📝 Continuing with PyTorch fallback...")
+
+
 def main():
     """Main function for real MCTS data collection"""
     
@@ -622,6 +684,16 @@ def main():
     print(f"Device: {args.device}")
     print(f"Evaluator: {args.evaluator}")
     print(f"{'='*70}")
+    
+    # Pre-compile CUDA kernels to avoid JIT overhead during data collection
+    if args.device == 'cuda':
+        print("🔧 Pre-compiling CUDA kernels...")
+        _precompile_cuda_kernels(args.device)
+    
+    # Performance warning for ResNet evaluator
+    if args.evaluator == 'resnet':
+        print("⚠️  Warning: ResNet evaluator may cause file I/O overhead during data collection.")
+        print("📝 For performance testing, consider using --evaluator mock instead.")
     
     # Create collector
     collector = RealMCTSDataCollector(evaluator_type=args.evaluator, device=args.device)

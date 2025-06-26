@@ -1349,59 +1349,53 @@ class CSRTree:
             self.flags[node_idx] &= ~1
     
     def _rebuild_row_pointers(self):
-        """Rebuild row pointers using vectorized GPU operations (OPTIMIZED VERSION)
+        """Rebuild row pointers using vectorized GPU operations (ULTRA-OPTIMIZED VERSION)
         
         This replaces the slow Python loop with vectorized GPU operations.
         Performance improvement: ~44x faster (4925ms → 111ms)
+        Additional optimizations: early returns, reuse allocations, minimal work
         """
         if not self._needs_row_ptr_update:
             return
             
-        # Reset row pointers
-        self.row_ptr.zero_()
-        
-        if self.num_edges == 0:
+        # Early return for empty tree
+        if self.num_nodes <= 1 or self.num_edges == 0:
+            self.row_ptr.zero_()
             self._needs_row_ptr_update = False
             return
         
-        # VECTORIZED VERSION - no Python loops!
+        # OPTIMIZED VERSION using vectorized operations on children table
         
-        # Get all child indices that have edges
-        valid_children = self.col_indices[:self.num_edges]
-        
-        # Filter out invalid children (bounds check)
-        valid_mask = (valid_children >= 0) & (valid_children < self.num_nodes)
-        if not valid_mask.any():
-            self._needs_row_ptr_update = False
-            return
-        
-        valid_children = valid_children[valid_mask]
-        
-        # Get parent indices for all valid children (vectorized)
-        parent_indices = self.parent_indices[valid_children]
-        
-        # Filter out children with invalid parents
-        valid_parents_mask = parent_indices >= 0
-        if not valid_parents_mask.any():
-            self._needs_row_ptr_update = False
-            return
+        with torch.no_grad():  # Disable gradients for performance
+            # Reset row pointers
+            self.row_ptr.zero_()
             
-        valid_parents = parent_indices[valid_parents_mask]
-        
-        # Count children per parent using bincount (GPU operation)
-        # Add 1 to shift indices for row_ptr format
-        parent_counts = torch.bincount(valid_parents + 1, minlength=self.row_ptr.shape[0])
-        
-        # Set the counts (bincount already gives us the right counts)
-        self.row_ptr += parent_counts
-        
-        # Convert counts to pointers (cumulative sum) - vectorized
-        self.row_ptr = torch.cumsum(self.row_ptr, dim=0)
+            # Count valid children for each node (vectorized)
+            # children table: [num_nodes, max_children_per_node]
+            valid_children_mask = self.children >= 0  # [num_nodes, max_children_per_node]
+            children_counts = valid_children_mask.sum(dim=1)  # [num_nodes]
+            
+            # Ensure we don't exceed row_ptr bounds
+            max_nodes = min(len(children_counts), self.row_ptr.shape[0] - 1)
+            if max_nodes > 0:
+                # Set counts in row_ptr (offset by 1 for CSR format)
+                self.row_ptr[1:max_nodes+1] = children_counts[:max_nodes].to(self.row_ptr.dtype)
+            
+            # Convert counts to pointers (cumulative sum) - in-place
+            torch.cumsum(self.row_ptr, dim=0, out=self.row_ptr)
         
         self._needs_row_ptr_update = False
     
-    def ensure_consistent(self):
-        """Ensure CSR structure is consistent - call this before batch operations"""
+    def ensure_consistent(self, force: bool = False):
+        """Ensure CSR structure is consistent - call this before batch operations
+        
+        Args:
+            force: If True, force consistency check even if not flagged as dirty
+        """
+        # Fast path: if nothing is dirty and not forced, return immediately
+        if not force and not self._needs_row_ptr_update and not (self.config.enable_batched_ops and self._has_pending_operations()):
+            return
+            
         # Flush any pending batch operations
         if self.config.enable_batched_ops:
             self.flush_batch()
@@ -1409,6 +1403,12 @@ class CSRTree:
         # Update row pointers if needed
         if self._needs_row_ptr_update:
             self._rebuild_row_pointers()
+    
+    def _has_pending_operations(self) -> bool:
+        """Check if there are pending batch operations (fast check)"""
+        if not hasattr(self, '_batch_size') or not hasattr(self, '_batch_parent_indices'):
+            return False
+        return getattr(self, '_batch_size', 0) > 0
     
     def add_children_batch_gpu(self, parent_idx: int, actions: torch.Tensor, priors: torch.Tensor) -> torch.Tensor:
         """GPU-optimized batch child addition - returns tensor of child indices"""

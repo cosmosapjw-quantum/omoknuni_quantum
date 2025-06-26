@@ -287,9 +287,10 @@ class MCTS:
             logger.info(f"GPUGameStates initialized with game_type={self.config.game_type}, board_size={self.config.board_size}")
             logger.info(f"Has boards attribute: {hasattr(self.game_states, 'boards')}")
         
-        # Enable enhanced features if evaluator expects 18 or 20 channels
+        # Enable enhanced features only for 20+ channels (advanced features)
+        # Standard AlphaZero 18-channel input should use basic GPU implementation
         expected_channels = self._get_evaluator_input_channels()
-        if expected_channels >= 18:
+        if expected_channels >= 20:
             self.game_states.enable_enhanced_features()
             # Set the target channel count for enhanced features
             if hasattr(self.game_states, 'set_enhanced_channels'):
@@ -707,72 +708,84 @@ class MCTS:
             
             # Use optimized UCB selection through tree method
             if hasattr(self.tree, 'batch_select_ucb_optimized'):
-                # Prepare quantum parameters if enabled
-                quantum_params = {}
-                if self.quantum_features:
-                    # Get quantum parameters from the implementation
-                    if hasattr(self.quantum_features, 'impl') and hasattr(self.quantum_features.impl, 'config'):
-                        # Wrapped version
-                        impl = self.quantum_features.impl
-                        impl_config = impl.config
-                        
-                        # For v2.0, use pre-computed tables and cached phase config
-                        if self.config.quantum_version == 'v2' and hasattr(impl, '_current_phase_config'):
-                            phase_config = impl._current_phase_config
-                            
-                            # Compute hbar_eff using pre-computed factors
-                            if hasattr(impl, 'hbar_factors') and self.quantum_total_simulations < len(impl.hbar_factors):
-                                hbar_eff = self.config.c_puct * impl.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
-                            else:
-                                hbar_eff = 0.1  # fallback
-                            
-                            quantum_params = {
-                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
-                                'uncertainty_table': getattr(impl, 'decoherence_table', torch.empty(0, device=self.device)),
-                                'hbar_eff': hbar_eff,
-                                'phase_kick_strength': phase_config.get('interference_strength', 0.1),
-                                'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
-                                'enable_quantum': True
-                            }
-                        else:
-                            # v1.0 parameters
-                            quantum_params = {
-                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
-                                'uncertainty_table': getattr(impl, 'uncertainty_table', torch.empty(0, device=self.device)),
-                                'hbar_eff': getattr(impl_config, 'hbar_eff', 0.1),
-                                'phase_kick_strength': getattr(impl_config, 'phase_kick_strength', 0.1),
-                                'interference_alpha': getattr(impl_config, 'interference_alpha', 0.05),
-                                'enable_quantum': True
-                            }
-                    else:
-                        # Direct implementation
-                        if self.config.quantum_version == 'v2' and hasattr(self.quantum_features, '_current_phase_config'):
-                            phase_config = self.quantum_features._current_phase_config
-                            
-                            # Compute hbar_eff using pre-computed factors
-                            if hasattr(self.quantum_features, 'hbar_factors') and self.quantum_total_simulations < len(self.quantum_features.hbar_factors):
-                                hbar_eff = self.config.c_puct * self.quantum_features.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
-                            else:
-                                hbar_eff = 0.1  # fallback
+                # PERFORMANCE FIX: Skip expensive quantum parameter computation when disabled
+                if not self.config.enable_quantum or not self.quantum_features:
+                    # Classical MCTS - use empty quantum params for maximum speed
+                    quantum_params = {
+                        'enable_quantum': False,
+                        'quantum_phases': torch.empty(0, device=self.device),
+                        'uncertainty_table': torch.empty(0, device=self.device),
+                        'hbar_eff': 0.0,
+                        'phase_kick_strength': 0.0,
+                        'interference_alpha': 0.0
+                    }
+                else:
+                    # Prepare quantum parameters if enabled
+                    quantum_params = {}
+                    if self.quantum_features:
+                        # Get quantum parameters from the implementation
+                            if hasattr(self.quantum_features, 'impl') and hasattr(self.quantum_features.impl, 'config'):
+                                # Wrapped version
+                                impl = self.quantum_features.impl
+                                impl_config = impl.config
                                 
-                            quantum_params = {
-                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
-                                'uncertainty_table': getattr(self.quantum_features, 'decoherence_table', torch.empty(0, device=self.device)),
-                                'hbar_eff': hbar_eff,
-                                'phase_kick_strength': phase_config.get('interference_strength', 0.1),
-                                'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
-                                'enable_quantum': True
-                            }
-                        else:
-                            # v1.0 parameters
-                            quantum_params = {
-                                'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
-                                'uncertainty_table': getattr(self.quantum_features, 'uncertainty_table', torch.empty(0, device=self.device)),
-                                'hbar_eff': getattr(self.quantum_features.config, 'hbar_eff', 0.1),
-                                'phase_kick_strength': getattr(self.quantum_features.config, 'phase_kick_strength', 0.1),
-                                'interference_alpha': getattr(self.quantum_features.config, 'interference_alpha', 0.05),
-                                'enable_quantum': True
-                            }
+                                # For v2.0, use pre-computed tables and cached phase config
+                                if self.config.quantum_version == 'v2' and hasattr(impl, '_current_phase_config'):
+                                    phase_config = impl._current_phase_config
+                                    
+                                    # Compute hbar_eff using pre-computed factors
+                                    if hasattr(impl, 'hbar_factors') and self.quantum_total_simulations < len(impl.hbar_factors):
+                                        hbar_eff = self.config.c_puct * impl.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
+                                    else:
+                                        hbar_eff = 0.1  # fallback
+                                    
+                                    quantum_params = {
+                                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                        'uncertainty_table': getattr(impl, 'decoherence_table', torch.empty(0, device=self.device)),
+                                        'hbar_eff': hbar_eff,
+                                        'phase_kick_strength': phase_config.get('interference_strength', 0.1),
+                                        'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
+                                        'enable_quantum': True
+                                    }
+                                else:
+                                    # v1.0 parameters
+                                    quantum_params = {
+                                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                        'uncertainty_table': getattr(impl, 'uncertainty_table', torch.empty(0, device=self.device)),
+                                        'hbar_eff': getattr(impl_config, 'hbar_eff', 0.1),
+                                        'phase_kick_strength': getattr(impl_config, 'phase_kick_strength', 0.1),
+                                        'interference_alpha': getattr(impl_config, 'interference_alpha', 0.05),
+                                        'enable_quantum': True
+                                    }
+                            else:
+                                # Direct implementation
+                                if self.config.quantum_version == 'v2' and hasattr(self.quantum_features, '_current_phase_config'):
+                                    phase_config = self.quantum_features._current_phase_config
+                                    
+                                    # Compute hbar_eff using pre-computed factors
+                                    if hasattr(self.quantum_features, 'hbar_factors') and self.quantum_total_simulations < len(self.quantum_features.hbar_factors):
+                                        hbar_eff = self.config.c_puct * self.quantum_features.hbar_factors[self.quantum_total_simulations] * phase_config['quantum_strength']
+                                    else:
+                                        hbar_eff = 0.1  # fallback
+                                        
+                                    quantum_params = {
+                                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                        'uncertainty_table': getattr(self.quantum_features, 'decoherence_table', torch.empty(0, device=self.device)),
+                                        'hbar_eff': hbar_eff,
+                                        'phase_kick_strength': phase_config.get('interference_strength', 0.1),
+                                        'interference_alpha': phase_config.get('interference_strength', 0.1) * 0.5,
+                                        'enable_quantum': True
+                                    }
+                                else:
+                                    # v1.0 parameters
+                                    quantum_params = {
+                                        'quantum_phases': self._get_quantum_phases(active_nodes, children_tensor),
+                                        'uncertainty_table': getattr(self.quantum_features, 'uncertainty_table', torch.empty(0, device=self.device)),
+                                        'hbar_eff': getattr(self.quantum_features.config, 'hbar_eff', 0.1),
+                                        'phase_kick_strength': getattr(self.quantum_features.config, 'phase_kick_strength', 0.1),
+                                        'interference_alpha': getattr(self.quantum_features.config, 'interference_alpha', 0.05),
+                                        'enable_quantum': True
+                                    }
                 
                 # The tree method handles CSR consistency internally
                 selected_actions, _ = self.tree.batch_select_ucb_optimized(
@@ -1067,16 +1080,15 @@ class MCTS:
         else:
             values_tensor = values.to(device=temp_result.device, dtype=temp_result.dtype)
         
-        # Handle case where values might be 2D (batch_size, 1) or (batch_size, action_space)
+        # Handle case where values might be 2D (batch_size, 1)
         if values_tensor.dim() > 1:
             if values_tensor.shape[1] == 1:
                 # Value head output - squeeze to get scalar values
                 values_tensor = values_tensor.squeeze(1)
             else:
-                # This might be policies instead of values - check shape
-                logger.warning(f"Unexpected values shape: {values_tensor.shape}, expected (batch_size,) or (batch_size, 1)")
-                # Take the first column as a fallback or use mean
-                values_tensor = values_tensor.mean(dim=1)
+                # This should not happen with correct evaluator interface
+                raise ValueError(f"Invalid values shape: {values_tensor.shape}, expected (batch_size,) or (batch_size, 1). "
+                               f"Evaluator may be returning policies instead of values.")
             
         temp_result[state_valid] = values_tensor.squeeze()
         result[valid_mask] = temp_result

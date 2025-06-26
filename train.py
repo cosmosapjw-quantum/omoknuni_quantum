@@ -27,6 +27,42 @@ from mcts.neural_networks.unified_training_pipeline import UnifiedTrainingPipeli
 from mcts.utils.config_system import AlphaZeroConfig, create_default_config
 import argparse
 
+def _precompile_cuda_kernels(device: str):
+    """Pre-compile CUDA kernels to avoid JIT overhead during training"""
+    try:
+        from mcts.gpu.unified_kernels import get_unified_kernels
+        from mcts.core.mcts import MCTS, MCTSConfig
+        from mcts.neural_networks.mock_evaluator import MockEvaluator
+        import torch
+        
+        # Force kernel loading
+        print("  📦 Loading unified kernels...")
+        kernels = get_unified_kernels(torch.device(device))
+        
+        # Create minimal MCTS instance to trigger kernel compilation
+        print("  ⚙️  Initializing MCTS system...")
+        mcts_config = MCTSConfig(
+            num_simulations=10,  # Minimal simulations
+            wave_size=100,       # Small wave size
+            device=device,
+            enable_quantum=False  # Keep it simple
+        )
+        
+        evaluator = MockEvaluator()
+        mcts = MCTS(mcts_config, evaluator)
+        
+        # Run a minimal search to trigger any lazy compilation
+        print("  🔥 Warming up kernels...")
+        import alphazero_py
+        game_state = alphazero_py.GomokuState()
+        mcts.search(game_state, 5)  # Very small search to trigger compilation
+        
+        print("  ✅ CUDA kernels pre-compiled successfully!")
+        
+    except Exception as e:
+        print(f"  ⚠️  Kernel pre-compilation failed: {e}")
+        print("  📝 Continuing with PyTorch fallback...")
+
 def main():
     parser = argparse.ArgumentParser(description="Train AlphaZero with Unified Pipeline")
     parser.add_argument("--config", type=str, help="Path to YAML config file")
@@ -75,6 +111,11 @@ def main():
     print(f"Number of iterations: {config.num_iterations}")
     print(f"Device: {config.mcts.device}")
     print("-" * 60)
+    
+    # Pre-compile CUDA kernels to avoid JIT overhead during training
+    if config.mcts.device == 'cuda':
+        print("🔧 Pre-compiling CUDA kernels...")
+        _precompile_cuda_kernels(config.mcts.device)
     
     # Create and run pipeline
     pipeline = UnifiedTrainingPipeline(config, resume_from=args.resume)

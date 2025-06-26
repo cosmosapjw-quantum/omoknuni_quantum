@@ -105,7 +105,7 @@ class MockEvaluator:
                 logits = logits / self.policy_temperature
                 policies = torch.softmax(logits, dim=1)
         
-        return values, policies
+        return policies, values
     
     def _create_center_biased_policy(self, batch_size: int, add_noise: bool = False) -> torch.Tensor:
         """Create center-biased policies for better MCTS behavior"""
@@ -155,10 +155,10 @@ class MockEvaluator:
             states_tensor = torch.stack([torch.from_numpy(s).float() for s in states])
         
         # Evaluate
-        values, policies = self.evaluate(states_tensor)
+        policies, values = self.evaluate(states_tensor)
         
         # Convert back to numpy
-        return values.cpu().numpy(), policies.cpu().numpy()
+        return policies.cpu().numpy(), values.cpu().numpy()
     
     def __call__(self, states: Union[torch.Tensor, np.ndarray, List[np.ndarray]]) -> Tuple[Union[torch.Tensor, np.ndarray], Union[torch.Tensor, np.ndarray]]:
         """

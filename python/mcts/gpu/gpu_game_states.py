@@ -406,26 +406,78 @@ class GPUGameStates:
             return self._get_enhanced_nn_features(state_indices)
         
         if self.game_type == GameType.GOMOKU:
-            # Create feature planes: current player stones, opponent stones, empty
+            # Create proper 18-channel AlphaZero representation (GPU implementation)
             boards = self.boards[state_indices]
             current_players = self.current_player[state_indices]
             
-            # Create 4 feature planes
-            features = torch.zeros((batch_size, 4, self.board_size, self.board_size), 
+            # Create 18 feature planes: board + player + 8 moves × 2 players
+            features = torch.zeros((batch_size, 18, self.board_size, self.board_size), 
                                  device=self.device, dtype=torch.float32)
             
-            # Current player stones
-            features[:, 0] = (boards == current_players.unsqueeze(-1).unsqueeze(-1)).float()
+            # Channel 0: Current board state (all stones)
+            features[:, 0] = (boards > 0).float()
             
-            # Opponent stones
-            opponent = 3 - current_players
-            features[:, 1] = (boards == opponent.unsqueeze(-1).unsqueeze(-1)).float()
+            # Channel 1: Current player indicator (constant plane)
+            features[:, 1] = current_players.float().view(-1, 1, 1).expand(-1, self.board_size, self.board_size)
             
-            # Empty squares
-            features[:, 2] = (boards == 0).float()
-            
-            # Constant plane indicating current player
-            features[:, 3] = current_players.float().view(-1, 1, 1).expand(-1, self.board_size, self.board_size)
+            # Channels 2-17: Previous 8 moves for each player (16 channels) - VECTORIZED
+            if hasattr(self, 'full_move_history'):
+                move_counts = self.move_count[state_indices]
+                max_history = self.full_move_history.shape[1]
+                
+                # Create mask for valid moves (vectorized across all batches)
+                # Shape: (batch_size, max_history)
+                history_mask = torch.arange(max_history, device=self.device).unsqueeze(0) < move_counts.unsqueeze(1)
+                
+                # Get move history for all states in batch
+                # Shape: (batch_size, max_history)
+                batch_move_history = self.full_move_history[state_indices]
+                
+                # Only process last 8 moves - create indices for the most recent moves
+                # Shape: (batch_size, 8)
+                recent_move_indices = torch.clamp(move_counts.unsqueeze(1) - 1 - torch.arange(8, device=self.device), 0, max_history - 1)
+                
+                # Gather the last 8 moves for each batch item
+                # Shape: (batch_size, 8)
+                batch_indices = torch.arange(batch_size, device=self.device).unsqueeze(1).expand(-1, 8)
+                recent_moves = batch_move_history[batch_indices, recent_move_indices]
+                
+                # Create mask for valid recent moves
+                recent_move_mask = recent_move_indices < move_counts.unsqueeze(1)
+                recent_move_mask = recent_move_mask & (recent_moves >= 0)
+                
+                # Convert moves to board positions (vectorized)
+                valid_moves = recent_moves[recent_move_mask]
+                if len(valid_moves) > 0:
+                    rows = valid_moves // self.board_size
+                    cols = valid_moves % self.board_size
+                    
+                    # Create position mask for valid board positions
+                    pos_mask = (rows >= 0) & (rows < self.board_size) & (cols >= 0) & (cols < self.board_size)
+                    
+                    if pos_mask.any():
+                        # Get batch and move indices for valid positions
+                        batch_pos, move_pos = torch.where(recent_move_mask)
+                        valid_batch_pos = batch_pos[pos_mask].long()
+                        valid_move_pos = move_pos[pos_mask].long()
+                        valid_rows = rows[pos_mask].long()
+                        valid_cols = cols[pos_mask].long()
+                        
+                        # Calculate channel indices (vectorized)
+                        # Even move positions (0,2,4,6) = current player (channels 2-9)
+                        # Odd move positions (1,3,5,7) = opponent (channels 10-17)
+                        is_current_player = (valid_move_pos % 2) == 0
+                        
+                        # Current player channels: 2 + (move_pos // 2)
+                        # Opponent channels: 10 + (move_pos // 2)
+                        channel_indices = torch.where(
+                            is_current_player,
+                            2 + valid_move_pos // 2,
+                            10 + valid_move_pos // 2
+                        ).long()
+                        
+                        # Set features using advanced indexing (fully vectorized)
+                        features[valid_batch_pos, channel_indices, valid_rows, valid_cols] = 1.0
             
         elif self.game_type == GameType.GO:
             # Similar to Gomoku but with more planes (liberties, ko, etc.)
