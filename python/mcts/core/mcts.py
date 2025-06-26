@@ -659,7 +659,6 @@ class MCTS:
     
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Fully vectorized selection phase - no sequential loops"""
-        raise Exception(f"DEBUG: _select_batch_vectorized called with wave_size={wave_size}")
         
         # Reset buffers
         self.paths_buffer[:wave_size].fill_(-1)
@@ -1060,7 +1059,26 @@ class MCTS:
         # Fill result buffer
         result = self.backup_values[:len(nodes)].zero_()
         temp_result = torch.zeros_like(valid_nodes, dtype=torch.float32)
-        temp_result[state_valid] = values.squeeze()
+        
+        # Convert numpy array to torch tensor if needed
+        # Ensure we only use the value part, not policies
+        if isinstance(values, np.ndarray):
+            values_tensor = torch.from_numpy(values).to(device=temp_result.device, dtype=temp_result.dtype)
+        else:
+            values_tensor = values.to(device=temp_result.device, dtype=temp_result.dtype)
+        
+        # Handle case where values might be 2D (batch_size, 1) or (batch_size, action_space)
+        if values_tensor.dim() > 1:
+            if values_tensor.shape[1] == 1:
+                # Value head output - squeeze to get scalar values
+                values_tensor = values_tensor.squeeze(1)
+            else:
+                # This might be policies instead of values - check shape
+                logger.warning(f"Unexpected values shape: {values_tensor.shape}, expected (batch_size,) or (batch_size, 1)")
+                # Take the first column as a fallback or use mean
+                values_tensor = values_tensor.mean(dim=1)
+            
+        temp_result[state_valid] = values_tensor.squeeze()
         result[valid_mask] = temp_result
         
         return result

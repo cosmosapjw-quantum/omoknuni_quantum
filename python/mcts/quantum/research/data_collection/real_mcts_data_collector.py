@@ -44,7 +44,7 @@ logger.setLevel(logging.WARNING)  # Keep our module at WARNING level
 
 # Suppress verbose CUDA and other logging completely
 logging.getLogger('torch').setLevel(logging.ERROR)
-logging.getLogger('mcts').setLevel(logging.INFO)  # Enable MCTS debug logging temporarily
+logging.getLogger('mcts').setLevel(logging.ERROR)  # Reduced back to ERROR level
 logging.getLogger('alphazero_py').setLevel(logging.ERROR)
 logging.getLogger('authentic_mcts_physics_extractor').setLevel(logging.ERROR)
 
@@ -414,6 +414,14 @@ class RealMCTSDataCollector:
                 snapshot = self._extract_tree_snapshot(move_count, current_player, search_time, policy)
                 game_session.tree_snapshots.append(snapshot)
             
+            # Normalize policy to ensure probabilities sum to 1
+            policy_sum = np.sum(policy)
+            if policy_sum > 0:
+                policy = policy / policy_sum
+            else:
+                # Fallback to uniform distribution if policy is all zeros
+                policy = np.ones(len(policy)) / len(policy)
+            
             # Select action based on policy and temperature
             if temperature > 0.5:
                 # Sample from policy
@@ -502,7 +510,9 @@ class RealMCTSDataCollector:
                 self.game_sessions.append(game_session)
                 
             except Exception as e:
+                import traceback
                 logger.error(f"Error in game {game_idx + 1}: {e}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
                 continue
         
         self.collection_metadata['collection_end'] = time.time()
