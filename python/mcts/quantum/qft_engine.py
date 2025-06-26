@@ -73,10 +73,12 @@ class QFTConfig:
     batch_size: int = 1024              # Batch size for GPU kernels
     memory_pool_size: float = 0.8      # Fraction of GPU memory to use
     
-    # Fast approximation mode
+    # Fast approximation mode with dynamic sizing
     fast_mode: bool = False             # Use approximations for speed
-    quantum_table_size: int = 10000     # Size of pre-computed quantum table
+    quantum_table_size: int = 10000     # Initial size of pre-computed quantum table
     use_quantum_tables: bool = True     # Use pre-computed tables
+    adaptive_table_sizing: bool = True  # Dynamically expand tables as needed
+    max_table_size: int = 1000000       # Maximum table size limit
 
 
 class DiscreteTimeHandler:
@@ -147,11 +149,33 @@ class QuantumLookupTables:
         
         logger.debug(f"Initialized quantum lookup tables with {self.table_size} entries")
     
-    def _initialize_tables(self):
-        """Pre-compute common quantum corrections"""
-        # Visit count range for table
+    def _expand_tables(self, new_max_visits: int) -> None:
+        """Dynamically expand lookup tables to accommodate larger visit counts"""
+        if new_max_visits <= self._table_max_visits:
+            return
+        
+        # Clear cache since we're changing table range
+        self.interpolate_one_loop.cache_clear()
+        
+        # Re-initialize tables with new range
+        old_max = self._table_max_visits
+        self._initialize_tables(new_max_visits)
+        
+        logger.info(f"Expanded QFT lookup tables from max_visits={old_max} to {new_max_visits}")
+    
+    def _initialize_tables(self, custom_max_visits: Optional[int] = None):
+        """Pre-compute common quantum corrections with dynamic sizing
+        
+        Args:
+            custom_max_visits: Override default max visits for dynamic expansion
+        """
+        # DYNAMIC TENSOR DIMENSIONS: Configurable visit count range
         min_visits = 1
-        max_visits = 10000
+        max_visits = custom_max_visits or getattr(self.config, 'adaptive_max_visits', 10000)
+        
+        # Store range for dynamic expansion
+        self._table_min_visits = min_visits
+        self._table_max_visits = max_visits
         
         # Create logarithmic spacing for visit counts
         visit_counts = torch.logspace(
@@ -160,6 +184,9 @@ class QuantumLookupTables:
             self.table_size, 
             device=self.device
         )
+        
+        # Store visit counts for interpolation
+        self._table_visit_counts = visit_counts
         
         if self.config.time_formulation == TimeFormulation.DISCRETE:
             # v2.0: Compute ℏ_eff(N) dynamically
@@ -203,15 +230,23 @@ class QuantumLookupTables:
         
     @lru_cache(maxsize=10000)
     def interpolate_one_loop(self, visit_count: float) -> float:
-        """Fast O(1) lookup for one-loop correction"""
-        if visit_count < 1:
-            visit_count = 1
-        if visit_count > 10000:
-            visit_count = 10000
+        """Fast O(1) lookup for one-loop correction with dynamic range"""
+        # DYNAMIC TENSOR DIMENSIONS: Handle visits beyond initial table range
+        if visit_count < self._table_min_visits:
+            visit_count = self._table_min_visits
+        
+        if visit_count > self._table_max_visits:
+            if self.config.adaptive_table_sizing and visit_count <= self.config.max_table_size:
+                # Expand table to accommodate larger visit counts
+                self._expand_tables(int(visit_count * 1.2))  # 20% headroom
+            else:
+                # Cap at maximum table range
+                visit_count = self._table_max_visits
             
         # Binary search for interpolation
         log_visit = math.log10(visit_count)
-        idx = (log_visit - 0) * (self.table_size - 1) / 4.0  # log10(10000) = 4
+        log_max = math.log10(self._table_max_visits)
+        idx = (log_visit - 0) * (self.table_size - 1) / log_max
         idx = int(idx)
         
         if idx >= self.table_size - 1:
@@ -334,8 +369,8 @@ class EffectiveActionEngine:
                 # v2.0: Full PUCT action
                 classical_action = self._compute_puct_action(paths, visit_counts, priors)
             else:
-                # v1.0: Classical action
-                classical_action = self._compute_classical_action(paths, visit_counts)
+                # v1.0: Classical action (pass priors if available for KL divergence)
+                classical_action = self._compute_classical_action(paths, visit_counts, priors)
             
             if not include_quantum:
                 # Return classical result only
@@ -365,13 +400,17 @@ class EffectiveActionEngine:
     def _compute_classical_action(
         self, 
         paths: torch.Tensor, 
-        visit_counts: torch.Tensor
+        visit_counts: torch.Tensor,
+        priors: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Compute classical action: S_cl[π] = -Σᵢ log N(sᵢ, aᵢ)
+        Compute KL divergence-based classical action for consistency with physics.
         
-        This is the fundamental action that drives classical MCTS behavior.
-        Paths with higher visit counts have lower action.
+        Two formulations:
+        1. If priors available: S_cl[N,P] = Σᵢ N_i log(N_i / P_i) - N_total log(N_total) 
+        2. If no priors: S_cl[N] = Σᵢ N_i log(N_i) - N_total log(N_total) + N_total log(K)
+        
+        This ensures proper extensive scaling and numerical stability.
         """
         batch_size, max_depth = paths.shape
         
@@ -379,17 +418,45 @@ class EffectiveActionEngine:
         valid_mask = (paths >= 0) & (paths < visit_counts.shape[0])
         safe_paths = torch.clamp(paths, 0, visit_counts.shape[0] - 1)
         
-        # Gather visit counts for each node in each path
-        path_visits = visit_counts[safe_paths]  # Shape: (batch_size, max_depth)
+        # For path-based action computation, we need to aggregate visit counts
+        # This is more complex than the single distribution case
         
-        # Apply validity mask
-        path_visits = path_visits * valid_mask.float()
-        
-        # Classical action: S_cl = -Σᵢ log N(sᵢ)
-        # Add regularization to prevent log(0)
-        regularized_visits = torch.clamp(path_visits, min=1.0)
-        log_visits = torch.log(regularized_visits + self.config.matrix_regularization)
-        classical_action = -torch.sum(log_visits * valid_mask.float(), dim=1)
+        if priors is not None:
+            # KL divergence from neural network priors
+            path_visits = visit_counts[safe_paths] * valid_mask.float()
+            path_priors = priors[safe_paths] * valid_mask.float() + (1 - valid_mask.float()) * 1.0
+            
+            # Regularization for numerical stability
+            safe_visits = torch.clamp(path_visits, min=1e-8)
+            safe_priors = torch.clamp(path_priors, min=1e-8, max=1.0)
+            
+            # KL divergence: Σ N_i log(N_i / P_i) - N_total log(N_total)
+            path_lengths = valid_mask.sum(dim=1).float().clamp(min=1)
+            total_visits_per_path = safe_visits.sum(dim=1).clamp(min=1)
+            
+            # KL term: N log(N/P)
+            kl_terms = safe_visits * (torch.log(safe_visits) - torch.log(safe_priors))
+            kl_sum = torch.sum(kl_terms * valid_mask.float(), dim=1)
+            
+            # Normalization term: -N_total log(N_total)
+            normalization = -total_visits_per_path * torch.log(total_visits_per_path)
+            
+            classical_action = kl_sum + normalization
+            
+        else:
+            # Uniform prior assumption: S_cl = Σ N_i log(N_i) - N_total log(N_total) + N_total log(K)
+            path_visits = visit_counts[safe_paths] * valid_mask.float()
+            safe_visits = torch.clamp(path_visits, min=1e-8)
+            
+            path_lengths = valid_mask.sum(dim=1).float().clamp(min=1)
+            total_visits_per_path = safe_visits.sum(dim=1).clamp(min=1)
+            
+            # Main terms
+            entropy_term = torch.sum(safe_visits * torch.log(safe_visits) * valid_mask.float(), dim=1)
+            normalization = -total_visits_per_path * torch.log(total_visits_per_path)
+            uniform_prior_term = total_visits_per_path * torch.log(path_lengths)
+            
+            classical_action = entropy_term + normalization + uniform_prior_term
         
         return classical_action
     
@@ -400,41 +467,40 @@ class EffectiveActionEngine:
         priors: torch.Tensor
     ) -> torch.Tensor:
         """
-        Compute v2.0 PUCT action: S[γ] = -Σᵢ[log N(sᵢ,aᵢ) + λ log P(aᵢ|sᵢ)]
+        Compute PUCT action using KL divergence formulation for consistency.
         
-        This includes both visit counts and neural network priors.
-        The prior coupling λ controls the influence of the external field.
+        The PUCT action combines the KL divergence-based classical action with 
+        enhanced prior coupling: S[γ] = S_cl[N,P] + λ * Prior_term
+        
+        This maintains the physics of the classical action while adding PUCT enhancement.
         """
-        batch_size, max_depth = paths.shape
+        # Start with KL divergence-based classical action
+        classical_action = self._compute_classical_action(paths, visit_counts, priors)
         
-        # Ensure paths contain valid indices
+        # Add enhanced prior coupling for PUCT
+        batch_size, max_depth = paths.shape
         valid_mask = (paths >= 0) & (paths < visit_counts.shape[0])
         safe_paths = torch.clamp(paths, 0, visit_counts.shape[0] - 1)
-        
-        # Gather visit counts and priors for each node in each path
-        path_visits = visit_counts[safe_paths]
-        path_priors = priors[safe_paths]
-        
-        # Apply validity mask
-        path_visits = path_visits * valid_mask.float()
-        path_priors = path_priors * valid_mask.float() + (1 - valid_mask.float()) * 1.0
-        
-        # PUCT action: S = -[log N + λ log P]
-        regularized_visits = torch.clamp(path_visits, min=1.0)
-        regularized_priors = torch.clamp(path_priors, min=1e-8)
-        
-        log_visits = torch.log(regularized_visits + self.config.matrix_regularization)
-        log_priors = torch.log(regularized_priors)
         
         # Get prior coupling strength
         lambda_coupling = self.config.prior_coupling
         if lambda_coupling == 'auto' and self.config.c_puct is not None:
             lambda_coupling = self.config.c_puct
         
-        puct_action = -torch.sum(
-            (log_visits + lambda_coupling * log_priors) * valid_mask.float(), 
-            dim=1
-        )
+        if lambda_coupling != 0:
+            # Enhanced prior term for PUCT exploration
+            path_priors = priors[safe_paths] * valid_mask.float() + (1 - valid_mask.float()) * 1.0
+            regularized_priors = torch.clamp(path_priors, min=1e-8, max=1.0)
+            
+            # Additional prior coupling term: λ * Σ log P
+            prior_enhancement = lambda_coupling * torch.sum(
+                torch.log(regularized_priors) * valid_mask.float(), 
+                dim=1
+            )
+            
+            puct_action = classical_action + prior_enhancement
+        else:
+            puct_action = classical_action
         
         return puct_action
     

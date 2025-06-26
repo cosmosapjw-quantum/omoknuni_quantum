@@ -114,10 +114,32 @@ class QuantumMCTS:
         }
         
         logger.debug(f"Initialized QuantumMCTS on {self.device} with ℏ_eff = {self.config.hbar_eff}")
+    
+    def _expand_quantum_tables(self, new_max_visits: int) -> None:
+        """Dynamically expand quantum lookup tables"""
+        if new_max_visits <= self._table_max_visits:
+            return
         
-    def _init_quantum_tables(self):
-        """Pre-compute quantum corrections for common visit counts"""
-        max_visits = 100000  # Increased to handle large MCTS trees
+        old_max = self._table_max_visits
+        
+        # Re-initialize tables with new size
+        self._init_quantum_tables(new_max_visits)
+        
+        logger.info(f"Expanded quantum tables from max_visits={old_max} to {new_max_visits}")
+        
+    def _init_quantum_tables(self, max_visits: Optional[int] = None):
+        """Pre-compute quantum corrections for common visit counts with dynamic sizing
+        
+        Args:
+            max_visits: Maximum visit count for table. If None, uses adaptive sizing.
+        """
+        # DYNAMIC TENSOR DIMENSIONS: Configurable table size based on usage
+        if max_visits is None:
+            max_visits = getattr(self.config, 'adaptive_max_visits', 100000)
+        
+        # Store table parameters for dynamic expansion
+        self._table_max_visits = max_visits
+        
         visit_range = torch.arange(1, max_visits + 1, device=self.device, dtype=torch.float32)
         
         # Quantum uncertainty: ℏ/√(1+N)
@@ -190,10 +212,15 @@ class QuantumMCTS:
                                  f"visit_counts {visit_counts.shape}, priors {priors.shape}")
                     return q_values + exploration
                 
-                # Tree-level quantum corrections with bounds checking
+                # Tree-level quantum corrections with dynamic bounds checking
                 if self.config.quantum_level in ['tree_level', 'one_loop']:
-                    # Safe table indexing with bounds checking
-                    visit_indices = torch.clamp(visit_counts.long(), 0, min(9999, self.uncertainty_table.shape[0] - 1))
+                    # DYNAMIC TENSOR DIMENSIONS: Expand tables if needed
+                    max_visit_count = visit_counts.max().item()
+                    if max_visit_count >= self._table_max_visits:
+                        self._expand_quantum_tables(int(max_visit_count * 1.2))  # 20% headroom
+                    
+                    # Safe table indexing with dynamic bounds
+                    visit_indices = torch.clamp(visit_counts.long(), 0, self.uncertainty_table.shape[0] - 1)
                     
                     # Validate indices before table lookup
                     max_idx = visit_indices.max().item()
@@ -343,18 +370,20 @@ class QuantumMCTS:
     def compute_path_integral_action(
         self,
         paths: torch.Tensor,
-        visit_counts: torch.Tensor
+        visit_counts: torch.Tensor,
+        priors: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute path integral effective action
+        """Compute path integral effective action with KL divergence-based classical action
         
-        Implements the QFT formulation:
-        - Classical action: S_cl[π] = -Σ log N(s_i, a_i)
+        Implements the QFT formulation with correct physics:
+        - Classical action: S_cl[N,P] = Σ N_i log(N_i / P_i) - N_total log(N_total) (KL divergence)
         - Quantum correction: (ℏ/2)Tr log M
         - Decoherence: Im(S) ∝ variance in visits
         
         Args:
             paths: Tensor of shape (batch_size, max_depth) containing node indices
             visit_counts: Tensor of shape (num_nodes,) with visit counts
+            priors: Optional tensor of shape (num_nodes,) with neural network priors
             
         Returns:
             Tuple of (real_action, imaginary_action)
@@ -362,24 +391,54 @@ class QuantumMCTS:
         valid_mask = paths >= 0
         safe_paths = torch.clamp(paths, 0, visit_counts.shape[0] - 1)
         
-        # Classical action: S_cl = -Σ log N
-        path_visits = visit_counts[safe_paths]
-        masked_visits = torch.where(valid_mask, path_visits, torch.ones_like(path_visits))
-        log_visits = torch.log(masked_visits + 1e-8)
-        classical_action = -torch.sum(log_visits * valid_mask.float(), dim=1)
+        # Classical action using KL divergence formulation
+        path_visits = visit_counts[safe_paths] * valid_mask.float()
+        safe_visits = torch.clamp(path_visits, min=1e-8)
+        
+        if priors is not None:
+            # KL divergence from neural network priors
+            path_priors = priors[safe_paths] * valid_mask.float() + (1 - valid_mask.float()) * 1.0
+            safe_priors = torch.clamp(path_priors, min=1e-8, max=1.0)
+            
+            # KL divergence: Σ N_i log(N_i / P_i) - N_total log(N_total)  
+            path_lengths = valid_mask.sum(dim=1).float().clamp(min=1)
+            total_visits_per_path = safe_visits.sum(dim=1).clamp(min=1)
+            
+            # KL term: N log(N/P)
+            kl_terms = safe_visits * (torch.log(safe_visits) - torch.log(safe_priors))
+            kl_sum = torch.sum(kl_terms * valid_mask.float(), dim=1)
+            
+            # Normalization term: -N_total log(N_total)
+            normalization = -total_visits_per_path * torch.log(total_visits_per_path)
+            
+            classical_action = kl_sum + normalization
+        else:
+            # Uniform prior assumption: S_cl = Σ N_i log(N_i) - N_total log(N_total) + N_total log(K)
+            path_lengths = valid_mask.sum(dim=1).float().clamp(min=1)
+            total_visits_per_path = safe_visits.sum(dim=1).clamp(min=1)
+            
+            # Main terms
+            entropy_term = torch.sum(safe_visits * torch.log(safe_visits) * valid_mask.float(), dim=1)
+            normalization = -total_visits_per_path * torch.log(total_visits_per_path)
+            uniform_prior_term = total_visits_per_path * torch.log(path_lengths)
+            
+            classical_action = entropy_term + normalization + uniform_prior_term
         
         # Quantum correction (fast approximation for production)
         if self.config.fast_mode:
             # Leading order approximation: O(1/N)
             path_lengths = valid_mask.sum(dim=1).float()
-            avg_visits = masked_visits.sum(dim=1) / path_lengths.clamp(min=1)
+            total_visits_per_path = safe_visits.sum(dim=1).clamp(min=1)
+            avg_visits = total_visits_per_path / path_lengths.clamp(min=1)
             quantum_correction = self.current_hbar * 0.5 * torch.log(avg_visits + 1) * path_lengths
         else:
             # Full computation (slower but more accurate)
             quantum_correction = self._compute_full_quantum_correction(paths, visit_counts, valid_mask)
         
         # Decoherence (imaginary part) - measures "classicality"
-        visit_variance = masked_visits.var(dim=1)
+        # Use safe_visits for variance computation
+        valid_safe_visits = torch.where(valid_mask, safe_visits, torch.zeros_like(safe_visits))
+        visit_variance = valid_safe_visits.var(dim=1)
         decoherence = self.config.temperature * torch.sqrt(visit_variance + 1)
         
         real_action = classical_action + quantum_correction

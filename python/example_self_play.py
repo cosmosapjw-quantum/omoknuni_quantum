@@ -348,7 +348,7 @@ def main():
         use_cuda_graphs=True,
         use_tensor_cores=True,
         enable_virtual_loss=True,
-        virtual_loss=3.0,  # Positive value (will be negated when applied)
+        virtual_loss=1.0,  # Positive value (will be negated when applied)
         enable_debug_logging=False
     )
     

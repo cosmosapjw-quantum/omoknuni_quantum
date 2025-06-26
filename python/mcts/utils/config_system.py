@@ -80,7 +80,7 @@ class MCTSFullConfig:
     max_wave_size: int = 3072
     adaptive_wave_sizing: bool = False
     batch_size: int = 256
-    virtual_loss: float = 3.0
+    virtual_loss: float = 1.0
     
     # Memory and optimization
     memory_pool_size_mb: int = 2048

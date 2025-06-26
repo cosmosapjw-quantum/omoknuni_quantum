@@ -15,24 +15,24 @@ game:
 
 mcts:
   num_simulations: 800   # Increased for master-level tactical depth
-  c_puct: 1.414          # Optimized exploration constant (√2)
-  dirichlet_alpha: 0.15  # Reduced for more focused exploration in Gomoku
-  dirichlet_epsilon: 0.2 # Slightly reduced noise
-  temperature: 1.0
-  temperature_threshold: 30  # Balanced exploration vs exploitation
-  temperature_final: 0.1     # Low but not zero for slight stochasticity
+  c_puct: 1.4
+  dirichlet_alpha: 0.2
+  dirichlet_epsilon: 0.4
+  temperature: 1.5
+  temperature_threshold: 50
+  temperature_final: 0.5
   
   # Performance optimizatio
   min_wave_size: 3072      # Optimal for 80k+ sims/sec
   max_wave_size: 3072      # Fixed size for best performance
   adaptive_wave_sizing: false  # CRITICAL: Must be false
   batch_size: 1024 
-  virtual_loss: 3.0
+  virtual_loss: 0.5
   
   # Memory and optimization - Adjusted for larger network
   memory_pool_size_mb: 3072   # Increased for larger network capacity
   max_tree_nodes: 750000      # Increased for deeper search trees
-  tree_reuse: true
+  tree_reuse: false
   tree_reuse_fraction: 0.5
   
   # GPU optimization - RTX 3060 Ti
@@ -138,7 +138,7 @@ training:
   resign_start_iteration: 20   # Later resignation start for better early learning
   
   # Data handling - Optimized for master-level training
-  window_size: 50000        # Larger window for more diverse training
+  window_size: 25000        # Smaller window for faster adaptation to diverse play
   sample_weight_by_game_length: true
   augment_data: true
   shuffle_buffer_size: 15000  # Increased buffer size
@@ -165,8 +165,8 @@ arena:
   statistical_significance: true
   confidence_level: 0.99    # Higher confidence level
   
-  # Game settings - Tournament strength
-  temperature: 0.0          # Deterministic play for evaluation
+  # Game settings - Tournament strength  
+  temperature: 0.1          # Slightly stochastic for evaluation
   mcts_simulations: 400     # Match training simulation count
   c_puct: 1.414            # Match training c_puct
   max_moves: 225
@@ -187,7 +187,7 @@ arena:
   tournament_games_per_pair: 10
   
   # Data saving
-  save_game_records: false
+  save_game_records: true
   save_arena_logs: true
   arena_log_dir: arena_logs
   elo_save_path: elo_ratings.json

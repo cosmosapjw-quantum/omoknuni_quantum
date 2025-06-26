@@ -1,0 +1,155 @@
+# Gomoku Diverse Training Configuration - Fixes Training Collapse
+# This config addresses the critical 98.6% same-opening problem
+
+experiment_name: gomoku_diverse_retraining
+seed: 42
+log_level: INFO
+num_iterations: 300  # Focused retraining
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false
+  gomoku_use_omok: false
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  num_simulations: 800
+  
+  # CRITICAL: Fixed exploration parameters
+  c_puct: 1.4                    # Reduced from 3.0 - proper exploration/exploitation balance
+  dirichlet_alpha: 0.3           # Standard AlphaZero value
+  dirichlet_epsilon: 0.5         # DOUBLED from 0.25 - much more exploration noise
+  
+  # CRITICAL: Progressive temperature for opening diversity
+  temperature: 1.8               # Higher initial temperature
+  temperature_threshold: 30      # Reduce threshold for faster annealing
+  temperature_final: 0.8         # Higher final temperature
+  
+  # Performance optimization
+  min_wave_size: 3072
+  max_wave_size: 3072
+  adaptive_wave_sizing: false
+  batch_size: 1024 
+  virtual_loss: 0.5              # CRITICAL: Reduced from 3.0 to prevent convergence issues
+  
+  # Memory and optimization
+  memory_pool_size_mb: 3072
+  max_tree_nodes: 750000
+  tree_reuse: false              # DISABLED for better exploration
+  tree_reuse_fraction: 0.0       # No tree reuse during training
+  
+  # GPU optimization
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Quantum features - disabled for classical
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device configuration
+  device: cuda
+  num_threads: 22
+
+network:
+  # Same network architecture - it's working fine
+  model_type: resnet
+  input_channels: 18
+  input_representation: basic
+  num_res_blocks: 15
+  num_filters: 192
+  value_head_hidden_size: 512
+  policy_head_filters: 4
+  
+  # Regularization
+  dropout_rate: 0.15
+  batch_norm: true
+  batch_norm_momentum: 0.995
+  l2_regularization: 0.0002
+  
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Training parameters
+  batch_size: 512               # Reduced for better gradient estimates
+  learning_rate: 0.005          # Reduced learning rate for stability
+  learning_rate_schedule: cosine
+  lr_decay_steps: 100
+  lr_decay_rate: 0.1
+  min_learning_rate: 0.000001
+  
+  # Optimization
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 2
+  max_grad_norm: 5.0
+  
+  # Training loop
+  num_epochs: 5                 # Reduced to prevent overfitting
+  
+  # CRITICAL: Diverse self-play generation
+  num_games_per_iteration: 200  # More games for diversity
+  num_workers: 12
+  max_moves_per_game: 225
+  resign_threshold: -0.95       # Less aggressive resignation
+  resign_check_moves: 20        # More moves before resignation
+  resign_start_iteration: 50    # Later resignation start
+  
+  # CRITICAL: Smaller replay buffer for fresh data
+  window_size: 20000            # Reduced from 50000 - faster adaptation
+  sample_weight_by_game_length: false  # Equal weighting
+  augment_data: true            # Keep augmentation
+  shuffle_buffer_size: 10000
+  dataloader_workers: 16
+  pin_memory: true
+  
+  # Mixed precision
+  mixed_precision: true
+  amp_opt_level: O1
+  loss_scale: dynamic
+  
+  # Paths
+  save_dir: checkpoints
+  data_dir: self_play_data
+
+arena:
+  # Evaluation settings - more exploration during evaluation
+  num_games: 50                 # Reduced for faster iteration
+  num_workers: 12
+  win_threshold: 0.55           # Slightly reduced threshold
+  
+  # CRITICAL: Exploration during evaluation
+  temperature: 0.2              # Some stochasticity in evaluation
+  mcts_simulations: 400
+  c_puct: 1.4                   # Match training c_puct
+  max_moves: 225
+  time_limit_seconds: null
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 32.0
+  elo_initial_rating: 0.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Random policy evaluation
+  min_win_rate_vs_random: 0.95  # Slightly reduced
+  
+  # Data saving
+  save_game_records: true       # ENABLE to debug game patterns
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  
+  # Arena features
+  enable_current_vs_previous: true
+  enable_adaptive_random_matches: true
+  enable_elo_consistency_checks: true
+  enable_elo_auto_adjustment: true

@@ -498,14 +498,26 @@ class ArenaManager:
         
         # Warm up neural networks to trigger CUDA compilation before arena starts
         if not silent and torch.cuda.is_available():
-            dummy_state = torch.randn(1, 20, self.config.game.board_size, 
-                                     self.config.game.board_size, device=self.arena_config.device)
+            # Get the correct number of input channels from models
+            input_channels1 = getattr(self.config.network, 'input_channels', 18)
+            input_channels2 = getattr(self.config.network, 'input_channels', 18)
+            
+            # Try to get actual input channels from model metadata if available
+            if hasattr(evaluator1, 'model') and hasattr(evaluator1.model, 'metadata'):
+                input_channels1 = evaluator1.model.metadata.input_channels
+            if hasattr(evaluator2, 'model') and hasattr(evaluator2.model, 'metadata'):
+                input_channels2 = evaluator2.model.metadata.input_channels
+                
             with torch.no_grad():
                 # Warm up both evaluators if they have models
                 if hasattr(evaluator1, 'model') and hasattr(evaluator1.model, 'forward'):
-                    _ = evaluator1.model(dummy_state)
+                    dummy_state1 = torch.randn(1, input_channels1, self.config.game.board_size, 
+                                              self.config.game.board_size, device=self.arena_config.device)
+                    _ = evaluator1.model(dummy_state1)
                 if hasattr(evaluator2, 'model') and hasattr(evaluator2.model, 'forward'):
-                    _ = evaluator2.model(dummy_state)
+                    dummy_state2 = torch.randn(1, input_channels2, self.config.game.board_size, 
+                                              self.config.game.board_size, device=self.arena_config.device)
+                    _ = evaluator2.model(dummy_state2)
                 torch.cuda.synchronize()
                 
             # Pre-compile CUDA kernels to avoid JIT compilation during games

@@ -51,11 +51,15 @@ class GameExample:
     move_number: int = 0
     
     def __post_init__(self):
-        # Ensure arrays are numpy arrays
+        # Ensure arrays are numpy arrays with positive strides
         if not isinstance(self.state, np.ndarray):
-            self.state = np.array(self.state)
+            self.state = np.ascontiguousarray(self.state)
+        else:
+            self.state = np.ascontiguousarray(self.state)
         if not isinstance(self.policy, np.ndarray):
-            self.policy = np.array(self.policy)
+            self.policy = np.ascontiguousarray(self.policy)
+        else:
+            self.policy = np.ascontiguousarray(self.policy)
 
 
 class ReplayBuffer(Dataset):
@@ -74,9 +78,12 @@ class ReplayBuffer(Dataset):
     
     def __getitem__(self, idx):
         example = self.buffer[idx]
+        # Ensure arrays have positive strides by making copies if needed
+        state = np.ascontiguousarray(example.state)
+        policy = np.ascontiguousarray(example.policy)
         return (
-            torch.FloatTensor(example.state),
-            torch.FloatTensor(example.policy),
+            torch.FloatTensor(state),
+            torch.FloatTensor(policy),
             torch.FloatTensor([example.value])
         )
     
@@ -334,7 +341,13 @@ class UnifiedTrainingPipeline:
         """
         # Calculate actual iterations to run
         start_iteration = self.iteration
-        target_iteration = start_iteration + num_iterations
+        # When resuming, num_iterations should be the total target, not additional iterations
+        target_iteration = num_iterations
+        remaining_iterations = target_iteration - start_iteration
+        
+        if remaining_iterations <= 0:
+            logger.info(f"Already completed {start_iteration} iterations out of {num_iterations}. Training complete.")
+            return
         
         logger.info(f"Training from iteration {start_iteration + 1} to {target_iteration}")
         if start_iteration > 0:
@@ -347,7 +360,7 @@ class UnifiedTrainingPipeline:
         pbar = trange(target_iteration, desc="Training iterations", 
                      initial=start_iteration, unit="iter", position=0, leave=True)
         
-        for _ in range(num_iterations):
+        for _ in range(remaining_iterations):
             self.iteration += 1
             pbar.update(1)
             iteration_start = time.time()
@@ -547,14 +560,19 @@ class UnifiedTrainingPipeline:
         game_id = f"iter{self.iteration}_game{game_idx}"
         
         for move_num in range(self.config.training.max_moves_per_game):
-            # AlphaZero-style temperature annealing
-            # Use exploration temperature for first N moves, then switch to lower temperature
-            if move_num < self.config.mcts.temperature_threshold:
-                # Exploration phase - use stochastic temperature
+            # Enhanced opening diversity: Force extra exploration for first 3 moves
+            if move_num < 3:
+                # CRITICAL: Extra high temperature + noise for opening diversity
+                mcts.config.temperature = max(2.0, self.config.mcts.temperature)
+                mcts.config.dirichlet_epsilon = min(0.8, self.config.mcts.dirichlet_epsilon * 2.0)
+            elif move_num < self.config.mcts.temperature_threshold:
+                # Normal exploration phase
                 mcts.config.temperature = self.config.mcts.temperature
+                mcts.config.dirichlet_epsilon = self.config.mcts.dirichlet_epsilon
             else:
                 # Exploitation phase - lower temperature but not fully deterministic
                 mcts.config.temperature = getattr(self.config.mcts, 'temperature_final', 0.1)
+                mcts.config.dirichlet_epsilon = self.config.mcts.dirichlet_epsilon * 0.5
             
             # Search with MCTS
             policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
@@ -884,7 +902,7 @@ class UnifiedTrainingPipeline:
         
         if self.iteration > 1 and self.config.arena.enable_current_vs_previous:
             # Check if previous model exists
-            previous_model_path = self.experiment_dir / "checkpoints" / f"model_iter_{self.iteration - 1}.pt"
+            previous_model_path = self.experiment_dir / "checkpoints" / f"checkpoint_iter_{self.iteration - 1}.pt"
             
             if previous_model_path.exists():
                 tqdm.write(f"      Current vs Previous (iter_{self.iteration - 1})...")
@@ -1292,6 +1310,12 @@ class UnifiedTrainingPipeline:
         buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
         self.replay_buffer.save(str(buffer_path))
         
+        # Clean up old replay buffers to save disk space
+        self._cleanup_old_replay_buffers()
+        
+        # Clean up old checkpoints to save disk space
+        self._cleanup_old_checkpoints()
+        
         # Create symlink to latest checkpoint for easy resuming
         latest_link = self.checkpoint_dir / "latest_checkpoint.pt"
         if latest_link.exists():
@@ -1309,6 +1333,88 @@ class UnifiedTrainingPipeline:
             json.dump(resume_info, f, indent=2)
         
         logger.info(f"Saved checkpoint at iteration {self.iteration}")
+    
+    def _cleanup_old_replay_buffers(self, keep_last_n: int = 20):
+        """Clean up old replay buffers to save disk space
+        
+        Args:
+            keep_last_n: Number of recent replay buffers to keep (default: 20)
+        """
+        try:
+            # Find all replay buffer files
+            replay_files = list(self.data_dir.glob("replay_buffer_iter_*.pkl"))
+            
+            if len(replay_files) <= keep_last_n:
+                return  # Nothing to clean up
+            
+            # Sort by iteration number
+            def get_iteration_number(filename):
+                try:
+                    return int(filename.stem.split('_')[-1])
+                except (ValueError, IndexError):
+                    return 0
+            
+            replay_files.sort(key=get_iteration_number)
+            
+            # Files to remove (keep only the last keep_last_n files)
+            files_to_remove = replay_files[:-keep_last_n]
+            
+            if files_to_remove:
+                total_size_freed = 0
+                for file_path in files_to_remove:
+                    if file_path.exists():
+                        file_size = file_path.stat().st_size
+                        total_size_freed += file_size
+                        file_path.unlink()
+                
+                # Log cleanup info
+                size_freed_gb = total_size_freed / (1024**3)
+                logger.info(f"Cleaned up {len(files_to_remove)} old replay buffers, "
+                           f"freed {size_freed_gb:.1f} GB of disk space")
+                           
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old replay buffers: {e}")
+    
+    def _cleanup_old_checkpoints(self, keep_last_n: int = 10):
+        """Clean up old checkpoint files to save disk space
+        
+        Args:
+            keep_last_n: Number of recent checkpoints to keep (default: 10)
+        """
+        try:
+            # Find all checkpoint files
+            checkpoint_files = list(self.checkpoint_dir.glob("checkpoint_iter_*.pt"))
+            
+            if len(checkpoint_files) <= keep_last_n:
+                return  # Nothing to clean up
+            
+            # Sort by iteration number
+            def get_iteration_number(filename):
+                try:
+                    return int(filename.stem.split('_')[-1])
+                except (ValueError, IndexError):
+                    return 0
+            
+            checkpoint_files.sort(key=get_iteration_number)
+            
+            # Files to remove (keep only the last keep_last_n files)
+            files_to_remove = checkpoint_files[:-keep_last_n]
+            
+            if files_to_remove:
+                total_size_freed = 0
+                for file_path in files_to_remove:
+                    if file_path.exists():
+                        file_size = file_path.stat().st_size
+                        total_size_freed += file_size
+                        file_path.unlink()
+                
+                # Log cleanup info
+                size_freed_mb = total_size_freed / (1024**2)
+                logger.info(f"Cleaned up {len(files_to_remove)} old checkpoints, "
+                           f"freed {size_freed_mb:.1f} MB of disk space")
+                           
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old checkpoints: {e}")
     
     def load_checkpoint(self, checkpoint_path: str):
         """Load training checkpoint"""

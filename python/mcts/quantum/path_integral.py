@@ -133,22 +133,40 @@ class PrecomputedTables:
         boltzmann = torch.exp(-action_bins / self.config.temperature)
         return boltzmann
         
-    def _compute_quantum_corrections(self) -> torch.Tensor:
-        """Pre-compute quantum correction factors"""
+    def _compute_quantum_corrections(self, max_visits: Optional[int] = None) -> torch.Tensor:
+        """Pre-compute quantum correction factors with dynamic sizing
+        
+        Args:
+            max_visits: Maximum visit count to pre-compute. If None, uses adaptive sizing.
+        """
+        # DYNAMIC TENSOR DIMENSIONS: Adapt table size to actual tree usage
+        if max_visits is None:
+            # Auto-detect based on configuration or use reasonable default
+            max_visits = getattr(self.config, 'adaptive_max_visits', 10000)
+            # Ensure minimum table size for small trees
+            max_visits = max(max_visits, 1000)
+        
         # One-loop corrections for different visit counts
-        visits = torch.arange(0, 1000, device=self.device).float()
+        visits = torch.arange(0, max_visits, device=self.device).float()
         
         if self.config.time_formulation == TimeFormulation.DISCRETE:
-            # v2.0: Dynamic ℏ_eff(N)
-            hbar_eff = torch.zeros_like(visits)
-            for i, N in enumerate(visits):
-                hbar_eff[i] = self.time_handler.compute_hbar_eff(N)
+            # v2.0: Dynamic ℏ_eff(N) - vectorized computation
+            if hasattr(self.time_handler, 'compute_hbar_eff_batch'):
+                hbar_eff = self.time_handler.compute_hbar_eff_batch(visits)
+            else:
+                # Fallback: loop but with progress indication for large tables
+                hbar_eff = torch.zeros_like(visits)
+                for i, N in enumerate(visits):
+                    hbar_eff[i] = self.time_handler.compute_hbar_eff(N)
         else:
             # v1.0: Fixed scaling
             hbar_eff = self.config.hbar_eff / torch.sqrt(visits + 1)
         
         # Quantum correction: 1 + hbar_eff^2 * correction_term
         corrections = 1.0 + hbar_eff**2 * 0.1  # Simplified correction
+        
+        # Store table size for dynamic access
+        self._correction_table_size = max_visits
         
         return corrections
         
@@ -238,10 +256,38 @@ class PathIntegral:
         return path_integrals
         
     def _lookup_length_factors(self, lengths: torch.Tensor) -> torch.Tensor:
-        """Fast lookup of pre-computed length factors"""
-        # Clamp to valid range
-        lengths = torch.clamp(lengths, 0, self.config.max_path_length - 1)
+        """Fast lookup of pre-computed length factors with dynamic extension"""
+        # DYNAMIC TENSOR DIMENSIONS: Handle paths longer than pre-computed table
+        max_length = lengths.max().item()
+        
+        if max_length >= len(self.tables.length_factors):
+            # Extend table dynamically to accommodate longer paths
+            self._extend_length_factors_table(max_length + 1)
+        
+        # Clamp to valid range (now dynamically extended)
+        lengths = torch.clamp(lengths, 0, len(self.tables.length_factors) - 1)
         return self.tables.length_factors[lengths]
+    
+    def _extend_length_factors_table(self, new_max_length: int) -> None:
+        """Dynamically extend the length factors table"""
+        current_size = len(self.tables.length_factors)
+        if new_max_length <= current_size:
+            return
+        
+        # Compute additional length factors
+        additional_lengths = torch.arange(current_size, new_max_length, device=self.device).float()
+        
+        if self.config.time_formulation == TimeFormulation.DISCRETE:
+            # v2.0: τ = log(N+2) scaling
+            additional_factors = 1.0 / torch.log(additional_lengths + 2)
+        else:
+            # v1.0: Fixed scaling
+            additional_factors = 1.0 / torch.sqrt(additional_lengths + 1)
+        
+        # Extend the table
+        self.tables.length_factors = torch.cat([self.tables.length_factors, additional_factors])
+        
+        logger.info(f"Extended length factors table from {current_size} to {new_max_length}")
         
     def _discretize_actions(self, actions: torch.Tensor) -> torch.Tensor:
         """Discretize continuous actions to table indices"""
@@ -256,9 +302,37 @@ class PathIntegral:
         return self.tables.boltzmann_table[indices]
         
     def _lookup_quantum_corrections(self, visits: torch.Tensor) -> torch.Tensor:
-        """Fast lookup of quantum corrections"""
-        visit_indices = torch.clamp(visits.long(), 0, 999)
+        """Fast lookup of quantum corrections with dynamic extension"""
+        # DYNAMIC TENSOR DIMENSIONS: Handle visits beyond pre-computed table
+        max_visits = visits.max().item()
+        
+        if max_visits >= len(self.tables.quantum_corrections):
+            # Extend table dynamically to accommodate higher visit counts
+            self._extend_quantum_corrections_table(int(max_visits) + 1)
+        
+        # Clamp to valid range (now dynamically extended)
+        visit_indices = torch.clamp(visits.long(), 0, len(self.tables.quantum_corrections) - 1)
         return self.tables.quantum_corrections[visit_indices]
+    
+    def _extend_quantum_corrections_table(self, new_max_visits: int) -> None:
+        """Dynamically extend the quantum corrections table"""
+        current_size = len(self.tables.quantum_corrections)
+        if new_max_visits <= current_size:
+            return
+        
+        # Compute additional quantum corrections using stored parameters
+        additional_corrections = self._compute_quantum_corrections(new_max_visits)
+        
+        # Take only the new entries (beyond current table)
+        new_corrections = additional_corrections[current_size:]
+        
+        # Extend the table
+        self.tables.quantum_corrections = torch.cat([self.tables.quantum_corrections, new_corrections])
+        
+        logger.info(f"Extended quantum corrections table from {current_size} to {new_max_visits}")
+        
+        # Update stored table size
+        self._correction_table_size = new_max_visits
         
     def _get_cached_actions(
         self, 

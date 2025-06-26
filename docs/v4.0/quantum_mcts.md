@@ -14,6 +14,8 @@ This document presents the mathematical theory of quantum-inspired Monte Carlo T
 
 **Note**: Implementation details, validation code, and engineering considerations are provided in the companion Engineering Appendix.
 
+**Implementation Update**: This document reflects critical corrections to ensure mathematical consistency: (1) discrete information time evolution $\delta\tau_N = 1/(N_{\text{root}} + 2)$, (2) Hamiltonian derived via proper Legendre transformation, (3) causality-preserving operator evaluation with pre-update visit counts, and (4) classical action computed as KL divergence to ensure proper scaling and numerical stability.
+
 ---
 
 ## Units and Conventions
@@ -89,6 +91,10 @@ where:
 - $Q(u_k) \in [-1,1]$: backed-up value
 - $\varepsilon_N > 0$: visit regularization parameter
 
+**Important Note**: The classical action should be computed as the KL divergence from the prior:
+$$S_{\text{cl}} = \sum_k N_k \log(N_k) - N_{\text{total}} \log(N_{\text{total}}) + N_{\text{total}} \log(K)$$
+This ensures proper extensive scaling and numerical stability. See `classical_action_correction.md` for details.
+
 **Theorem 3.1** (PUCT from Stationary Action):
 Under the slow-value-update assumption $|\partial Q/\partial N| \ll 1/N$, the stationary action condition recovers PUCT selection with $c_{\text{puct}} = \lambda/\sqrt{2}$.
 
@@ -104,36 +110,85 @@ Treating $Q$ as constant during selection and Taylor expanding for small $N(s,a)
 
 ### 4. Hamiltonian Structure
 
-**Definition 4.1** (Total Hamiltonian):
-With energy scale $E_0$:
-$$H = E_0 H_{\text{diag}} + H_{\text{hop}}$$
+**Definition 4.1** (Discrete Lagrangian with Kinetic Term):
+The symmetric mid-point Lagrangian per information step:
+$$\mathcal{L}_N = \underbrace{[\log N^{\text{pre}} + \lambda \log P - \beta Q]}_{\text{potential}} + \underbrace{\frac{\kappa_N}{2\delta\tau_N}(\phi_{N+1} - \phi_N)^2}_{\text{kinetic}}$$
+
+where $\phi_{\sigma,N} := \log N^{\text{pre}}(\sigma,N)$ and $\delta\tau_N = 1/(N_{\text{root}} + 2)$.
+
+**Definition 4.2** (Canonical Momentum):
+$$\pi_{\sigma,N} = \frac{\partial \mathcal{L}_N}{\partial(\Delta\phi/\delta\tau_N)} = \kappa_N \frac{\phi_{N+1} - \phi_N}{\delta\tau_N}$$
+
+**Theorem 4.1** (Hamiltonian from Discrete Legendre Transform):
+The operator Hamiltonian follows from the discrete Legendre transformation:
+$$\boxed{H = \sum_\sigma \left[\frac{1}{2\kappa_N}\hat{\pi}_\sigma^2 + V_\sigma(\hat{N})\right]}$$
 
 where:
-$$H_{\text{diag}} = \sum_{(s,a)} \mathcal{L}(s,a; N^{\text{pre}})|(s,a)\rangle\langle(s,a)|$$
+- **Potential**: $V_\sigma(\hat{N}) = -[\log \hat{N} + \lambda \log P - \beta Q]$
+- **Kinetic**: $\hat{\pi}_\sigma = -i\hbar_{\text{eff}} \partial/\partial\phi_\sigma$ 
+- **Hopping strength**: $\kappa_N = \kappa_0/\sqrt{N_{\text{root}} + 1}$
+
+**Matrix Representation**:
+$$H_{\text{diag}} = \sum_{(s,a)} V_{s,a}|(s,a)\rangle\langle(s,a)|$$
 $$H_{\text{hop}} = \sum_{(s,a) \sim (s',a')} \kappa_N |(s',a')\rangle\langle(s,a)| + \text{h.c.}$$
 
-with $\kappa_N = E_0 \kappa_0/\sqrt{N + 1}$.
+*Note*: The kinetic term $\frac{1}{2\kappa_N}\hat{\pi}^2$ manifests as hopping between neighboring edges, while the potential $V_\sigma$ provides diagonal terms. This construction ensures consistency between path integral and Hamiltonian formulations.
 
 ### 5. Lindblad Master Equation
 
-**Definition 5.1** (Jump Operators):
+**Definition 5.1** (Discrete Information Time Step):
+$$\delta\tau_N = \frac{1}{N_{\text{root}} + 2}$$
+
+This discrete step advances exactly one unit of information time, where $\tau = \sum_{k=0}^{N-1} \delta\tau_k = \log(N+2)$ in the continuum limit.
+
+**Definition 5.2** (Jump Operators):
 $$L_{s,a} = \sqrt{\gamma_{s,a}} |(s,a)\rangle\langle(s,a)|$$
 
 where the decoherence rate per information time:
-$$\gamma_{s,a} = g_0 \frac{N(s,a) + \varepsilon_N}{\delta\tau}$$
+$$\gamma_{s,a} = g_0 \frac{N^{\text{pre}}(s,a) + \varepsilon_N}{\delta\tau_N}$$
 
-with $\delta\tau = 1/(N_{\text{root}} + 2)$ and $g_0$ dimensionless.
+with $g_0$ dimensionless and **causality preserved** by using pre-update visit counts $N^{\text{pre}}$.
 
-**Theorem 5.1** (Effective Planck Constant):
+**Theorem 5.1** (Discrete Kraus Evolution):
+The single-step discrete Lindblad map is implemented via Kraus operators:
+$$\boxed{
+\begin{aligned}
+K_0 &= \mathbb{1} - i\delta\tau_N \frac{H}{\hbar_{\text{eff}}} - \frac{1}{2}\delta\tau_N \sum_\alpha L_\alpha^\dagger L_\alpha \\
+K_\alpha &= \sqrt{\delta\tau_N} L_\alpha
+\end{aligned}
+}$$
+
+Evolution: $\rho_{N+1} = \sum_\mu K_\mu \rho_N K_\mu^\dagger$
+
+*Proof*: This construction preserves trace: $\sum_\mu K_\mu^\dagger K_\mu = \mathbb{1} + O(\delta\tau_N^2)$ and yields the continuous Lindblad generator in the limit $\delta\tau_N \to 0$. □
+
+**Theorem 5.2** (Effective Planck Constant):
 The effective Planck constant emerges as:
 $$\hbar_{\text{eff}}(N) = \hbar\left[1 + \frac{\Gamma_N}{2}\right]$$
 
 where $\Gamma_N = \sum_{s,a} \gamma_{s,a}$ is the total decoherence rate.
 
-*Proof*: Apply projector $P_{\text{off}}$ onto coherent subspace. The evolution becomes:
-$$\partial_\tau \rho_{\text{off}} = -\frac{i}{\hbar}[H,\rho_{\text{off}}] - \frac{\Gamma_N}{2}\rho_{\text{off}}$$
+**Lemma 5.1** (Parameter Consistency):
+For complete positivity, the Kraus constraint requires:
+$$\gamma_{s,a} \delta\tau_N \leq 1 \quad \text{for all } (s,a)$$
 
-To absorb decoherence into effective unitary evolution with real $\hbar_{\text{eff}}$, we need the time-averaged effect, yielding the result. □
+This bounds the decoherence strength $g_0$ relative to visit counts and information time scale.
+
+---
+
+## Implementation Notes: Discrete-Time Corrections
+
+**Critical Implementation Requirements**:
+
+1. **Information Time Evolution**: The discrete Lindblad map must advance exactly one unit of information time using $\delta\tau_N = 1/(N_{\text{root}} + 2)$, not arbitrary time steps.
+
+2. **Hamiltonian Consistency**: The Hamiltonian must be derived via proper discrete Legendre transformation from the Lagrangian, not constructed ad-hoc from the action.
+
+3. **Causality Preservation**: All operators ($H$, $L_\alpha$) must be evaluated using **pre-update** visit counts $N^{\text{pre}}$ to maintain causality in the discrete evolution.
+
+4. **Parameter Bounds**: The Kraus constraint $\gamma_{s,a} \delta\tau_N \leq 1$ must be enforced to preserve complete positivity.
+
+These corrections ensure mathematical consistency between the path integral, Hamiltonian, and Lindbladian formulations.
 
 ---
 
@@ -141,11 +196,13 @@ To absorb decoherence into effective unitary evolution with real $\hbar_{\text{e
 
 ### 6. One-Loop on Trees
 
-**Theorem 6.1** (Diagonal Hessian):
+**Theorem 6.1** (Diagonal Hessian - Updated Implementation):
 For tree structures, the action Hessian is diagonal:
 $$H_{kk'} = \delta_{kk'} h_k, \quad h_k = \frac{1}{N_k^{\text{pre}} + \varepsilon_N}$$
 
 *Proof*: Tree paths have no interaction between different depths since $\mathcal{L}[\gamma] = \sum_k \mathcal{L}(u_k)$. Thus $\partial^2\mathcal{L}/\partial u_k \partial u_{k'} = 0$ for $k \neq k'$. □
+
+**Implementation Note**: When using KL divergence-based classical action, the effective diagonal Hessian should include global coupling effects: $h_k = \frac{1}{N_k + \varepsilon_N} \cdot (1 - N_k/N_{\text{total}})$. This captures the non-diagonal structure while maintaining computational efficiency. See `consistent_quantum_corrections.md` for details.
 
 **Lemma 6.1** (Gaussian Approximation):
 For $N_k \geq 5$, Stirling's approximation justifies treating discrete $\delta u_k$ as continuous. For smaller $N_k$, the discrete sum yields the same $\log(N_k + \varepsilon_N)$ correction up to $O(1/N)$. □
@@ -249,13 +306,16 @@ Similar policies receive phases differing by $O(1-J)$ where $J$ is Jaccard simil
 The quantum-inspired MCTS framework reveals that tree search naturally implements:
 
 1. **Path integral**: $Z = \sum_\gamma \exp(-S[\gamma]/\hbar_{\text{eff}})$
-2. **Decoherence-driven annealing**: $\hbar_{\text{eff}}(N) = \hbar[1 + \Gamma_N/2]$
-3. **Emergent PUCT**: From stationary action principle
-4. **RG flow**: $c_{\text{PUCT}} \sim N^{-1/2}$ from discrete blocking
-5. **Crossover dynamics**: Smooth quantum → classical transition
-6. **Parallel coordination**: Via destructive interference
+2. **Discrete-time quantum evolution**: $\delta\tau_N = 1/(N_{\text{root}} + 2)$ advances exactly one information time unit
+3. **Hamiltonian from Legendre transform**: $H = \frac{1}{2\kappa_N}\hat{\pi}^2 + V(\hat{N})$ with proper kinetic and potential terms
+4. **Discrete Kraus dynamics**: $\rho_{N+1} = \sum_\mu K_\mu \rho_N K_\mu^\dagger$ with causality-preserving pre-update counts
+5. **Decoherence-driven annealing**: $\hbar_{\text{eff}}(N) = \hbar[1 + \Gamma_N/2]$
+6. **Emergent PUCT**: From stationary action principle
+7. **RG flow**: $c_{\text{PUCT}} \sim N^{-1/2}$ from discrete blocking
+8. **Crossover dynamics**: Smooth quantum → classical transition
+9. **Parallel coordination**: Via destructive interference
 
-All parameters are measurable from tree statistics, providing principled exploration beyond heuristic tuning.
+**Key Implementation Insight**: Mathematical consistency requires discrete-time formulation with proper Legendre transformation and causality-preserving operator evaluation. All parameters are measurable from tree statistics, providing principled exploration beyond heuristic tuning.
 
 ---
 

@@ -267,7 +267,7 @@ class GomokuGUI:
                 min_wave_size=3072,
                 max_wave_size=3072,
                 adaptive_wave_sizing=False,
-                temperature=0.0,  # Zero temperature for deterministic play
+                temperature=0.0,  # Deterministic play for consistent user experience
                 dirichlet_alpha=0.3,  # Keep default valid value (must be > 0)
                 dirichlet_epsilon=0.0,  # Zero epsilon disables noise completely
                 device=device,
@@ -363,7 +363,7 @@ class GomokuGUI:
                 min_wave_size=getattr(full_config.mcts, 'min_wave_size', 3072),
                 max_wave_size=getattr(full_config.mcts, 'max_wave_size', 3072),
                 adaptive_wave_sizing=getattr(full_config.mcts, 'adaptive_wave_sizing', False),
-                temperature=0.0,  # Zero temperature for deterministic play
+                temperature=0.0,  # Deterministic play for consistent user experience
                 dirichlet_alpha=getattr(full_config.mcts, 'dirichlet_alpha', 0.3),
                 dirichlet_epsilon=0.0,  # Zero epsilon disables noise completely
                 device=device,

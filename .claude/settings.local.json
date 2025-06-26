@@ -60,7 +60,9 @@
       "Bash(do)",
       "Bash(done)",
       "Bash(jq:*)",
-      "Bash(diff:*)"
+      "Bash(diff:*)",
+      "Bash(grep -B5 -A5 \"self.hbar_values\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)",
+      "Bash(grep -A 10 \"von_neumann_entropy\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)"
     ],
     "deny": []
   },

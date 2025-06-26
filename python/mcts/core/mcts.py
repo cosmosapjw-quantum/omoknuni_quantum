@@ -126,8 +126,8 @@ class MCTSConfig:
     
     # Virtual loss for leaf parallelization
     enable_virtual_loss: bool = True
-    virtual_loss: float = 3.0  # Positive value (will be negated when applied)
-    virtual_loss_value: float = -3.0  # Deprecated - use virtual_loss
+    virtual_loss: float = 1.0  # Positive value (will be negated when applied)
+    virtual_loss_value: float = -1.0  # Deprecated - use virtual_loss
     
     # Memory configuration
     memory_pool_size_mb: int = 2048
@@ -1455,7 +1455,6 @@ class MCTS:
                     return inner_eval.model.metadata.input_channels
                     
             # Default to 18 channels (basic representation) if can't determine
-            logger.warning("Could not determine evaluator input channels, defaulting to 18 (basic representation)")
             return 18
             
         except Exception as e:
