@@ -246,6 +246,9 @@ class UnifiedGPUKernels:
         # Get parent visits
         parent_visits = visit_counts[node_indices]
         
+        # CRITICAL FIX: Ensure parent visits are at least 1 for UCB formula to work
+        parent_visits = torch.maximum(parent_visits, torch.ones_like(parent_visits))
+        
         
         if self.use_cuda and _WRAPPED_KERNELS is not None:
             try:

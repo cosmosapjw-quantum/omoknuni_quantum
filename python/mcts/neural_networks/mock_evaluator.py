@@ -52,6 +52,14 @@ class MockEvaluator:
         self.eval_count = 0
         
         logger.info(f"MockEvaluator initialized for {game_type} with action space {self.action_space}")
+        
+        # Create board size for more intelligent policies
+        if game_type == 'gomoku':
+            self.board_size = 15
+        elif game_type == 'go':
+            self.board_size = 19
+        else:
+            self.board_size = 8  # chess
     
     def evaluate(self, states: Union[torch.Tensor, np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -77,19 +85,57 @@ class MockEvaluator:
             # Return fixed values
             values = torch.full((batch_size, 1), self.fixed_value, device=self.device)
             
-            # Uniform policy
-            policies = torch.ones(batch_size, self.action_space, device=self.device)
-            policies = policies / self.action_space
+            # Center-biased policy for deterministic mode (better for gomoku)
+            if self.game_type == 'gomoku' and hasattr(self, 'board_size'):
+                policies = self._create_center_biased_policy(batch_size)
+            else:
+                # Uniform policy fallback
+                policies = torch.ones(batch_size, self.action_space, device=self.device)
+                policies = policies / self.action_space
         else:
             # Random values between -1 and 1
             values = torch.rand(batch_size, 1, device=self.device) * 2 - 1
             
-            # Random policies with temperature
-            logits = torch.randn(batch_size, self.action_space, device=self.device)
-            logits = logits / self.policy_temperature
-            policies = torch.softmax(logits, dim=1)
+            # Center-biased random policies for better MCTS behavior
+            if self.game_type == 'gomoku' and hasattr(self, 'board_size'):
+                policies = self._create_center_biased_policy(batch_size, add_noise=True)
+            else:
+                # Random policies with temperature fallback
+                logits = torch.randn(batch_size, self.action_space, device=self.device)
+                logits = logits / self.policy_temperature
+                policies = torch.softmax(logits, dim=1)
         
         return values, policies
+    
+    def _create_center_biased_policy(self, batch_size: int, add_noise: bool = False) -> torch.Tensor:
+        """Create center-biased policies for better MCTS behavior"""
+        if self.game_type == 'gomoku':
+            # Create policies biased towards center of board
+            center = self.board_size // 2
+            policies = torch.zeros(batch_size, self.action_space, device=self.device)
+            
+            for i in range(self.board_size):
+                for j in range(self.board_size):
+                    action = i * self.board_size + j
+                    # Distance from center (Manhattan distance)
+                    dist = abs(i - center) + abs(j - center)
+                    # Higher probability for center squares
+                    prob = 1.0 / (1.0 + dist * 0.3)
+                    policies[:, action] = prob
+            
+            if add_noise:
+                # Add some random noise to make it less deterministic
+                noise = torch.randn_like(policies) * 0.1
+                policies = policies + noise
+                policies = torch.relu(policies)  # Ensure non-negative
+            
+            # Normalize to valid probability distribution
+            policies = policies / (policies.sum(dim=1, keepdim=True) + 1e-8)
+            return policies
+        else:
+            # Fallback for other games
+            policies = torch.ones(batch_size, self.action_space, device=self.device)
+            return policies / self.action_space
     
     def evaluate_batch(self, states: List[Union[np.ndarray, torch.Tensor]]) -> Tuple[np.ndarray, np.ndarray]:
         """

@@ -111,6 +111,9 @@ class CSRTree:
         self.node_counter = torch.zeros(1, dtype=torch.int32, device=self.device)
         self.edge_counter = torch.zeros(1, dtype=torch.int32, device=self.device)
         
+        # Lazy consistency flag for efficient CUDA kernel calls
+        self._csr_needs_update = False
+        
         # Initialize batching if enabled
         if config.enable_batched_ops:
             self._init_batch_buffers()
@@ -491,10 +494,13 @@ class CSRTree:
         # Update children lookup table for vectorized operations
         # Fix: Add bounds checking to prevent infinite loop
         children_updated = False
+        
         for i in range(self.children.shape[1]):
             if self.children[parent_idx, i] == -1:
                 self.children[parent_idx, i] = child_idx
                 children_updated = True
+                # Mark CSR as needing update for lazy consistency
+                self._csr_needs_update = True
                 break
         
         if not children_updated:
@@ -571,10 +577,14 @@ class CSRTree:
         if len(empty_indices) >= num_children:
             # Fill slots
             self.children[parent_idx, empty_indices[:num_children]] = child_indices_tensor
+            # Mark CSR as needing update for lazy consistency
+            self._csr_needs_update = True
         else:
             # Not enough slots - log warning but continue
             if len(empty_indices) > 0:
                 self.children[parent_idx, empty_indices] = child_indices_tensor[:len(empty_indices)]
+                # Mark CSR as needing update for lazy consistency
+                self._csr_needs_update = True
             if parent_idx == 0:  # Only log debug for root node
                 logger.debug(f"Children table nearly full for root node (node 0) - this is normal for extensive exploration")
             else:
@@ -796,6 +806,8 @@ class CSRTree:
             if num_to_fill > 0:
                 children_tensor = torch.tensor(children[:num_to_fill], device=self.device, dtype=torch.int32)
                 self.children[parent_idx, available_slots[:num_to_fill]] = children_tensor
+                # Mark CSR as needing update for lazy consistency
+                self._csr_needs_update = True
         
         return child_indices
         
@@ -810,7 +822,7 @@ class CSRTree:
         # Ensure batched operations are flushed
         if self.config.enable_batched_ops:
             self.flush_batch()
-            
+        
         # Use the children lookup table instead of CSR for single node queries
         try:
             children_slice = self.children[node_idx]
@@ -827,7 +839,6 @@ class CSRTree:
                 raise
         
         if len(valid_children) == 0:
-            # No children
             empty = torch.empty(0, device=self.device)
             return (empty.to(self.config.dtype_indices),
                    empty.to(self.config.dtype_actions),
@@ -973,6 +984,11 @@ class CSRTree:
         
         # Use the batch_ops if available for true UCB selection
         if self.batch_ops is not None and hasattr(self.batch_ops, 'batch_ucb_selection'):
+            # EFFICIENT FIX: Check lazy consistency flag before CUDA kernel
+            if hasattr(self, '_csr_needs_update') and self._csr_needs_update:
+                self.ensure_consistent()
+                self._csr_needs_update = False
+            
             # Use the optimized CUDA kernel - CSR format is properly maintained
             return self.batch_ops.batch_ucb_selection(
                 node_indices,

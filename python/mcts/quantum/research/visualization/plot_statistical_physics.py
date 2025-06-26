@@ -25,7 +25,14 @@ from matplotlib.patches import Rectangle
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+# Handle imports for both package and standalone execution
+try:
+    from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from authentic_mcts_physics_extractor import create_authentic_physics_data
 
 logger = logging.getLogger(__name__)
 

@@ -779,6 +779,19 @@ class UnifiedTrainingPipeline:
             )
             # Set random model as anchor with rating 0
             self.elo_tracker.ratings["random"] = self.config.arena.elo_anchor_rating
+            
+            # Configure enhanced ELO features based on config
+            if hasattr(self.config.arena, 'elo_enable_deflation'):
+                self.elo_tracker.use_deflation = self.config.arena.elo_enable_deflation
+            if hasattr(self.config.arena, 'elo_deflation_factor'):
+                self.elo_tracker.deflation_factor = self.config.arena.elo_deflation_factor
+                
+            logger.info(f"ELO Tracker initialized with enhanced features:")
+            logger.info(f"  K-factor: {self.elo_tracker.k_factor}")
+            logger.info(f"  Initial rating: {self.elo_tracker.initial_rating}")
+            logger.info(f"  Deflation enabled: {self.elo_tracker.use_deflation}")
+            logger.info(f"  Uncertainty tracking: enabled")
+            logger.info(f"  Validation metrics: enabled")
         
         # Create random evaluator
         from mcts.core.evaluator import EvaluatorConfig
@@ -1073,9 +1086,13 @@ class UnifiedTrainingPipeline:
         current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
         random_elo = self.elo_tracker.get_rating("random")
         
+        # Get enhanced ELO information
+        current_rating, current_uncertainty = self.elo_tracker.get_rating_with_uncertainty(f"iter_{self.iteration}")
+        current_games = self.elo_tracker.game_counts.get(f"iter_{self.iteration}", 0)
+        
         tqdm.write(f"\n      ELO Ratings:")
         tqdm.write(f"        Random: {random_elo:.1f} (anchor)")
-        tqdm.write(f"        Current (iter {self.iteration}): {current_elo:.1f}")
+        tqdm.write(f"        Current (iter {self.iteration}): {current_elo:.1f} ±{current_uncertainty:.1f} ({current_games} games)")
         
         # Save detailed results
         results = {
@@ -1197,6 +1214,34 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"\n      ✓ Model accepted as new best! (ELO: {final_elo:.1f})")
         else:
             tqdm.write(f"\n      ✗ Model rejected")
+        
+        # Log ELO health report every 10 iterations or if inflation is suspected
+        if self.iteration % 10 == 0 or self.iteration < 5:
+            try:
+                health_report = self.elo_tracker.get_health_report()
+                
+                # Check for warnings
+                inflation_indicators = health_report.get("inflation_indicators", {})
+                if inflation_indicators.get("inflation_detected", False):
+                    tqdm.write("\n      ⚠️  ELO INFLATION WARNING:")
+                    tqdm.write(f"        Growth rate: {inflation_indicators.get('avg_growth_per_iteration', 0):.1f} ELO/iteration")
+                    tqdm.write(f"        Total growth: {inflation_indicators.get('total_elo_growth', 0):.1f} ELO")
+                
+                # Show validation metrics if available
+                validation = health_report.get("validation_metrics", {})
+                if "prediction_accuracy" in validation:
+                    tqdm.write(f"\n      ELO System Health:")
+                    tqdm.write(f"        Prediction accuracy: {validation['prediction_accuracy']:.1%}")
+                    if validation.get("rating_inflation_detected", False):
+                        tqdm.write(f"        ⚠️  {validation.get('recommendation', '')}")
+                
+                # Log detailed summary to debug logs every 20 iterations
+                if self.iteration % 20 == 0:
+                    logger.debug("Generating detailed ELO health report...")
+                    self.elo_tracker.log_detailed_summary()
+                    
+            except Exception as e:
+                logger.warning(f"Could not generate ELO health report: {e}")
             
         self._save_arena_results(results)
         

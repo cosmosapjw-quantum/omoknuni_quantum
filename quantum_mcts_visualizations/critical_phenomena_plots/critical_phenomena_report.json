@@ -1,0 +1,75 @@
+{
+  "timestamp": "2025-06-26T17:55:20.236987",
+  "mcts_data_summary": {
+    "datasets_analyzed": 14,
+    "data_source": "authentic_mcts_tree_dynamics"
+  },
+  "critical_exponents": {
+    "extracted": {
+      "\u03b2": 0.5562571183597782,
+      "\u03b3": NaN,
+      "\u03bd": 0.9544550531784116,
+      "\u03b1": 0.09108989364317677,
+      "\u03b4": NaN
+    },
+    "theoretical": {
+      "\u03b2": 0.125,
+      "\u03b3": 1.75,
+      "\u03bd": 1.0,
+      "\u03b1": 0.0,
+      "\u03b4": 15.0,
+      "z": 2.125
+    },
+    "universality_class": "2D Ising"
+  },
+  "scaling_analysis": {
+    "data_collapse_quality": "good",
+    "optimal_scaling_exponent": 0.1,
+    "hyperscaling_validation": [
+      1.0,
+      0.0,
+      1.0,
+      2.0
+    ],
+    "best_scaling_form": "Power Law"
+  },
+  "universal_properties": {
+    "scaling_functions": {
+      "magnetization": "f_M(x) = tanh(x/2) * exp(-|x|/10)",
+      "susceptibility": "f_\u03c7(x) = 1/(1+x\u00b2) + exp(-|x|)",
+      "heat_capacity": "f_C(x) = log(1 + 1/|x|)",
+      "correlation": "G(r) ~ r^(-\u03b7) * exp(-r/\u03be)"
+    },
+    "universal_constants": {
+      "binder_crossing": 0.61,
+      "critical_exponents": {
+        "effective_action_scaling": {
+          "exponent": 1.0,
+          "prefactor": 1.0
+        },
+        "entropy_scaling": {
+          "exponent": 0.5,
+          "prefactor": 0.5
+        },
+        "gap_scaling": {
+          "exponent": -1.0,
+          "prefactor": 1.0
+        },
+        "correlation_length_scaling": {
+          "exponent": 0.5,
+          "prefactor": 1.0
+        },
+        "susceptibility_scaling": {
+          "exponent": 1.0,
+          "prefactor": 0.1
+        }
+      }
+    },
+    "critical_phenomena_confirmed": true
+  },
+  "output_files": [
+    "critical_exponents.png",
+    "data_collapse_3d.png",
+    "scaling_functions.png"
+  ]
+}

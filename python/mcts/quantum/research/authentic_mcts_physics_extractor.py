@@ -54,25 +54,22 @@ class AuthenticMCTSPhysicsExtractor:
             # Extract visit counts
             if 'visit_counts' in cached_data and cached_data['visit_counts']:
                 visits = np.array(cached_data['visit_counts'])
-                self.all_visit_counts.extend(visits[visits > 0])  # Only positive visits
+                positive_visits = visits[visits > 0]
+                if len(positive_visits) > 0:
+                    self.all_visit_counts.extend(positive_visits.tolist())  # Only positive visits
             elif 'visit_count_stats' in snapshot:
-                # Fallback: reconstruct from statistics
-                stats = snapshot['visit_count_stats']
-                if stats['count'] > 0:
-                    # Generate realistic visit distribution based on stats
-                    visits = np.random.exponential(stats['max']/2, min(stats['count'], 100))
-                    visits = np.clip(visits, stats['min'], stats['max'])
-                    self.all_visit_counts.extend(visits)
+                # Skip fallback data generation - use only authentic MCTS data
+                logger.warning(f"Skipping snapshot with only stats (no raw visit_counts): {snapshot.get('timestamp', 'unknown')}")
                 
             # Extract Q-values  
             if 'q_values' in cached_data and cached_data['q_values']:
                 q_vals = np.array(cached_data['q_values'])
-                self.all_q_values.extend(q_vals[np.isfinite(q_vals)])  # Only finite Q-values
-            elif len(self.all_visit_counts) > 0:
-                # Generate realistic Q-values matching visit count distribution
-                q_vals = np.random.normal(0, 0.3, len(self.all_visit_counts[-min(len(self.all_visit_counts), 10):]))
-                q_vals = np.clip(q_vals, -1.0, 1.0)
-                self.all_q_values.extend(q_vals)
+                finite_q_vals = q_vals[np.isfinite(q_vals)]
+                if len(finite_q_vals) > 0:
+                    self.all_q_values.extend(finite_q_vals.tolist())  # Only finite Q-values
+            elif 'q_values' not in cached_data:
+                # Skip generation of synthetic Q-values - use only authentic MCTS data
+                logger.warning(f"Skipping snapshot with no Q-values: {snapshot.get('timestamp', 'unknown')}")
                 
             if 'tree_size' in snapshot:
                 self.tree_sizes.append(snapshot['tree_size'])
@@ -87,6 +84,28 @@ class AuthenticMCTSPhysicsExtractor:
                 if len(policy) > 0:
                     entropy = -np.sum(policy * np.log(policy + 1e-10))
                     self.policy_entropies.append(entropy)
+        
+        # Convert to arrays for analysis
+        self.all_visit_counts = np.array(self.all_visit_counts) if self.all_visit_counts else np.array([1])
+        self.all_q_values = np.array(self.all_q_values) if self.all_q_values else np.array([0.0])
+        self.tree_sizes = np.array(self.tree_sizes) if self.tree_sizes else np.array([10])
+        self.tree_depths = np.array(self.tree_depths) if self.tree_depths else np.array([1])
+        self.policy_entropies = np.array(self.policy_entropies) if self.policy_entropies else np.array([1.0])
+        
+        logger.info(f"Extracted {len(self.all_visit_counts)} visit counts from {len(self.tree_data)} tree snapshots")
+        logger.info(f"Visit count range: {self.all_visit_counts.min():.1f} - {self.all_visit_counts.max():.1f}")
+        logger.info(f"Q-value range: {self.all_q_values.min():.3f} - {self.all_q_values.max():.3f}")
+        
+        # Check for degenerate MCTS data and warn
+        if (self.all_visit_counts.max() - self.all_visit_counts.min()) < 1e-6:
+            logger.warning("⚠️  DEGENERATE MCTS DATA DETECTED: All visit counts are identical!")
+            logger.warning("    This indicates MCTS tree expansion is not working properly.")
+            logger.warning("    Physics visualizations will use synthetic data as fallback.")
+            
+        if (self.all_q_values.max() - self.all_q_values.min()) < 1e-6:
+            logger.warning("⚠️  DEGENERATE MCTS DATA DETECTED: All Q-values are identical!")
+            logger.warning("    This indicates MCTS value estimation is not working properly.")
+            logger.warning("    Physics visualizations will use synthetic data as fallback.")
                     
     def _load_cached_data(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Load cached data from disk if available and convert CUDA tensors to numpy"""
@@ -120,17 +139,6 @@ class AuthenticMCTSPhysicsExtractor:
         
         # Return snapshot itself if no cache file, also converting any tensors
         return to_numpy_recursive(snapshot)
-        
-        # Convert to arrays for analysis
-        self.all_visit_counts = np.array(self.all_visit_counts) if self.all_visit_counts else np.array([1])
-        self.all_q_values = np.array(self.all_q_values) if self.all_q_values else np.array([0.0])
-        self.tree_sizes = np.array(self.tree_sizes) if self.tree_sizes else np.array([10])
-        self.tree_depths = np.array(self.tree_depths) if self.tree_depths else np.array([1])
-        self.policy_entropies = np.array(self.policy_entropies) if self.policy_entropies else np.array([1.0])
-        
-        logger.info(f"Extracted {len(self.all_visit_counts)} visit counts from {len(self.tree_data)} tree snapshots")
-        logger.info(f"Visit count range: {self.all_visit_counts.min():.1f} - {self.all_visit_counts.max():.1f}")
-        logger.info(f"Q-value range: {self.all_q_values.min():.3f} - {self.all_q_values.max():.3f}")
         
     def extract_effective_hbar(self) -> np.ndarray:
         """Extract effective hbar from visit count distributions
@@ -391,7 +399,7 @@ def create_authentic_physics_data(mcts_datasets: Dict[str, Any], method_name: st
         elif method_name in ['plot_beta_functions', 'plot_phase_diagrams', 'plot_rg_trajectories']:
             return _extract_rg_flow_data(extractor, method_name, base_data)
             
-        elif method_name in ['plot_correlation_functions', 'plot_data_collapse', 'plot_finite_size_scaling', 'plot_susceptibility_analysis']:
+        elif method_name in ['plot_correlation_functions', 'plot_data_collapse', 'plot_finite_size_scaling', 'plot_susceptibility_analysis', 'plot_critical_phenomena_scaling', 'plot_critical_exponents']:
             return _extract_critical_phenomena_data(extractor, method_name, base_data)
             
         elif method_name in ['plot_decoherence_dynamics', 'plot_information_proliferation', 'plot_pointer_states']:

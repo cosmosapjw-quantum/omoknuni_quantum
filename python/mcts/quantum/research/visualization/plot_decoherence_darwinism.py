@@ -27,7 +27,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+# Handle imports for both package and standalone execution
+try:
+    from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from authentic_mcts_physics_extractor import create_authentic_physics_data
 
 logger = logging.getLogger(__name__)
 
@@ -415,8 +422,11 @@ class DecoherenceDarwinismVisualizer:
             proliferation_rate = proliferation_data['proliferation_rate']
             fragment_sizes = proliferation_data['fragment_sizes']
             
-            ax6.plot(fragment_sizes[:-1], proliferation_rate, 'o-', 
-                    linewidth=2, markersize=6, color='green')
+            # Ensure arrays have compatible lengths
+            min_len = min(len(fragment_sizes) - 1, len(proliferation_rate))
+            if min_len > 0:
+                ax6.plot(fragment_sizes[:min_len], proliferation_rate[:min_len], 'o-', 
+                        linewidth=2, markersize=6, color='green')
             
             # Mark saturation point
             if len(proliferation_rate) > 0:
@@ -698,9 +708,9 @@ class DecoherenceDarwinismVisualizer:
             },
             'quantum_darwinism': {
                 'information_proliferation_detected': True,
-                'redundancy_plateau_formation': proliferation_results['darwinism_criteria']['redundancy_threshold'] > 0,
-                'classical_objectivity_emergence': proliferation_results['darwinism_criteria']['objectivity_emergence'],
-                'darwinism_criteria_satisfied': proliferation_results['darwinism_criteria']['classical_plateau_formation']
+                'redundancy_plateau_formation': bool(proliferation_results['darwinism_criteria']['redundancy_threshold'] > 0),
+                'classical_objectivity_emergence': bool(proliferation_results['darwinism_criteria']['objectivity_emergence']),
+                'darwinism_criteria_satisfied': bool(proliferation_results['darwinism_criteria']['classical_plateau_formation'])
             },
             'pointer_states': {
                 'dominant_pointer_state_index': pointer_results['dominant_state'],
@@ -724,8 +734,28 @@ class DecoherenceDarwinismVisualizer:
         if save_report:
             report_file = self.output_dir / 'decoherence_darwinism_report.json'
             import json
+            import numpy as np
+            
+            def convert_numpy_types(obj):
+                """Convert numpy types to native Python types for JSON serialization"""
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.bool_):
+                    return bool(obj)
+                elif isinstance(obj, dict):
+                    return {k: convert_numpy_types(v) for k, v in obj.items()}
+                elif isinstance(obj, (list, tuple)):
+                    return [convert_numpy_types(item) for item in obj]
+                else:
+                    return obj
+            
+            report_converted = convert_numpy_types(report)
             with open(report_file, 'w') as f:
-                json.dump(report, f, indent=2)
+                json.dump(report_converted, f, indent=2)
             logger.info(f"Saved comprehensive report to {report_file}")
         
         logger.info("Decoherence and quantum Darwinism analysis complete!")

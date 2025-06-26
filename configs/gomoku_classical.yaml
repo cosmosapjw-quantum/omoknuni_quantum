@@ -14,7 +14,7 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  num_simulations: 800   # Increased for master-level tactical depth
+  num_simulations: 1000   # Increased for master-level tactical depth
   c_puct: 1.4
   dirichlet_alpha: 0.2
   dirichlet_epsilon: 0.4
@@ -178,6 +178,13 @@ arena:
   elo_initial_rating: 0.0
   elo_anchor_rating: 0.0
   update_elo: true
+  
+  # Enhanced ELO features
+  elo_enable_deflation: true        # Enable rating deflation to prevent inflation
+  elo_deflation_factor: 0.99        # Deflation factor applied when needed
+  elo_uncertainty_tracking: true     # Track rating uncertainty/confidence
+  elo_validation_enabled: true      # Enable validation metrics
+  elo_health_monitoring: true       # Enable health monitoring and inflation detection
   
   # Random policy evaluation - Master level expectation
   min_win_rate_vs_random: 0.99  # Near-perfect performance against random

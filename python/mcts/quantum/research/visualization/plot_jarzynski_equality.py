@@ -26,7 +26,14 @@ from matplotlib.patches import Rectangle, Circle, Polygon, FancyBboxPatch
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+# Handle imports for both package and standalone execution
+try:
+    from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from authentic_mcts_physics_extractor import create_authentic_physics_data
 
 logger = logging.getLogger(__name__)
 
@@ -361,10 +368,10 @@ class JarzynskiEqualityVisualizer:
         exploitation_work = np.random.normal(mean_work * 0.3, variance * 0.2, n_decomp)
         quantum_work = final_works - exploration_work - exploitation_work
         
-        ax5.scatter(exploration_work, exploitation_work, alpha=0.6, 
-                   c=quantum_work, cmap='viridis', s=30)
+        scatter = ax5.scatter(exploration_work, exploitation_work, alpha=0.6, 
+                             c=quantum_work, cmap='viridis', s=30)
         
-        colorbar = plt.colorbar(ax5.collections[0], ax=ax5)
+        colorbar = plt.colorbar(scatter, ax=ax5)
         colorbar.set_label('Quantum Work Component')
         
         ax5.set_xlabel('Exploration Work')

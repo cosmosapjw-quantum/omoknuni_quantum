@@ -27,7 +27,14 @@ from matplotlib.streamplot import streamplot
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+# Handle imports for both package and standalone execution
+try:
+    from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from authentic_mcts_physics_extractor import create_authentic_physics_data
 
 logger = logging.getLogger(__name__)
 
@@ -394,19 +401,45 @@ class RGFlowPhaseVisualizer:
                 boundary_contour = ax6.contour(Lambda, Beta, modified_phases, levels=[0.5], 
                                               alpha=0.8, linewidths=2)
                 
-                # Label each curve
-                if len(boundary_contour.collections) > 0:
-                    for collection in boundary_contour.collections:
-                        for path in collection.get_paths():
-                            vertices = path.vertices
+                # Label each curve - compatible with different matplotlib versions
+                try:
+                    # Try new matplotlib API first
+                    collections = getattr(boundary_contour, 'collections', None)
+                    if collections is None:
+                        # Fallback for newer versions
+                        collections = []
+                        for line_collection in boundary_contour.allsegs:
+                            if line_collection:
+                                collections.append(line_collection)
+                    
+                    if collections and len(collections) > 0:
+                        # Get the first collection/segment
+                        if hasattr(collections[0], 'get_paths'):
+                            paths = collections[0].get_paths()
+                        else:
+                            # Handle raw coordinate arrays
+                            paths = collections[0] if isinstance(collections[0], list) else [collections[0]]
+                        
+                        for path in paths:
+                            if hasattr(path, 'vertices'):
+                                vertices = path.vertices
+                            else:
+                                # Handle coordinate arrays directly
+                                vertices = path if len(path) > 0 else []
+                            
                             if len(vertices) > 0:
                                 mid_idx = len(vertices) // 2
-                                ax6.text(vertices[mid_idx, 0], vertices[mid_idx, 1], 
-                                        f'ℏ={hbar}', fontsize=8, ha='center',
+                                x_pos = vertices[mid_idx][0] if len(vertices[mid_idx]) > 0 else Lambda.mean()
+                                y_pos = vertices[mid_idx][1] if len(vertices[mid_idx]) > 1 else Beta.mean()
+                                ax6.text(x_pos, y_pos, f'ℏ={hbar}', fontsize=8, ha='center',
                                         bbox=dict(boxstyle="round,pad=0.1", 
                                                 facecolor="white", alpha=0.8))
                                 break
-                        break
+                            break
+                except (AttributeError, IndexError):
+                    # If all else fails, just place label at center
+                    ax6.text(Lambda.mean(), Beta.mean(), f'ℏ={hbar}', fontsize=8, ha='center',
+                            bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.8))
             
             ax6.set_xlabel('λ (coupling strength)')
             ax6.set_ylabel('β (inverse temperature)')
@@ -460,7 +493,7 @@ class RGFlowPhaseVisualizer:
         
         # Stream plot for flow field
         ax1.streamplot(L_stream, B_stream, U_stream, V_stream,
-                      density=1.2, color='gray', alpha=0.6, linewidth=1)
+                      density=1.2, color='gray', linewidth=1)
         
         # Plot trajectories
         colors = ['red', 'blue', 'green', 'orange', 'purple']

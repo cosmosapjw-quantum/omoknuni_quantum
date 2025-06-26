@@ -576,8 +576,9 @@ class AlphaZeroConfig:
         ram_per_worker_gb = 1.5
         max_concurrent_by_ram = int(ram_available_gb / ram_per_worker_gb)
         
-        # Final limits
-        max_concurrent_workers = min(num_workers, max_concurrent_by_gpu, max_concurrent_by_ram, 8)
+        # Final limits - use CPU cores instead of hardcoded 8
+        cpu_cores_limit = hardware['cpu_cores_physical']
+        max_concurrent_workers = min(num_workers, max_concurrent_by_gpu, max_concurrent_by_ram, cpu_cores_limit)
         memory_per_worker_mb = min(2048, int(hardware['total_ram_gb'] * 1024 - 4096) // num_workers)
         
         return {

@@ -27,7 +27,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+# Handle imports for both package and standalone execution
+try:
+    from ..authentic_mcts_physics_extractor import create_authentic_physics_data
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from authentic_mcts_physics_extractor import create_authentic_physics_data
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +84,7 @@ class EntropyAnalysisVisualizer:
                         label=f'L={sys_size}', linewidth=2, alpha=0.8, markersize=6)
         
         # Area law scaling
-        if system_sizes:
+        if len(system_sizes) > 0:
             x_theory = np.linspace(1, max([len(entanglement_entropy.get(size, [])) for size in system_sizes]), 50)
             area_law = np.log(x_theory + 1)  # Logarithmic growth for 1D
             ax1.plot(x_theory, area_law, 'k--', linewidth=2, alpha=0.7, label='Area Law ~ log(l)')

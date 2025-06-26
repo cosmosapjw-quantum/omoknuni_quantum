@@ -62,57 +62,102 @@ class ELOTracker:
         self.ratings: Dict[str, float] = {}
         self.game_history: List[Dict] = []
         self.iteration_elos: Dict[int, float] = {}  # Track ELO by iteration
+        
+        # Uncertainty tracking
+        self.rating_uncertainty: Dict[str, float] = {}  # Rating standard deviation
+        self.game_counts: Dict[str, int] = {}  # Number of games played
+        
+        # Rating anchoring and deflation
+        self.anchor_players: Dict[str, float] = {"random": 0.0}  # Fixed anchor points
+        self.rating_sum_target = 0.0  # Target sum of all ratings
+        self.deflation_factor = 0.99  # Slight deflation per update
+        self.use_deflation = True  # Enable rating deflation
+        
+        # Performance validation
+        self.validation_history: List[Dict] = []  # Track actual vs expected performance
     
     def get_adaptive_k_factor(self, player: str, opponent: str, base_k: float = None) -> float:
-        """Calculate adaptive K-factor based on player strength and opponent"""
+        """Calculate adaptive K-factor based on player strength, uncertainty, and game count"""
         if base_k is None:
             base_k = self.k_factor
             
+        # Get player stats
+        player_elo = self.ratings.get(player, self.initial_rating)
+        player_games = self.game_counts.get(player, 0)
+        player_uncertainty = self.rating_uncertainty.get(player, 350.0)  # Initial uncertainty
+        
+        # Base K-factor adjustment based on game count (confidence)
+        # More games = more confidence = lower K-factor
+        if player_games < 10:
+            confidence_multiplier = 1.0  # Full K for new players
+        elif player_games < 30:
+            confidence_multiplier = 0.8  # 80% K after initial games
+        elif player_games < 100:
+            confidence_multiplier = 0.6  # 60% K for established players
+        else:
+            confidence_multiplier = 0.4  # 40% K for well-established players
+            
+        # Uncertainty-based adjustment
+        # Higher uncertainty = higher K-factor to allow faster convergence
+        uncertainty_multiplier = min(2.0, player_uncertainty / 100.0)
+        
         # Special handling for matches against random
         if opponent == "random":
-            player_elo = self.ratings.get(player, self.initial_rating)
-            
-            # Sophisticated adaptive K-factor for random matches
-            # Phase 1 (ELO 0-200): High K-factor for rapid initial learning
-            # Phase 2 (ELO 200-500): Moderate K-factor for calibration
-            # Phase 3 (ELO 500-1000): Reduced K-factor to prevent inflation
-            # Phase 4 (ELO 1000+): Minimal K-factor, mostly for verification
+            # More aggressive K-factor reduction for random matches
             
             if player_elo < 200:
-                # Early phase: Full K-factor for rapid ELO growth
-                k_multiplier = 1.0
+                # Early phase: Moderate K-factor (not full to prevent early inflation)
+                k_multiplier = 0.8
             elif player_elo < 500:
-                # Calibration phase: Gradual reduction
-                k_multiplier = 1.0 - 0.3 * (player_elo - 200) / 300
+                # Calibration phase: Quick reduction
+                k_multiplier = 0.6 - 0.3 * (player_elo - 200) / 300
             elif player_elo < 1000:
-                # Stabilization phase: Further reduction
-                k_multiplier = 0.7 - 0.4 * (player_elo - 500) / 500
+                # Stabilization phase: Strong reduction
+                k_multiplier = 0.3 - 0.2 * (player_elo - 500) / 500
             else:
                 # Mature phase: Minimal gains from beating random
-                # Use logarithmic decay to ensure smooth transition
-                k_multiplier = 0.3 * (1000 / player_elo) ** 0.5
+                # Exponential decay to prevent any inflation
+                k_multiplier = 0.1 * np.exp(-player_elo / 1000)
             
-            # Apply win rate adjustment: if model dominates random, reduce K further
-            # Get recent performance vs random
-            recent_vs_random = self.get_recent_performance(player, "random", last_n=3)
-            if recent_vs_random is not None and recent_vs_random > 0.95:
-                # Near-perfect performance: reduce K-factor by additional 50%
-                k_multiplier *= 0.5
-            elif recent_vs_random is not None and recent_vs_random > 0.98:
-                # Essentially solved: reduce K-factor by 80%
-                k_multiplier *= 0.2
+            # Apply win rate adjustment
+            recent_vs_random = self.get_recent_performance(player, "random", last_n=5)
+            if recent_vs_random is not None:
+                if recent_vs_random > 0.99:
+                    # Nearly perfect: extreme K reduction
+                    k_multiplier *= 0.1
+                elif recent_vs_random > 0.95:
+                    # Very strong: heavy K reduction
+                    k_multiplier *= 0.3
+                elif recent_vs_random > 0.90:
+                    # Strong: moderate K reduction
+                    k_multiplier *= 0.5
             
-            return base_k * k_multiplier
+            # Apply all multipliers
+            return base_k * k_multiplier * confidence_multiplier * min(1.0, uncertainty_multiplier)
         
-        # For non-random opponents, use standard K-factor with minor adjustments
-        # Reduce K-factor for very high-rated players to prevent volatility
-        player_elo = self.ratings.get(player, self.initial_rating)
-        if player_elo > 2000:
-            return base_k * 0.8
-        elif player_elo > 2500:
-            return base_k * 0.6
+        # For non-random opponents
+        # Consider rating difference for K-factor adjustment
+        opponent_elo = self.ratings.get(opponent, self.initial_rating)
+        rating_diff = abs(player_elo - opponent_elo)
+        
+        # Reduce K-factor for mismatched games (prevents inflation from beating weak opponents)
+        if rating_diff > 400:
+            mismatch_multiplier = 0.5
+        elif rating_diff > 200:
+            mismatch_multiplier = 0.7
         else:
-            return base_k
+            mismatch_multiplier = 1.0
+            
+        # High-rating adjustment
+        if player_elo > 2000:
+            rating_multiplier = 0.7
+        elif player_elo > 2500:
+            rating_multiplier = 0.5
+        else:
+            rating_multiplier = 1.0
+            
+        # Combine all factors
+        return base_k * confidence_multiplier * uncertainty_multiplier * mismatch_multiplier * rating_multiplier
     
     def get_recent_performance(self, player: str, opponent: str, last_n: int = 5) -> Optional[float]:
         """Get recent win rate of player vs opponent in last N matches"""
@@ -215,7 +260,7 @@ class ELOTracker:
     
     def update_ratings(self, player1: str, player2: str,
                       wins: int, draws: int, losses: int):
-        """Update ELO ratings based on match results with adaptive K-factor"""
+        """Update ELO ratings based on match results with adaptive K-factor, uncertainty tracking, and deflation"""
         total_games = wins + draws + losses
         if total_games == 0:
             return
@@ -223,6 +268,17 @@ class ELOTracker:
         # Get current ratings (use initial_rating if not found)
         r1 = self.ratings.get(player1, self.initial_rating)
         r2 = self.ratings.get(player2, self.initial_rating)
+        
+        # Initialize players if new
+        if player1 not in self.ratings:
+            self.ratings[player1] = self.initial_rating
+            self.rating_uncertainty[player1] = 350.0  # Initial uncertainty (Glicko-like)
+            self.game_counts[player1] = 0
+            
+        if player2 not in self.ratings:
+            self.ratings[player2] = self.initial_rating
+            self.rating_uncertainty[player2] = 350.0
+            self.game_counts[player2] = 0
         
         # Get adaptive K-factors for both players
         k1 = self.get_adaptive_k_factor(player1, player2)
@@ -236,14 +292,58 @@ class ELOTracker:
         s1 = (wins + 0.5 * draws) / total_games
         s2 = (losses + 0.5 * draws) / total_games
         
+        # Track validation: actual vs expected performance
+        self.validation_history.append({
+            "timestamp": datetime.now().isoformat(),
+            "player1": player1,
+            "player2": player2,
+            "expected_score1": e1,
+            "actual_score1": s1,
+            "expected_score2": e2,
+            "actual_score2": s2,
+            "games": total_games,
+            "rating_diff": r1 - r2
+        })
+        
         # Calculate rating changes with adaptive K-factors
         delta1 = k1 * (s1 - e1)
         delta2 = k2 * (s2 - e2)
         
-        # Update ratings (but keep "random" fixed at 0 as anchor)
-        # Standard ELO formula: new_rating = old_rating + K * (actual_score - expected_score)
-        # Note: We do NOT multiply by total_games - K factor already accounts for match weight
-        if player1 != "random":
+        # Update game counts
+        if player1 not in self.anchor_players:
+            self.game_counts[player1] += total_games
+        if player2 not in self.anchor_players:
+            self.game_counts[player2] += total_games
+        
+        # Update uncertainty (decreases with more games, increases with surprising results)
+        if player1 not in self.anchor_players:
+            # Reduce uncertainty based on games played
+            uncertainty_decay = 0.98
+            self.rating_uncertainty[player1] *= uncertainty_decay
+            
+            # Increase uncertainty if result was surprising
+            surprise_factor = abs(s1 - e1)
+            if surprise_factor > 0.3:  # Surprising result
+                self.rating_uncertainty[player1] *= (1 + surprise_factor * 0.2)
+                
+            # Clamp uncertainty to reasonable range
+            self.rating_uncertainty[player1] = np.clip(self.rating_uncertainty[player1], 50.0, 350.0)
+            
+        if player2 not in self.anchor_players:
+            uncertainty_decay = 0.98
+            self.rating_uncertainty[player2] *= uncertainty_decay
+            
+            surprise_factor = abs(s2 - e2)
+            if surprise_factor > 0.3:
+                self.rating_uncertainty[player2] *= (1 + surprise_factor * 0.2)
+                
+            self.rating_uncertainty[player2] = np.clip(self.rating_uncertainty[player2], 50.0, 350.0)
+        
+        # Store old ratings for deflation calculation
+        old_ratings_sum = sum(self.ratings.values())
+        
+        # Update ratings (but keep anchor players fixed)
+        if player1 not in self.anchor_players:
             new_r1 = r1 + delta1
             self.ratings[player1] = new_r1
             
@@ -255,12 +355,12 @@ class ELOTracker:
                 except (ValueError, IndexError):
                     pass
             
-            # Log with adaptive K-factor info
-            logger.debug(f"ELO Update: {player1} {r1:.1f} -> {new_r1:.1f} (Δ{delta1:+.1f}, K={k1:.1f}) after {wins}W-{draws}D-{losses}L vs {player2}")
+            # Log with detailed info
+            logger.debug(f"ELO Update: {player1} {r1:.1f} -> {new_r1:.1f} (Δ{delta1:+.1f}, K={k1:.1f}, σ={self.rating_uncertainty[player1]:.1f}) after {wins}W-{draws}D-{losses}L vs {player2}")
         else:
             new_r1 = r1
             
-        if player2 != "random":
+        if player2 not in self.anchor_players:
             new_r2 = r2 + delta2
             self.ratings[player2] = new_r2
             
@@ -272,11 +372,15 @@ class ELOTracker:
                 except (ValueError, IndexError):
                     pass
             
-            logger.debug(f"ELO Update: {player2} {r2:.1f} -> {new_r2:.1f} (Δ{delta2:+.1f}, K={k2:.1f}) after {losses}W-{draws}D-{wins}L vs {player1}")
+            logger.debug(f"ELO Update: {player2} {r2:.1f} -> {new_r2:.1f} (Δ{delta2:+.1f}, K={k2:.1f}, σ={self.rating_uncertainty[player2]:.1f}) after {losses}W-{draws}D-{wins}L vs {player1}")
         else:
             new_r2 = r2
         
-        # Record history
+        # Apply rating deflation to prevent drift
+        if self.use_deflation and len(self.ratings) > 2:
+            self._apply_rating_deflation(old_ratings_sum)
+        
+        # Record history with enhanced information
         self.game_history.append({
             "timestamp": datetime.now().isoformat(),
             "player1": player1,
@@ -286,27 +390,172 @@ class ELOTracker:
             "losses": losses,
             "old_rating1": r1,
             "old_rating2": r2,
-            "new_rating1": new_r1,
-            "new_rating2": new_r2,
+            "new_rating1": self.ratings.get(player1, new_r1),
+            "new_rating2": self.ratings.get(player2, new_r2),
             "k_factor1": k1,
-            "k_factor2": k2
+            "k_factor2": k2,
+            "uncertainty1": self.rating_uncertainty.get(player1, 0),
+            "uncertainty2": self.rating_uncertainty.get(player2, 0),
+            "game_count1": self.game_counts.get(player1, 0),
+            "game_count2": self.game_counts.get(player2, 0)
         })
+    
+    def _apply_rating_deflation(self, old_ratings_sum: float):
+        """Apply rating deflation to prevent overall rating drift"""
+        # Calculate current sum of ratings
+        current_sum = sum(self.ratings.values())
+        
+        # Calculate target sum (should stay close to initial sum)
+        # Allow slight growth based on number of non-anchor players
+        non_anchor_count = len([p for p in self.ratings if p not in self.anchor_players])
+        target_sum = self.rating_sum_target or (non_anchor_count * self.initial_rating)
+        
+        # Apply deflation if ratings are inflating
+        if current_sum > target_sum * 1.05:  # 5% tolerance
+            # Calculate deflation factor
+            deflation_ratio = target_sum / current_sum
+            
+            # Apply deflation to all non-anchor players
+            for player in self.ratings:
+                if player not in self.anchor_players:
+                    old_rating = self.ratings[player]
+                    # Deflate towards initial rating
+                    deflated_rating = self.initial_rating + (old_rating - self.initial_rating) * deflation_ratio
+                    self.ratings[player] = deflated_rating
+                    
+                    # Update iteration ELO if applicable
+                    if player.startswith("iter_"):
+                        try:
+                            iter_num = int(player.split("_")[1])
+                            self.iteration_elos[iter_num] = deflated_rating
+                        except (ValueError, IndexError):
+                            pass
+                    
+                    if abs(old_rating - deflated_rating) > 1.0:
+                        logger.debug(f"Deflation applied to {player}: {old_rating:.1f} -> {deflated_rating:.1f}")
     
     def get_rating(self, player: str) -> float:
         """Get current rating for a player"""
         return self.ratings.get(player, self.initial_rating)
     
+    def get_rating_with_uncertainty(self, player: str) -> Tuple[float, float]:
+        """Get rating with uncertainty bounds (rating ± 2*std_dev)"""
+        rating = self.ratings.get(player, self.initial_rating)
+        uncertainty = self.rating_uncertainty.get(player, 350.0)
+        return rating, uncertainty
+    
+    def get_confidence_interval(self, player: str, confidence: float = 0.95) -> Tuple[float, float]:
+        """Get confidence interval for player rating"""
+        rating, uncertainty = self.get_rating_with_uncertainty(player)
+        # Using 2 standard deviations for ~95% confidence
+        z_score = 2.0 if confidence >= 0.95 else 1.0
+        lower = rating - z_score * uncertainty
+        upper = rating + z_score * uncertainty
+        return lower, upper
+    
     def get_leaderboard(self) -> List[Tuple[str, float]]:
         """Get sorted leaderboard"""
         return sorted(self.ratings.items(), key=lambda x: x[1], reverse=True)
+    
+    def get_detailed_leaderboard(self) -> List[Dict]:
+        """Get detailed leaderboard with uncertainty and game counts"""
+        leaderboard = []
+        for player, rating in self.ratings.items():
+            uncertainty = self.rating_uncertainty.get(player, 0)
+            games = self.game_counts.get(player, 0)
+            lower, upper = self.get_confidence_interval(player)
+            
+            leaderboard.append({
+                "player": player,
+                "rating": rating,
+                "uncertainty": uncertainty,
+                "games": games,
+                "confidence_lower": lower,
+                "confidence_upper": upper,
+                "is_anchor": player in self.anchor_players
+            })
+        
+        # Sort by rating
+        leaderboard.sort(key=lambda x: x["rating"], reverse=True)
+        return leaderboard
+    
+    def get_validation_metrics(self) -> Dict:
+        """Calculate validation metrics to check if ELO predictions match actual results"""
+        if not self.validation_history:
+            return {"status": "no_data"}
+        
+        # Calculate prediction accuracy
+        correct_predictions = 0
+        total_predictions = 0
+        squared_errors = []
+        
+        for record in self.validation_history:
+            # Was the prediction correct? (considering draws)
+            expected1 = record["expected_score1"]
+            actual1 = record["actual_score1"]
+            
+            # Binary prediction accuracy
+            if expected1 > 0.5 and actual1 > 0.5:
+                correct_predictions += 1
+            elif expected1 < 0.5 and actual1 < 0.5:
+                correct_predictions += 1
+            elif abs(expected1 - 0.5) < 0.1 and abs(actual1 - 0.5) < 0.1:
+                correct_predictions += 1  # Both near draw
+                
+            total_predictions += 1
+            
+            # Calculate squared error
+            error = (expected1 - actual1) ** 2
+            squared_errors.append(error)
+        
+        # Calculate metrics
+        accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+        mse = np.mean(squared_errors) if squared_errors else 0
+        rmse = np.sqrt(mse)
+        
+        # Check for systematic bias
+        recent_records = self.validation_history[-20:]  # Last 20 matches
+        recent_errors = [r["actual_score1"] - r["expected_score1"] for r in recent_records]
+        bias = np.mean(recent_errors) if recent_errors else 0
+        
+        return {
+            "prediction_accuracy": accuracy,
+            "mse": mse,
+            "rmse": rmse,
+            "bias": bias,
+            "total_validations": len(self.validation_history),
+            "rating_inflation_detected": abs(bias) > 0.1,
+            "recommendation": self._get_validation_recommendation(accuracy, rmse, bias)
+        }
+    
+    def _get_validation_recommendation(self, accuracy: float, rmse: float, bias: float) -> str:
+        """Get recommendation based on validation metrics"""
+        if accuracy < 0.6:
+            return "Poor prediction accuracy - ratings may not reflect true strength"
+        elif rmse > 0.3:
+            return "High prediction error - consider adjusting K-factor"
+        elif abs(bias) > 0.1:
+            if bias > 0:
+                return "Systematic underestimation - ratings may be inflated"
+            else:
+                return "Systematic overestimation - ratings may be deflated"
+        else:
+            return "Ratings appear well-calibrated"
     
     def save_to_file(self, filepath: str):
         """Save ratings and history to JSON file"""
         data = {
             "ratings": dict(self.ratings),
+            "rating_uncertainty": dict(self.rating_uncertainty),
+            "game_counts": dict(self.game_counts),
             "history": self.game_history,
+            "validation_history": self.validation_history,
             "k_factor": self.k_factor,
-            "initial_rating": self.initial_rating
+            "initial_rating": self.initial_rating,
+            "anchor_players": dict(self.anchor_players),
+            "use_deflation": self.use_deflation,
+            "deflation_factor": self.deflation_factor,
+            "iteration_elos": dict(self.iteration_elos)
         }
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
@@ -320,6 +569,170 @@ class ELOTracker:
         self.game_history = data["history"]
         self.k_factor = data.get("k_factor", self.k_factor)
         self.initial_rating = data.get("initial_rating", self.initial_rating)
+        
+        # Load new fields with defaults for backward compatibility
+        self.rating_uncertainty = data.get("rating_uncertainty", {})
+        self.game_counts = data.get("game_counts", {})
+        self.validation_history = data.get("validation_history", [])
+        self.anchor_players = data.get("anchor_players", {"random": 0.0})
+        self.use_deflation = data.get("use_deflation", True)
+        self.deflation_factor = data.get("deflation_factor", 0.99)
+        self.iteration_elos = data.get("iteration_elos", {})
+    
+    def get_health_report(self) -> Dict:
+        """Generate comprehensive health report of the rating system"""
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "total_players": len(self.ratings),
+            "total_games": len(self.game_history),
+            "rating_statistics": self._get_rating_statistics(),
+            "validation_metrics": self.get_validation_metrics(),
+            "inflation_indicators": self._get_inflation_indicators(),
+            "recommendations": []
+        }
+        
+        # Add recommendations based on analysis
+        if report["inflation_indicators"].get("inflation_detected", False):
+            report["recommendations"].append("Rating inflation detected - consider adjusting K-factors or deflation settings")
+            
+        validation = report["validation_metrics"]
+        if validation.get("rating_inflation_detected", False):
+            report["recommendations"].append(validation.get("recommendation", ""))
+            
+        if report["rating_statistics"]["avg_uncertainty"] > 200:
+            report["recommendations"].append("High average uncertainty - more games needed for reliable ratings")
+            
+        return report
+    
+    def _get_rating_statistics(self) -> Dict:
+        """Calculate rating distribution statistics"""
+        if not self.ratings:
+            return {"status": "no_data"}
+            
+        ratings = list(self.ratings.values())
+        uncertainties = [self.rating_uncertainty.get(p, 0) for p in self.ratings]
+        game_counts = [self.game_counts.get(p, 0) for p in self.ratings]
+        
+        return {
+            "mean_rating": np.mean(ratings),
+            "std_rating": np.std(ratings),
+            "min_rating": np.min(ratings),
+            "max_rating": np.max(ratings),
+            "rating_range": np.max(ratings) - np.min(ratings),
+            "avg_uncertainty": np.mean(uncertainties) if uncertainties else 0,
+            "avg_games_played": np.mean(game_counts) if game_counts else 0,
+            "rating_distribution": self._get_rating_distribution(ratings)
+        }
+    
+    def _get_rating_distribution(self, ratings: List[float]) -> Dict:
+        """Get rating distribution by ranges"""
+        distribution = {
+            "0-500": 0,
+            "500-1000": 0,
+            "1000-1500": 0,
+            "1500-2000": 0,
+            "2000-2500": 0,
+            "2500+": 0
+        }
+        
+        for rating in ratings:
+            if rating < 500:
+                distribution["0-500"] += 1
+            elif rating < 1000:
+                distribution["500-1000"] += 1
+            elif rating < 1500:
+                distribution["1000-1500"] += 1
+            elif rating < 2000:
+                distribution["1500-2000"] += 1
+            elif rating < 2500:
+                distribution["2000-2500"] += 1
+            else:
+                distribution["2500+"] += 1
+                
+        return distribution
+    
+    def _get_inflation_indicators(self) -> Dict:
+        """Check for rating inflation indicators"""
+        if len(self.iteration_elos) < 10:
+            return {"status": "insufficient_data"}
+            
+        # Get ELO progression over iterations
+        iterations = sorted(self.iteration_elos.keys())
+        elos = [self.iteration_elos[i] for i in iterations]
+        
+        # Calculate growth rate
+        if len(elos) >= 2:
+            total_growth = elos[-1] - elos[0]
+            avg_growth_per_iteration = total_growth / (iterations[-1] - iterations[0])
+            
+            # Check recent vs historical growth
+            mid_point = len(elos) // 2
+            early_growth = (elos[mid_point] - elos[0]) / (iterations[mid_point] - iterations[0])
+            late_growth = (elos[-1] - elos[mid_point]) / (iterations[-1] - iterations[mid_point])
+            
+            # Detect acceleration in growth
+            growth_acceleration = late_growth - early_growth
+            
+            return {
+                "total_elo_growth": total_growth,
+                "avg_growth_per_iteration": avg_growth_per_iteration,
+                "early_growth_rate": early_growth,
+                "late_growth_rate": late_growth,
+                "growth_acceleration": growth_acceleration,
+                "inflation_detected": growth_acceleration > 5.0 or avg_growth_per_iteration > 10.0,
+                "current_iteration_elo": elos[-1] if elos else None
+            }
+        
+        return {"status": "insufficient_data"}
+    
+    def log_detailed_summary(self):
+        """Log detailed summary of current ratings state"""
+        logger.info("=" * 80)
+        logger.info("ELO TRACKER DETAILED SUMMARY")
+        logger.info("=" * 80)
+        
+        # Leaderboard
+        leaderboard = self.get_detailed_leaderboard()
+        logger.info(f"{'Player':<20} {'Rating':<10} {'±σ':<8} {'Games':<8} {'95% CI':<20}")
+        logger.info("-" * 70)
+        
+        for entry in leaderboard[:10]:  # Top 10
+            ci_str = f"[{entry['confidence_lower']:.0f}, {entry['confidence_upper']:.0f}]"
+            logger.info(f"{entry['player']:<20} {entry['rating']:<10.1f} "
+                       f"{entry['uncertainty']:<8.1f} {entry['games']:<8} {ci_str:<20}")
+        
+        # Health report
+        health = self.get_health_report()
+        logger.info("\nSYSTEM HEALTH:")
+        logger.info(f"Total Players: {health['total_players']}")
+        logger.info(f"Total Games: {health['total_games']}")
+        
+        if "mean_rating" in health["rating_statistics"]:
+            stats = health["rating_statistics"]
+            logger.info(f"Rating Stats: μ={stats['mean_rating']:.1f}, σ={stats['std_rating']:.1f}, "
+                       f"range=[{stats['min_rating']:.1f}, {stats['max_rating']:.1f}]")
+        
+        # Validation metrics
+        validation = health["validation_metrics"]
+        if "prediction_accuracy" in validation:
+            logger.info(f"Prediction Accuracy: {validation['prediction_accuracy']:.1%}")
+            logger.info(f"RMSE: {validation['rmse']:.3f}")
+            logger.info(f"Bias: {validation['bias']:+.3f}")
+        
+        # Inflation check
+        inflation = health["inflation_indicators"]
+        if "inflation_detected" in inflation:
+            if inflation["inflation_detected"]:
+                logger.warning("WARNING: Rating inflation detected!")
+                logger.info(f"Growth rate: {inflation['avg_growth_per_iteration']:.1f} ELO/iteration")
+        
+        # Recommendations
+        if health["recommendations"]:
+            logger.info("\nRECOMMENDATIONS:")
+            for rec in health["recommendations"]:
+                logger.info(f"- {rec}")
+        
+        logger.info("=" * 80)
 
 
 class ArenaManager:

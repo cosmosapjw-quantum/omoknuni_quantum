@@ -659,6 +659,8 @@ class MCTS:
     
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Fully vectorized selection phase - no sequential loops"""
+        raise Exception(f"DEBUG: _select_batch_vectorized called with wave_size={wave_size}")
+        
         # Reset buffers
         self.paths_buffer[:wave_size].fill_(-1)
         self.path_lengths[:wave_size].zero_()
@@ -676,8 +678,8 @@ class MCTS:
         
         # Check if we should stop at root (it has no children and needs expansion)
         root_children, _, _ = self.tree.get_children(0)
+        
         if len(root_children) == 0:
-            # Root needs expansion - return it as leaf
             return (self.paths_buffer[:wave_size], 
                     self.path_lengths[:wave_size], 
                     self.current_nodes[:wave_size])  # All zeros (root)
@@ -845,7 +847,8 @@ class MCTS:
             
             # Update active mask and current nodes
             self.active_mask[:wave_size] &= (self.next_nodes[:wave_size] >= 0)
-            self.current_nodes[:wave_size] = self.next_nodes[:wave_size]
+            # CRITICAL FIX: Only update current_nodes for active paths, preserve inactive ones
+            self.current_nodes[:wave_size][self.active_mask[:wave_size]] = self.next_nodes[:wave_size][self.active_mask[:wave_size]]
             
             # Update path lengths
             self.path_lengths[:wave_size][self.active_mask[:wave_size]] = depth
