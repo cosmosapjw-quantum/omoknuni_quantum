@@ -1306,3 +1306,64 @@ TypeError: len() of unsized object
 2025-06-27 11:56:00,009 - plot_thermodynamics - INFO - Saved otto cycle animation
 2025-06-27 11:56:00,046 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
 2025-06-27 11:56:00,046 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:56:49,103 - plot_thermodynamics - INFO - Saved carnot cycle animation
+2025-06-27 11:56:49,103 - __main__ - INFO - ✓ Thermodynamics analysis completed in 193.35s
+2025-06-27 11:56:49,104 - __main__ - INFO - Generated 5 plots
+2025-06-27 11:56:49,104 - __main__ - INFO - ============================================================
+2025-06-27 11:56:49,104 - __main__ - INFO - RUNNING JARZYNSKI EQUALITY ANALYSIS
+2025-06-27 11:56:49,104 - __main__ - INFO - ============================================================
+2025-06-27 11:56:49,104 - plot_jarzynski_equality - INFO - Generating comprehensive Jarzynski equality report...
+2025-06-27 11:56:49,242 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:56:49,243 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:56:49,243 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:56:49,243 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 11:56:50,657 - plot_jarzynski_equality - INFO - Saved Jarzynski verification plot
+2025-06-27 11:56:50,790 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:56:50,790 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:56:50,790 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:56:50,790 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 11:56:52,569 - plot_jarzynski_equality - INFO - Saved work fluctuation analysis plot
+2025-06-27 11:56:53,660 - plot_jarzynski_equality - INFO - Saved path integral formulation plot
+2025-06-27 11:56:53,660 - plot_jarzynski_equality - INFO - Saved comprehensive report to quantum_mcts_visualizations/jarzynski_plots/jarzynski_equality_report.json
+2025-06-27 11:56:53,660 - plot_jarzynski_equality - INFO - Jarzynski equality analysis complete!
+2025-06-27 11:56:53,660 - __main__ - INFO - Creating Jarzynski animations...
+2025-06-27 11:56:53,715 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:56:53,716 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:57:35,317 - plot_jarzynski_equality - INFO - Saved Jarzynski convergence animation
+2025-06-27 11:57:35,317 - __main__ - INFO - ✓ Jarzynski analysis completed in 46.21s
+2025-06-27 11:57:35,317 - __main__ - INFO - Generated 3 plots
+2025-06-27 11:57:35,317 - __main__ - INFO - ============================================================
+2025-06-27 11:57:35,317 - __main__ - INFO - RUNNING EXACT ℏ_EFF ANALYSIS
+2025-06-27 11:57:35,317 - __main__ - INFO - ============================================================
+2025-06-27 11:57:35,317 - plot_exact_hbar_analysis - INFO - Generating comprehensive exact ℏ_eff analysis report...
+2025-06-27 11:57:35,444 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:57:35,444 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:57:35,444 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:57:35,444 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_classical_limit_verification
+2025-06-27 11:57:35,445 - __main__ - ERROR - ✗ Exact ℏ_eff analysis failed: len() of unsized object
+2025-06-27 11:57:35,445 - __main__ - ERROR - Traceback (most recent call last):
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 477, in run_exact_hbar_analysis
+    report = visualizer.generate_comprehensive_report(save_report=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_exact_hbar_analysis.py", line 727, in generate_comprehensive_report
+    hbar_results = self.plot_hbar_eff_derivation(save_plots=save_report)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_exact_hbar_analysis.py", line 75, in plot_hbar_eff_derivation
+    data = optimize_for_large_data(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_fixes_common.py", line 290, in optimize_for_large_data
+    if isinstance(value, (list, np.ndarray)) and len(value) > 10000:
+                                                 ^^^^^^^^^^
+TypeError: len() of unsized object
+
+2025-06-27 11:57:35,445 - __main__ - INFO - Generating master report...
+2025-06-27 11:57:35,446 - __main__ - INFO - Analysis Summary:
+2025-06-27 11:57:35,446 - __main__ - INFO -   ✓ Successful analyses: 7/8
+2025-06-27 11:57:35,446 - __main__ - INFO -   📊 Total plots generated: 25
+2025-06-27 11:57:35,446 - __main__ - INFO -   ⏱️ Average analysis time: 82.34s
+2025-06-27 11:57:35,446 - __main__ - INFO -   📁 Output directory: quantum_mcts_visualizations
+2025-06-27 11:57:35,446 - __main__ - INFO - ================================================================================
+2025-06-27 11:57:35,446 - __main__ - INFO - 🎉 QUANTUM MCTS VISUALIZATION SUITE COMPLETED
+2025-06-27 11:57:35,446 - __main__ - INFO - Total execution time: 576.78 seconds
+2025-06-27 11:57:35,446 - __main__ - INFO - Master report saved to: quantum_mcts_visualizations/master_report.json
+2025-06-27 11:57:35,447 - __main__ - INFO - ================================================================================

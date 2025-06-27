@@ -1,24 +1,24 @@
 {
   "quantum_mcts_visualization_suite": {
-    "timestamp": 1750980784.1027665,
-    "total_execution_time": 585.2758083343506,
+    "timestamp": 1750993055.4459844,
+    "total_execution_time": 576.776260137558,
     "successful_analyses": 7,
     "total_analyses": 8,
     "success_rate": 0.875,
     "total_plots_generated": 25
   },
   "execution_times": {
-    "rg_flow_phase": 6.555535554885864,
-    "statistical_physics": 50.33076477050781,
-    "critical_phenomena": 95.24566078186035,
-    "decoherence_darwinism": 96.58779907226562,
-    "entropy_analysis": 94.39818620681763,
-    "thermodynamics": 195.09683847427368,
-    "jarzynski_equality": 46.64043188095093
+    "rg_flow_phase": 6.351908445358276,
+    "statistical_physics": 49.63805031776428,
+    "critical_phenomena": 91.79220080375671,
+    "decoherence_darwinism": 94.68020582199097,
+    "entropy_analysis": 94.31495928764343,
+    "thermodynamics": 193.35480523109436,
+    "jarzynski_equality": 46.212886810302734
   },
   "analysis_reports": {
     "rg_flow_phase": {
-      "timestamp": "2025-06-27T08:23:25.605367",
+      "timestamp": "2025-06-27T11:48:05.263592",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -58,7 +58,7 @@
       ]
     },
     "statistical_physics": {
-      "timestamp": "2025-06-27T08:23:32.118635",
+      "timestamp": "2025-06-27T11:48:11.562291",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -124,7 +124,7 @@
       ]
     },
     "critical_phenomena": {
-      "timestamp": "2025-06-27T08:24:20.730645",
+      "timestamp": "2025-06-27T11:48:59.675329",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -199,7 +199,7 @@
       ]
     },
     "decoherence_darwinism": {
-      "timestamp": "2025-06-27T08:25:56.289469",
+      "timestamp": "2025-06-27T11:50:31.616706",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -242,7 +242,7 @@
       ]
     },
     "entropy_analysis": {
-      "timestamp": "2025-06-27T08:27:34.350105",
+      "timestamp": "2025-06-27T11:52:07.904074",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -285,7 +285,7 @@
       ]
     },
     "thermodynamics": {
-      "timestamp": "2025-06-27T08:30:36.807878",
+      "timestamp": "2025-06-27T11:55:10.233067",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -328,7 +328,7 @@
       ]
     },
     "jarzynski_equality": {
-      "timestamp": "2025-06-27T08:32:21.909131",
+      "timestamp": "2025-06-27T11:56:53.660260",
       "mcts_data_summary": {
         "datasets_analyzed": 1746,
         "data_source": "authentic_mcts_tree_dynamics"
@@ -344,10 +344,10 @@
         "crooks_theorem_verified": true,
         "work_distribution_analyzed": true,
         "cumulant_analysis": {
-          "Mean": 2.1103592475729642,
-          "Variance": 0.48371003750262787,
-          "Skewness": 0.18034233615123235,
-          "Kurtosis": -1.1102452433099197
+          "Mean": 1.8728188334167128,
+          "Variance": 0.3995068046806064,
+          "Skewness": -0.036194743325076204,
+          "Kurtosis": -0.8605425233895758
         },
         "large_deviation_function": true,
         "fluctuation_dissipation_checked": true

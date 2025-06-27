@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-06-27T08:32:21.909131",
+  "timestamp": "2025-06-27T11:56:53.660260",
   "mcts_data_summary": {
     "datasets_analyzed": 1746,
     "data_source": "authentic_mcts_tree_dynamics"
@@ -15,10 +15,10 @@
     "crooks_theorem_verified": true,
     "work_distribution_analyzed": true,
     "cumulant_analysis": {
-      "Mean": 2.1103592475729642,
-      "Variance": 0.48371003750262787,
-      "Skewness": 0.18034233615123235,
-      "Kurtosis": -1.1102452433099197
+      "Mean": 1.8728188334167128,
+      "Variance": 0.3995068046806064,
+      "Skewness": -0.036194743325076204,
+      "Kurtosis": -0.8605425233895758
     },
     "large_deviation_function": true,
     "fluctuation_dissipation_checked": true
