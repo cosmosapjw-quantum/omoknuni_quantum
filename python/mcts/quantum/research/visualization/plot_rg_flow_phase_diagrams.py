@@ -775,8 +775,26 @@ class RGFlowPhaseVisualizer:
         if save_report:
             report_file = self.output_dir / 'rg_flow_analysis_report.json'
             import json
+            
+            # Convert numpy arrays to JSON-serializable format
+            def convert_numpy_to_json(obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, dict):
+                    return {key: convert_numpy_to_json(value) for key, value in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy_to_json(item) for item in obj]
+                else:
+                    return obj
+            
+            json_safe_report = convert_numpy_to_json(report)
+            
             with open(report_file, 'w') as f:
-                json.dump(report, f, indent=2)
+                json.dump(json_safe_report, f, indent=2)
             logger.info(f"Saved comprehensive report to {report_file}")
         
         logger.info("RG flow and phase diagram analysis complete!")

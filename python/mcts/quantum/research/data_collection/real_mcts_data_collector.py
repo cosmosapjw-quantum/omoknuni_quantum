@@ -25,6 +25,11 @@ import pickle
 import threading
 from datetime import datetime
 from tqdm import tqdm
+import multiprocessing as mp
+import queue
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import gc
+import signal
 
 class NumpyEncoder(json.JSONEncoder):
     """Custom JSON encoder for numpy types"""
@@ -151,6 +156,7 @@ class RealMCTSDataCollector:
         self.device = device
         self.verbose = verbose
         self.game_sessions: List[RealGameSession] = []
+        self._use_enhanced_representation = False  # Track if we need enhanced representation
         
         # Set logging level based on verbose flag
         if not verbose:
@@ -181,38 +187,46 @@ class RealMCTSDataCollector:
         elif self.evaluator_type == "resnet":
             try:
                 from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
-                # Use a lightweight ResNet evaluator
-                self.evaluator = ResNetEvaluator(device=self.device)
-                logger.info("Using ResNet evaluator")
+                # Use basic representation with 18 input channels (faster and current standard)
+                self.evaluator = ResNetEvaluator(device=self.device, input_channels=18)
+                logger.info("Using ResNet evaluator with basic representation (18 channels)")
+                # Use basic representation for 18 channels
+                self._use_enhanced_representation = False
             except Exception as e:
                 logger.warning(f"Failed to load ResNet evaluator: {e}")
                 logger.warning("Falling back to mock evaluator")
-                self.evaluator = MockEvaluator()
+                self.evaluator = MockEvaluator(game_type='gomoku', device=self.device)
+                self.evaluator_type = "mock"  # Update type to reflect fallback
         else:
             logger.warning(f"Unknown evaluator type: {self.evaluator_type}, using mock evaluator")
-            self.evaluator = MockEvaluator()
+            self.evaluator = MockEvaluator(game_type='gomoku', device=self.device)
         
-        # MCTS configuration optimized for data collection - CLASSICAL MODE
+        # MCTS configuration matching gomoku_classical.yaml self-play settings
         self.mcts_config = MCTSConfig(
-            num_simulations=800,  # Reasonable number for data collection
-            c_puct=1.414,
-            temperature=1.0,
-            dirichlet_alpha=0.3,
-            dirichlet_epsilon=0.25,
+            num_simulations=500,  # Match training config default (overridden by command line)
+            c_puct=1.4,  # Match training config
+            temperature=1.5,  # Match training config
+            dirichlet_alpha=0.2,  # Keep positive value to avoid numpy error
+            dirichlet_epsilon=0.0,  # Zero epsilon to disable noise application
             device=self.device,
             game_type=GPUGameType.GOMOKU,
             board_size=15,
             # QUANTUM FEATURES DISABLED for pure classical MCTS data
             enable_quantum=False,
-            # Wave parallelization settings - appropriate for performance
+            # Wave parallelization settings - match training config
             wave_size=3072,
             min_wave_size=3072,
             max_wave_size=3072,
-            # Memory settings  
-            max_tree_nodes=50000,
-            use_mixed_precision=False,  # Simpler for data collection
-            # Enable debug logging to diagnose tree expansion issues
-            enable_debug_logging=True,
+            adaptive_wave_sizing=False,  # Match training config
+            # Memory settings - match training config
+            max_tree_nodes=200000,  # Match training config
+            use_mixed_precision=True,  # Match training config
+            use_cuda_graphs=True,  # Match training config
+            use_tensor_cores=True,  # Match training config
+            # Virtual loss
+            virtual_loss=0.5,  # Match training config
+            # Disable debug logging for performance
+            enable_debug_logging=False,
         )
         
         # Create MCTS instance
@@ -500,12 +514,26 @@ class RealMCTSDataCollector:
     def run_data_collection_session(self, n_games: int = 10,
                                   game_type: str = "gomoku",
                                   board_size: int = 15,
-                                  snapshot_frequency: int = 5) -> Dict[str, Any]:
-        """Run a complete real MCTS data collection session"""
+                                  snapshot_frequency: int = 5,
+                                  num_workers: int = 1) -> Dict[str, Any]:
+        """Run a complete real MCTS data collection session with optional parallelization"""
         
         print(f"🎯 Starting MCTS data collection: {n_games} games")  # Use print instead of logger
         self.collection_metadata['collection_start'] = time.time()
         
+        if num_workers > 1:
+            # Use parallel data collection
+            self._run_parallel_data_collection(n_games, game_type, board_size, 
+                                              snapshot_frequency, num_workers)
+            return self._finalize_collection_session(n_games)
+        else:
+            # Use sequential data collection (original behavior)
+            return self._run_sequential_data_collection(n_games, game_type, board_size, 
+                                                snapshot_frequency)
+    
+    def _run_sequential_data_collection(self, n_games: int, game_type: str, 
+                                       board_size: int, snapshot_frequency: int):
+        """Run sequential data collection (original behavior)"""
         # Use tqdm for progress tracking
         for game_idx in tqdm(range(n_games), desc="Collecting MCTS data", unit="games"):
             
@@ -523,6 +551,238 @@ class RealMCTSDataCollector:
                 logger.error(f"Full traceback:\n{traceback.format_exc()}")
                 continue
         
+        # Generate and return summary
+        return self._finalize_collection_session(n_games)
+    
+    def _run_parallel_data_collection(self, n_games: int, game_type: str, 
+                                     board_size: int, snapshot_frequency: int, 
+                                     num_workers: int):
+        """Run parallel data collection using the same architecture as training pipeline"""
+        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
+        import resource
+        
+        logger.info(f"Starting parallel data collection with {num_workers} workers")
+        
+        # Check system limits
+        try:
+            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+            logger.info(f"System file descriptor limits: soft={soft_limit}, hard={hard_limit}")
+            if soft_limit < 4096:
+                logger.warning(f"Low file descriptor limit ({soft_limit}). Consider increasing with 'ulimit -n 4096'")
+        except:
+            pass
+        
+        # Set up multiprocessing start method
+        try:
+            mp.set_start_method('spawn')
+        except RuntimeError:
+            # Already set, that's fine
+            pass
+        
+        # Create GPU evaluator service in main process
+        # Need to provide the actual model/evaluator to the service
+        if self.evaluator_type == "resnet":
+            if hasattr(self.evaluator, 'model'):
+                model = self.evaluator.model
+                logger.info("Using ResNet model for GPU evaluator service")
+            else:
+                logger.error("ResNet evaluator has no model attribute! Falling back to mock.")
+                # Create a proper ResNet model as fallback
+                from mcts.neural_networks.resnet_model import create_resnet_for_game
+                model = create_resnet_for_game('gomoku', input_channels=18)
+                logger.info("Created fallback ResNet model for GPU evaluator service")
+        else:
+            # For mock evaluator, we need to use the evaluator itself, not a dummy model
+            logger.info("Using mock evaluator for GPU evaluator service")
+            # The GPU service will handle mock evaluation internally
+            from mcts.neural_networks.resnet_model import create_resnet_for_game
+            model = create_resnet_for_game('gomoku', input_channels=18)
+            logger.info("Created ResNet model for mock evaluation mode")
+        
+        gpu_service = GPUEvaluatorService(
+            model=model,
+            device=self.device,
+            batch_size=64,  # Reduced batch size to avoid queue overflow
+            batch_timeout=0.01  # Reduced timeout for faster response
+        )
+        
+        # Start the service
+        gpu_service.start()
+        logger.info(f"GPU evaluation service started on device: {self.device}")
+        
+        try:
+            # Get the request queue
+            request_queue = gpu_service.get_request_queue()
+            
+            # Use hardware-aware resource allocation like self-play module
+            from mcts.utils.config_system import AlphaZeroConfig
+            temp_config = AlphaZeroConfig()
+            temp_config.adjust_for_hardware()
+            allocation = getattr(temp_config, '_resource_allocation', None)
+            
+            if allocation is None:
+                # Fallback: calculate allocation if not already done
+                hardware = temp_config.detect_hardware()
+                allocation = temp_config.calculate_resource_allocation(hardware, num_workers)
+                temp_config._resource_allocation = allocation
+            
+            # Use hardware-aware concurrent worker limit
+            max_concurrent = allocation['max_concurrent_workers']
+            games_per_batch = max_concurrent
+            
+            logger.info(f"Hardware-aware allocation: max_concurrent={max_concurrent}, batch_size={games_per_batch}")
+            
+            logger.info(f"Processing games in batches of {games_per_batch}")
+            
+            # Track active processes globally
+            active_processes = {}
+            completed_games = 0
+            
+            # Process games in smaller chunks if we have many games
+            # Use chunk size based on max_concurrent to avoid fd exhaustion
+            chunk_size = max(50, max_concurrent * 10)  # Adaptive chunk size
+            
+            for chunk_start in range(0, n_games, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, n_games)
+                logger.info(f"Processing games {chunk_start} to {chunk_end}")
+                
+                # Process games in batches within this chunk
+                with tqdm(total=chunk_end - chunk_start, desc=f"Collecting MCTS data (chunk {chunk_start//chunk_size + 1})", unit="games") as pbar:
+                    
+                    for batch_start in range(chunk_start, chunk_end, games_per_batch):
+                        batch_end = min(batch_start + games_per_batch, chunk_end)
+                        batch_processes = []
+                        batch_queues = []
+                    
+                        # Start processes for this batch
+                        for game_idx in range(batch_start, batch_end):
+                            # Create result queue for this game
+                            result_queue = mp.Queue()
+                            batch_queues.append(result_queue)
+                            
+                            # Create worker-specific response queue
+                            response_queue = gpu_service.create_worker_queue(game_idx)
+                            
+                            # Create process
+                            p = mp.Process(
+                                target=_play_game_worker_data_collection,
+                                args=(self.mcts_config, request_queue, response_queue,
+                                      game_type, board_size, snapshot_frequency,
+                                      game_idx, result_queue)
+                            )
+                            p.start()
+                            batch_processes.append(p)
+                            logger.debug(f"Started data collection process for game {game_idx}")
+                
+                        # Collect results from this batch with better timeout handling
+                        logger.debug(f"Collecting results from batch of {len(batch_processes)} games...")
+                        
+                        # Track which processes are still running
+                        running_processes = list(range(len(batch_processes)))
+                        batch_timeout = time.time() + 180  # 3 minute total batch timeout
+                        
+                        while running_processes and time.time() < batch_timeout:
+                            for idx in running_processes[:]:  # Copy list to modify during iteration
+                                p = batch_processes[idx]
+                                q = batch_queues[idx]
+                                game_idx = batch_start + idx
+                                
+                                try:
+                                    # Try to get result without blocking
+                                    game_session = q.get_nowait()
+                                    
+                                    if game_session:
+                                        self.game_sessions.append(game_session)
+                                        logger.debug(f"Collected data from game {game_idx}")
+                                        completed_games += 1
+                                    else:
+                                        logger.warning(f"Game {game_idx} returned empty data")
+                                    
+                                    # Remove from running list
+                                    running_processes.remove(idx)
+                                    pbar.update(1)
+                                    
+                                except queue.Empty:
+                                    # Check if process is still alive
+                                    if not p.is_alive():
+                                        logger.error(f"Process for game {game_idx} died unexpectedly")
+                                        running_processes.remove(idx)
+                                        pbar.update(1)
+                                    # Otherwise, continue waiting
+                                
+                                except Exception as e:
+                                    logger.error(f"Failed to get result from game {game_idx}: {e}")
+                                    running_processes.remove(idx)
+                                    pbar.update(1)
+                            
+                            # Small sleep to avoid busy waiting
+                            if running_processes:
+                                time.sleep(0.1)
+                        
+                        # Clean up any remaining processes
+                        for idx in running_processes:
+                            p = batch_processes[idx]
+                            game_idx = batch_start + idx
+                            logger.error(f"Timeout waiting for result from game {game_idx}")
+                            
+                            # Terminate stuck process
+                            if p.is_alive():
+                                logger.warning(f"Terminating stuck process for game {game_idx}")
+                                p.terminate()
+                                p.join(timeout=2)
+                                
+                                if p.is_alive():  # Still alive after join
+                                    logger.error(f"Force killing stuck process {game_idx}")
+                                    p.kill()
+                                    p.join(timeout=1)
+                            
+                            pbar.update(1)
+                        
+                        # Clean up all resources for this batch (simplified like self-play)
+                        for idx, p in enumerate(batch_processes):
+                            game_idx = batch_start + idx
+                            
+                            # Aggressive cleanup like self-play module
+                            if p.is_alive():
+                                p.terminate()
+                                p.join(timeout=2)
+                                if p.is_alive():
+                                    logger.error(f"Force killing stuck process {game_idx}")
+                                    p.kill()
+                            
+                            # Clean up worker queue
+                            if hasattr(gpu_service, 'cleanup_worker_queue'):
+                                gpu_service.cleanup_worker_queue(game_idx)
+                        
+                        # Clear lists and force garbage collection
+                        batch_processes.clear()
+                        batch_queues.clear()
+                
+                # Between chunks, do a more thorough cleanup
+                logger.info(f"Completed chunk, cleaning up resources...")
+                time.sleep(1)  # Brief pause between chunks
+                gc.collect()
+                        
+        finally:
+            # Stop the GPU service and clean up
+            logger.info("Stopping GPU evaluation service...")
+            gpu_service.stop()
+            
+            # Give some time for cleanup
+            time.sleep(1)
+            
+            # Clear any remaining messages in queues
+            try:
+                while not request_queue.empty():
+                    request_queue.get_nowait()
+            except:
+                pass
+            
+            logger.info("GPU evaluation service stopped")
+            logger.info(f"Data collection completed: {completed_games}/{n_games} games successfully collected")
+    
+    def _finalize_collection_session(self, n_games: int) -> Dict[str, Any]:
+        """Finalize the collection session and generate summary"""
         self.collection_metadata['collection_end'] = time.time()
         self.collection_metadata['total_games'] = len(self.game_sessions)
         self.collection_metadata['total_tree_snapshots'] = sum(
@@ -557,7 +817,7 @@ class RealMCTSDataCollector:
             }
         }
         
-        print(f"✅ MCTS data collection completed: {summary}")  # Use print instead of logger
+        logger.info(f"MCTS data collection completed: {summary['collection_summary']['games_completed']}/{n_games} games")
         return summary
     
     def export_data(self, output_path: str) -> str:
@@ -603,6 +863,363 @@ class RealMCTSDataCollector:
         logger.info(f"Export contains {len(tree_snapshots)} tree snapshots from {len(self.game_sessions)} games")
         
         return output_path
+
+
+def _play_game_worker_data_collection(mcts_config, request_queue, response_queue, 
+                                     game_type: str, board_size: int, 
+                                     snapshot_frequency: int, game_idx: int, 
+                                     result_queue) -> None:
+    """Worker function for parallel data collection using GPU evaluation service"""
+    # CRITICAL: Disable CUDA in workers to avoid multiprocessing issues
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
+    os.environ['CUDA_CACHE_DISABLE'] = '1'
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    
+    # Set up logging
+    import logging
+    logging.basicConfig(level=logging.ERROR)
+    logger = logging.getLogger(__name__)
+    
+    # Don't set up signal handlers - let the main process handle termination
+    # The signal handlers are causing premature exits
+    
+    try:
+        # Import modules after CUDA is disabled
+        import torch
+        
+        # Force disable CUDA in PyTorch to avoid device queries
+        torch.cuda.is_available = lambda: False
+        torch.cuda.device_count = lambda: 0
+        torch.cuda.get_device_name = lambda device=None: "CPU"
+        
+        import sys
+        from pathlib import Path
+        
+        # Add MCTS modules to path
+        mcts_root = Path(__file__).parent.parent.parent.parent
+        sys.path.insert(0, str(mcts_root))
+        
+        from mcts.core.mcts import MCTS
+        from mcts.neural_networks.mock_evaluator import MockEvaluator
+        from mcts.utils.gpu_evaluator_service import RemoteEvaluator
+        import alphazero_py
+        import numpy as np
+        import time
+        from dataclasses import asdict
+        
+        logger.debug(f"[DATA-WORKER {game_idx}] Worker started - using CPU only")
+        
+        # Create remote evaluator that sends requests to GPU service
+        remote_evaluator = RemoteEvaluator(request_queue, response_queue, 225, worker_id=game_idx)
+        
+        # Set a timeout for the entire game to prevent hanging
+        game_start_time = time.time()
+        game_timeout = 180  # 3 minutes per game max
+        
+        # Wrap evaluator to return torch tensors
+        class TensorEvaluator:
+            def __init__(self, evaluator, device):
+                self.evaluator = evaluator
+                self.device = device
+                self._return_torch_tensors = True
+            
+            def evaluate(self, state, legal_mask=None, temperature=1.0):
+                policy, value = self.evaluator.evaluate(state, legal_mask, temperature)
+                policy_tensor = torch.from_numpy(policy).float().to(self.device)
+                value_tensor = torch.tensor(value, dtype=torch.float32, device=self.device)
+                return policy_tensor, value_tensor
+            
+            def evaluate_batch(self, states, legal_masks=None, temperature=1.0):
+                if isinstance(states, torch.Tensor):
+                    states = states.cpu().numpy()
+                if legal_masks is not None and isinstance(legal_masks, torch.Tensor):
+                    legal_masks = legal_masks.cpu().numpy()
+                
+                policies, values = self.evaluator.evaluate_batch(states, legal_masks, temperature)
+                policies_tensor = torch.from_numpy(policies).float().to(self.device)
+                values_tensor = torch.from_numpy(values).float().to(self.device)
+                return policies_tensor, values_tensor
+        
+        # Workers must use CPU
+        tensor_device = 'cpu'
+        evaluator = TensorEvaluator(remote_evaluator, tensor_device)
+        
+        # Create CPU-only MCTS config (make a copy to avoid modifying original)
+        from copy import deepcopy
+        worker_config = deepcopy(mcts_config)
+        worker_config.device = 'cpu'
+        worker_config.use_mixed_precision = False
+        worker_config.use_cuda_graphs = False
+        worker_config.use_tensor_cores = False
+        worker_config.max_tree_nodes = min(50000, worker_config.max_tree_nodes)
+        # Disable debug logging to avoid CUDA device queries
+        worker_config.enable_debug_logging = False
+        
+        # Create MCTS
+        mcts = MCTS(worker_config, evaluator)
+        
+        # Create a simplified data collector for this worker
+        worker_collector = _create_worker_data_collector(mcts, worker_config)
+        
+        # Play game and collect data
+        game_session = worker_collector.play_real_game_with_data_collection(
+            game_type=game_type,
+            board_size=board_size,
+            snapshot_frequency=snapshot_frequency,
+            game_idx=game_idx,
+            game_timeout=game_timeout
+        )
+        
+        logger.debug(f"[DATA-WORKER {game_idx}] Game completed with {game_session.move_count} moves")
+        
+        # Return result
+        result_queue.put(game_session)
+        
+        # Clean exit
+        logger.debug(f"[DATA-WORKER {game_idx}] Worker exiting cleanly")
+        
+    except Exception as e:
+        logger.error(f"[DATA-WORKER {game_idx}] Failed with error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        result_queue.put(None)  # Return None on error
+    finally:
+        # Ensure we always put something in the queue
+        try:
+            # Check if we already put something
+            if result_queue.empty():
+                result_queue.put(None)
+        except:
+            pass
+
+
+def _create_worker_data_collector(mcts, mcts_config):
+    """Create a simplified data collector for worker processes"""
+    
+    class WorkerDataCollector:
+        def __init__(self, mcts, mcts_config):
+            self.mcts = mcts
+            self.mcts_config = mcts_config
+        
+        def play_real_game_with_data_collection(self, game_type: str = "gomoku",
+                                               board_size: int = 15,
+                                               snapshot_frequency: int = 5,
+                                               game_idx: int = 0,
+                                               game_timeout: int = 180) -> 'RealGameSession':
+            """Simplified game play for worker processes"""
+            
+            game_id = f"{game_type}_{int(time.time())}_{game_idx}"
+            start_time = time.time()
+            game_start_time = start_time  # Track for timeout
+            
+            # Initialize game state
+            if game_type.lower() == "gomoku":
+                state = alphazero_py.GomokuState()
+            else:
+                raise ValueError(f"Unsupported game type: {game_type}")
+            
+            # Initialize simplified game session
+            game_session = RealGameSession(
+                game_id=game_id,
+                start_time=start_time,
+                end_time=0.0,
+                game_type=game_type,
+                board_size=board_size,
+                winner=-1,
+                final_score=0.0,
+                move_count=0,
+                mcts_config=asdict(self.mcts_config),
+                tree_snapshots=[],
+                moves=[],
+                total_simulations=0,
+                avg_simulations_per_move=0.0,
+                total_search_time=0.0,
+                peak_sims_per_second=0.0,
+                game_phases=[],
+                complexity_evolution=[],
+                decision_confidence=[]
+            )
+            
+            move_count = 0
+            total_search_time = 0.0
+            
+            # Play game until terminal
+            while not state.is_terminal() and move_count < 500:
+                # Check timeout
+                if time.time() - game_start_time > game_timeout:
+                    logger.error(f"[DATA-WORKER {game_idx}] Game timeout after {move_count} moves")
+                    break
+                
+                move_count += 1
+                current_player = state.get_current_player()
+                
+                # Determine temperature
+                if move_count <= 30:
+                    temperature = 1.0
+                else:
+                    temperature = 0.1
+                
+                # Reset tree for new position
+                self.mcts.reset_tree()
+                
+                # Run MCTS search
+                search_start = time.perf_counter()
+                policy = self.mcts.search(state, self.mcts_config.num_simulations)
+                search_time = time.perf_counter() - search_start
+                
+                total_search_time += search_time
+                game_session.total_simulations += self.mcts_config.num_simulations
+                
+                # Update peak performance
+                sims_per_sec = self.mcts_config.num_simulations / search_time
+                game_session.peak_sims_per_second = max(game_session.peak_sims_per_second, sims_per_sec)
+                
+                # Extract tree snapshot (simplified)
+                if move_count % snapshot_frequency == 0 or move_count <= 10:
+                    snapshot = self._extract_simple_tree_snapshot(move_count, current_player, search_time, policy)
+                    game_session.tree_snapshots.append(snapshot)
+                
+                # Normalize policy
+                policy_sum = np.sum(policy)
+                if policy_sum > 0:
+                    policy = policy / policy_sum
+                else:
+                    policy = np.ones(len(policy)) / len(policy)
+                
+                # Select action
+                if temperature > 0.5:
+                    action = np.random.choice(len(policy), p=policy)
+                else:
+                    action = np.argmax(policy)
+                
+                # Record move
+                move_data = {
+                    'move_number': move_count,
+                    'player': current_player,
+                    'action': action,
+                    'policy': policy.tolist(),
+                    'search_time': search_time,
+                    'temperature': temperature,
+                    'tree_size': self.mcts.tree.num_nodes,
+                    'confidence': float(np.max(policy))
+                }
+                game_session.moves.append(move_data)
+                game_session.decision_confidence.append(float(np.max(policy)))
+                
+                # Calculate game complexity
+                policy_entropy = -np.sum(policy * np.log(policy + 1e-10))
+                game_session.complexity_evolution.append(float(policy_entropy))
+                
+                # Determine game phase
+                if move_count <= 15:
+                    phase = "opening"
+                elif move_count <= 30:
+                    phase = "midgame"
+                else:
+                    phase = "endgame"
+                game_session.game_phases.append(phase)
+                
+                # Apply action
+                state.make_move(action)
+            
+            # Game finished
+            game_session.end_time = time.time()
+            game_session.move_count = move_count
+            game_session.avg_simulations_per_move = game_session.total_simulations / max(move_count, 1)
+            game_session.total_search_time = total_search_time
+            
+            # Determine winner
+            if state.is_terminal():
+                result = state.get_game_result()
+                if result == alphazero_py.GameResult.WIN_PLAYER1:
+                    game_session.winner = 0
+                    game_session.final_score = 1.0
+                elif result == alphazero_py.GameResult.WIN_PLAYER2:
+                    game_session.winner = 1
+                    game_session.final_score = 1.0
+                elif result == alphazero_py.GameResult.DRAW:
+                    game_session.winner = -1
+                    game_session.final_score = 0.5
+                else:
+                    game_session.winner = -1
+                    game_session.final_score = 0.0
+            
+            return game_session
+        
+        def _extract_simple_tree_snapshot(self, move_number: int, player: int, 
+                                         search_time: float, policy: np.ndarray) -> 'RealTreeSnapshot':
+            """Simplified tree snapshot extraction for workers"""
+            
+            timestamp = time.time()
+            tree = self.mcts.tree
+            
+            # Basic tree statistics
+            total_nodes = tree.num_nodes
+            root_visits = tree.visit_counts[0].item() if total_nodes > 0 else 0
+            root_value = tree.value_sums[0].item() / max(root_visits, 1) if root_visits > 0 else 0.0
+            
+            # Limited data extraction for performance
+            extract_limit = min(total_nodes, 100)  # Much smaller limit for workers
+            
+            visit_counts = []
+            value_sums = []
+            q_values = []
+            node_priors = []
+            parent_indices = []
+            parent_actions = []
+            node_phases = []
+            
+            if total_nodes > 0:
+                visit_counts = [int(x) for x in tree.visit_counts[:extract_limit].cpu().numpy()]
+                value_sums = [float(x) for x in tree.value_sums[:extract_limit].cpu().numpy()]
+                node_priors = [float(x) for x in tree.node_priors[:extract_limit].cpu().numpy()]
+                parent_indices = [int(x) for x in tree.parent_indices[:extract_limit].cpu().numpy()]
+                parent_actions = [int(x) for x in tree.parent_actions[:extract_limit].cpu().numpy()]
+                node_phases = [float(x) for x in tree.phases[:extract_limit].cpu().numpy()]
+                
+                # Calculate Q-values
+                q_values = []
+                for i in range(extract_limit):
+                    visits = visit_counts[i]
+                    if visits > 0:
+                        q_val = value_sums[i] / visits
+                    else:
+                        q_val = 0.0
+                    q_values.append(q_val)
+            
+            # Search performance
+            sims_per_second = self.mcts_config.num_simulations / max(search_time, 0.001)
+            
+            return RealTreeSnapshot(
+                timestamp=timestamp,
+                move_number=move_number,
+                player=player,
+                total_nodes=total_nodes,
+                total_visits=sum(visit_counts) if visit_counts else 0,
+                tree_depth=10,  # Simplified for workers
+                root_visits=root_visits,
+                root_value=root_value,
+                visit_counts=visit_counts,
+                value_sums=value_sums,
+                q_values=q_values,
+                node_priors=node_priors,
+                parent_indices=parent_indices,
+                parent_actions=parent_actions,
+                node_phases=node_phases,
+                branching_factor=2.0,  # Simplified for workers
+                max_depth=10,  # Simplified for workers
+                leaf_nodes=[],  # Simplified for workers
+                policy_distribution=policy.tolist(),
+                search_time=search_time,
+                simulations_per_second=sims_per_second,
+                quantum_mode_active=False,
+                quantum_corrections=[],
+                decoherence_detected=False
+            )
+    
+    return WorkerDataCollector(mcts, mcts_config)
 
 
 def _precompile_cuda_kernels(device: str):
@@ -673,6 +1290,7 @@ def main():
     parser.add_argument('--evaluator', type=str, default='mock', help='Evaluator type (mock/resnet)')
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu/cuda)')
     parser.add_argument('--simulations', type=int, default=800, help='MCTS simulations per move')
+    parser.add_argument('--workers', type=int, default=1, help='Number of parallel workers (1=sequential)')
     
     args = parser.parse_args()
     
@@ -708,7 +1326,8 @@ def main():
         n_games=args.n_games,
         game_type=args.game_type,
         board_size=args.board_size,
-        snapshot_frequency=args.snapshot_freq
+        snapshot_frequency=args.snapshot_freq,
+        num_workers=args.workers
     )
     
     # Export data

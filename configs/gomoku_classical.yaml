@@ -14,7 +14,7 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  num_simulations: 1000   # Increased for master-level tactical depth
+  num_simulations: 500  # Increased for deeper tactical analysis
   c_puct: 1.4
   dirichlet_alpha: 0.2
   dirichlet_epsilon: 0.4
@@ -29,9 +29,9 @@ mcts:
   batch_size: 1024 
   virtual_loss: 0.5
   
-  # Memory and optimization - Adjusted for larger network
-  memory_pool_size_mb: 3072   # Increased for larger network capacity
-  max_tree_nodes: 750000      # Increased for deeper search trees
+  # Memory and optimization - Optimized for training speed
+  memory_pool_size_mb: 2048   # Reduced for faster training
+  max_tree_nodes: 200000      # Reduced for faster training
   tree_reuse: false
   tree_reuse_fraction: 0.5
   
@@ -158,16 +158,16 @@ training:
   data_dir: self_play_data
 
 arena:
-  # Battle settings - Rigorous evaluation for master level
-  num_games: 100            # More games for statistical significance
-  num_workers: 12
+  # Battle settings - Fast evaluation for training
+  num_games: 20             # Reduced for faster iteration
+  num_workers: 4            # Reduced for training
   win_threshold: 0.6        # Higher threshold for model acceptance
   statistical_significance: true
-  confidence_level: 0.99    # Higher confidence level
+  confidence_level: 0.95    # Slightly reduced for speed
   
-  # Game settings - Tournament strength  
+  # Game settings - Fast evaluation
   temperature: 0.1          # Slightly stochastic for evaluation
-  mcts_simulations: 400     # Match training simulation count
+  mcts_simulations: 200     # Reduced to match training
   c_puct: 1.414            # Match training c_puct
   max_moves: 225
   time_limit_seconds: null

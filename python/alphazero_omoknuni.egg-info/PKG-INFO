@@ -1,0 +1,48 @@
+Metadata-Version: 2.1
+Name: alphazero-omoknuni
+Version: 1.0.0
+Summary: High-Performance AlphaZero with Quantum-Enhanced MCTS
+Home-page: https://github.com/your-org/omoknuni_quantum
+Author: AlphaZero Omoknuni Team
+Author-email: support@omoknuni.ai
+Keywords: alphazero mcts reinforcement-learning quantum chess go gomoku
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: C++
+Classifier: Programming Language :: CUDA
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Games/Entertainment :: Board Games
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=1.12.0
+Requires-Dist: torchvision>=0.13.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: tqdm>=4.64.0
+Requires-Dist: tensorboard>=2.9.0
+Requires-Dist: scipy>=1.8.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: pytest>=7.0.0
+Requires-Dist: black>=22.0.0
+Requires-Dist: flake8>=4.0.0
+Requires-Dist: psutil>=5.9.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Requires-Dist: mypy>=0.950; extra == "dev"
+Requires-Dist: pre-commit>=2.19.0; extra == "dev"
+Provides-Extra: gpu
+Requires-Dist: cupy-cuda11x>=10.0.0; extra == "gpu"
+Provides-Extra: analysis
+Requires-Dist: jupyter>=1.0.0; extra == "analysis"
+Requires-Dist: seaborn>=0.11.0; extra == "analysis"
+Requires-Dist: plotly>=5.0.0; extra == "analysis"

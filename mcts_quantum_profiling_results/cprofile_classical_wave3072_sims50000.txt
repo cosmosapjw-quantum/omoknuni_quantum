@@ -1,0 +1,62 @@
+cProfile Report - Quantum Level: classical
+Configuration: wave_size=3072, simulations=50000
+Performance: 442,882 sims/s
+================================================================================
+         116153 function calls (89565 primitive calls) in 0.111 seconds
+
+   Ordered by: cumulative time
+   List reduced from 201 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      2/1    0.000    0.000    0.111    0.111 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:421(search)
+       68    0.001    0.000    0.110    0.002 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:394(_profile_phase)
+       17    0.000    0.000    0.110    0.006 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:637(_run_search_wave_vectorized)
+        1    0.000    0.000    0.104    0.104 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:461(_search_optimized)
+       17    0.000    0.000    0.053    0.003 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:369(instrumented_select)
+       17    0.010    0.001    0.041    0.002 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:661(_select_batch_vectorized)
+      166    0.002    0.000    0.027    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/memory.py:225(memory_stats)
+       17    0.000    0.000    0.025    0.001 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:375(instrumented_evaluate)
+      146    0.001    0.000    0.024    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/memory.py:523(memory_allocated)
+       17    0.000    0.000    0.022    0.001 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:378(instrumented_backup)
+26726/166    0.015    0.000    0.019    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/memory.py:314(_recurse_add_to_result)
+       17    0.004    0.000    0.018    0.001 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:1029(_evaluate_batch_vectorized)
+       17    0.007    0.000    0.012    0.001 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:1098(_backup_batch_vectorized)
+       17    0.008    0.000    0.012    0.001 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/gpu_game_states.py:391(get_nn_features)
+       17    0.000    0.000    0.011    0.001 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:372(instrumented_expand)
+       34    0.008    0.000    0.010    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/csr_tree.py:1162(batch_action_to_child)
+       34    0.000    0.000    0.009    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/csr_tree.py:964(batch_select_ucb_optimized)
+       34    0.004    0.000    0.008    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/unified_kernels.py:208(batch_ucb_selection)
+       34    0.007    0.000    0.007    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/csr_tree.py:920(batch_get_children)
+      519    0.001    0.000    0.005    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/_utils.py:9(_get_device_index)
+      138    0.000    0.000    0.005    0.000 {built-in method builtins.next}
+      138    0.000    0.000    0.005    0.000 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:196(timer)
+      479    0.000    0.000    0.004    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/_utils.py:812(_get_device_index)
+      205    0.000    0.000    0.004    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:1030(synchronize)
+      479    0.000    0.000    0.003    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/_utils.py:786(_get_current_device_index)
+       20    0.000    0.000    0.003    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/memory.py:561(memory_reserved)
+      153    0.003    0.000    0.003    0.000 {built-in method torch.where}
+      479    0.000    0.000    0.003    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/_utils.py:770(_get_device_attr)
+      166    0.000    0.000    0.003    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/memory.py:330(memory_stats_as_nested_dict)
+       69    0.000    0.000    0.003    0.000 /usr/lib/python3.12/contextlib.py:141(__exit__)
+       69    0.000    0.000    0.003    0.000 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:178(end_timer)
+      138    0.000    0.000    0.003    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/streams.py:179(record)
+      205    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:490(__init__)
+       17    0.002    0.000    0.002    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/core/mcts.py:873(_expand_batch_vectorized)
+    30768    0.002    0.000    0.002    0.000 {built-in method builtins.isinstance}
+      479    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/_utils.py:753(_get_available_device_type)
+      496    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:161(is_available)
+      138    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:1056(current_stream)
+    30/20    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/psutil-7.0.0-py3.12-linux-x86_64.egg/psutil/_pslinux.py:1642(wrapper)
+      166    0.002    0.000    0.002    0.000 {method 'sort' of 'list' objects}
+       69    0.000    0.000    0.002    0.000 /usr/lib/python3.12/contextlib.py:132(__enter__)
+    20399    0.002    0.000    0.002    0.000 {method 'append' of 'list' objects}
+       10    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/psutil-7.0.0-py3.12-linux-x86_64.egg/psutil/__init__.py:1009(cpu_percent)
+      221    0.002    0.000    0.002    0.000 {method 'any' of 'torch._C.TensorBase' objects}
+       20    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/psutil-7.0.0-py3.12-linux-x86_64.egg/psutil/_common.py:452(wrapper)
+     6870    0.001    0.000    0.002    0.000 {built-in method builtins.len}
+       19    0.002    0.000    0.002    0.000 /home/cosmosapjw/omoknuni_quantum/python/mcts/gpu/csr_tree.py:814(get_children)
+       69    0.000    0.000    0.002    0.000 /home/cosmosapjw/omoknuni_quantum/python/benchmark_mcts_profiler.py:169(start_timer)
+      166    0.002    0.000    0.002    0.000 {built-in method torch._C._cuda_memoryStats}
+      496    0.000    0.000    0.002    0.000 /home/cosmosapjw/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:157(_nvml_based_avail)
+
+

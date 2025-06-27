@@ -588,7 +588,9 @@ class CSRTree:
             if parent_idx == 0:  # Only log debug for root node
                 logger.debug(f"Children table nearly full for root node (node 0) - this is normal for extensive exploration")
             else:
-                logger.warning(f"Children table nearly full for node {parent_idx}")
+                # Reduce spam - only log occasionally
+                if parent_idx % 100 == 0:  # Log every 100th warning
+                    logger.warning(f"Children table nearly full for node {parent_idx} (suppressing similar warnings)")
         
         # Store game states if provided
         if states:

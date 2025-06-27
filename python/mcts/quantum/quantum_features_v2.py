@@ -291,7 +291,8 @@ class QuantumMCTSV2:
         self._init_phase_configs()
         
         logger.debug(f"Initialized QuantumMCTSV2 on {self.device}")
-        logger.debug(f"Auto-computed parameters: c_puct={self.config.c_puct:.3f}, "
+        c_puct_str = f"{self.config.c_puct:.3f}" if self.config.c_puct is not None else "None"
+        logger.debug(f"Auto-computed parameters: c_puct={c_puct_str}, "
                     f"num_hashes={self.config.num_hash_functions}")
     
     def _auto_compute_parameters(self):

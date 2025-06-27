@@ -265,11 +265,7 @@ class ELOTracker:
         if total_games == 0:
             return
         
-        # Get current ratings (use initial_rating if not found)
-        r1 = self.ratings.get(player1, self.initial_rating)
-        r2 = self.ratings.get(player2, self.initial_rating)
-        
-        # Initialize players if new
+        # Initialize players if new (MUST be done first)
         if player1 not in self.ratings:
             self.ratings[player1] = self.initial_rating
             self.rating_uncertainty[player1] = 350.0  # Initial uncertainty (Glicko-like)
@@ -279,6 +275,10 @@ class ELOTracker:
             self.ratings[player2] = self.initial_rating
             self.rating_uncertainty[player2] = 350.0
             self.game_counts[player2] = 0
+        
+        # Get current ratings
+        r1 = self.ratings[player1]
+        r2 = self.ratings[player2]
         
         # Get adaptive K-factors for both players
         k1 = self.get_adaptive_k_factor(player1, player2)
@@ -309,7 +309,7 @@ class ELOTracker:
         delta1 = k1 * (s1 - e1)
         delta2 = k2 * (s2 - e2)
         
-        # Update game counts
+        # Update game counts (only for non-anchor players)
         if player1 not in self.anchor_players:
             self.game_counts[player1] += total_games
         if player2 not in self.anchor_players:

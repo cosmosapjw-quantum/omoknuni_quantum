@@ -76,6 +76,18 @@ if USE_CUDA:
             }
         )
     )
+    
+    # Quantum v5.0 CUDA kernels extension
+    ext_modules.append(
+        CUDAExtension(
+            name='mcts.gpu.quantum_v5_cuda_kernels',
+            sources=['mcts/gpu/quantum_v5_cuda_kernels.cu'],
+            extra_compile_args={
+                'cxx': ['-O3'],
+                'nvcc': ['-O3', '--use_fast_math'] + gencode_flags
+            }
+        )
+    )
 
 setup(
     name="omoknuni-mcts",

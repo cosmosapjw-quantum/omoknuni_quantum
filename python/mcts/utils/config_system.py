@@ -543,13 +543,14 @@ class AlphaZeroConfig:
     def calculate_resource_allocation(self, hardware: Dict[str, Any], 
                                     target_workers: Optional[int] = None) -> Dict[str, Any]:
         """Calculate optimal resource allocation based on hardware"""
-        # Worker allocation
+        # Worker allocation - optimize for CPU utilization
         if target_workers is None:
             if hardware['gpu_available']:
+                # Use more workers to better utilize CPU while GPU handles NN
                 num_workers = min(
-                    hardware['cpu_cores_physical'],
-                    max(1, hardware['cpu_threads'] // 2),
-                    12
+                    hardware['cpu_cores_physical'],  # Physical cores
+                    hardware['cpu_threads'] - 2,      # Leave 2 threads for system
+                    16  # Reasonable upper limit
                 )
             else:
                 num_workers = min(hardware['cpu_cores_physical'] // 2, 4)
@@ -570,14 +571,15 @@ class AlphaZeroConfig:
             use_gpu_for_workers = False
             gpu_memory_fraction = 0.0
         
-        # RAM calculations
+        # RAM calculations - more efficient for CPU-based workers
         ram_reserved_gb = 4
         ram_available_gb = max(1, hardware['total_ram_gb'] - ram_reserved_gb)
-        ram_per_worker_gb = 1.5
+        ram_per_worker_gb = 0.5  # Reduced from 1.5GB since workers use CPU
         max_concurrent_by_ram = int(ram_available_gb / ram_per_worker_gb)
         
-        # Final limits - use CPU cores instead of hardcoded 8
-        cpu_cores_limit = hardware['cpu_cores_physical']
+        # Final limits - allow all workers to run concurrently for better throughput
+        # Workers use CPU for MCTS while GPU service handles neural network
+        cpu_cores_limit = hardware['cpu_threads'] - 2  # Leave 2 threads for system
         max_concurrent_workers = min(num_workers, max_concurrent_by_gpu, max_concurrent_by_ram, cpu_cores_limit)
         memory_per_worker_mb = min(2048, int(hardware['total_ram_gb'] * 1024 - 4096) // num_workers)
         

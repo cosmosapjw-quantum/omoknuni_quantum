@@ -178,7 +178,8 @@ torch::Tensor parallel_backup_cuda(
                 with_cuda=True,
                 build_directory=build_dir,
                 functions=['batched_ucb_selection_cuda', 'parallel_backup_cuda',
-                          'batched_ucb_selection_quantum_cuda', 'quantum_interference_cuda']
+                          'batched_ucb_selection_quantum_cuda', 'quantum_interference_cuda',
+                          'selective_quantum_v5_cuda', 'batch_quantum_v5_cuda']
             )
             
             # Cancel timeout if compilation succeeded

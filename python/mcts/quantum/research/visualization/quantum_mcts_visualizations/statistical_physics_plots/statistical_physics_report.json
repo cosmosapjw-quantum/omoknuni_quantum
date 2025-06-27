@@ -1,0 +1,66 @@
+{
+  "timestamp": "2025-06-27T11:48:11.562291",
+  "mcts_data_summary": {
+    "datasets_analyzed": 1746,
+    "data_source": "authentic_mcts_tree_dynamics"
+  },
+  "correlation_analysis": {
+    "system_sizes_analyzed": [
+      2,
+      5,
+      10
+    ],
+    "spatial_correlation_extracted": true,
+    "temporal_correlation_extracted": true,
+    "correlation_lengths": "computed_from_exponential_fits"
+  },
+  "finite_size_scaling": {
+    "scaling_laws_analyzed": [
+      "effective_action_scaling",
+      "entropy_scaling",
+      "gap_scaling",
+      "correlation_length_scaling",
+      "susceptibility_scaling"
+    ],
+    "scaling_exponents": {
+      "effective_action_scaling": {
+        "exponent": 1.0,
+        "prefactor": 1.0
+      },
+      "entropy_scaling": {
+        "exponent": 0.5,
+        "prefactor": 0.5
+      },
+      "gap_scaling": {
+        "exponent": -1.0,
+        "prefactor": 1.0
+      },
+      "correlation_length_scaling": {
+        "exponent": 0.5,
+        "prefactor": 1.0
+      },
+      "susceptibility_scaling": {
+        "exponent": 1.0,
+        "prefactor": 0.1
+      }
+    },
+    "data_collapse_quality": "good"
+  },
+  "critical_phenomena": {
+    "critical_temperatures": [
+      0.02631887170769563,
+      0.02631887170769563,
+      0.02631887170769563
+    ],
+    "critical_exponents": {
+      "gamma_nu": -2.0587159462240856e-16
+    },
+    "phase_transitions_detected": true
+  },
+  "output_files": [
+    "correlation_functions.png",
+    "data_collapse.png",
+    "finite_size_scaling.png",
+    "susceptibility_analysis.png"
+  ]
+}

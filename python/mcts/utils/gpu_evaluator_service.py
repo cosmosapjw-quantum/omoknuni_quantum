@@ -96,6 +96,7 @@ class GPUEvaluatorService:
         # Response routing
         self.pending_responses = defaultdict(dict)
         self.response_lock = threading.Lock()
+        self.active_workers = set()  # Track active workers
         
         logger.debug(f"GPUEvaluatorService initialized on {device} with batch_size={batch_size}")
     
@@ -140,7 +141,23 @@ class GPUEvaluatorService:
         """Create a response queue for a specific worker"""
         if worker_id not in self.response_queues:
             self.response_queues[worker_id] = mp.Queue(maxsize=self.max_queue_size)
+        self.active_workers.add(worker_id)
         return self.response_queues[worker_id]
+    
+    def cleanup_worker_queue(self, worker_id: int):
+        """Clean up resources for a specific worker"""
+        if worker_id in self.response_queues:
+            # Clear any remaining messages
+            q = self.response_queues[worker_id]
+            try:
+                while not q.empty():
+                    q.get_nowait()
+            except:
+                pass
+            del self.response_queues[worker_id]
+        
+        if worker_id in self.active_workers:
+            self.active_workers.remove(worker_id)
     
     def _service_loop(self):
         """Main service loop that processes evaluation requests"""
@@ -169,6 +186,7 @@ class GPUEvaluatorService:
         """Collect a batch of requests from the queue"""
         batch = []
         deadline = time.time() + self.batch_timeout
+        current_time = time.time()
         
         while len(batch) < self.batch_size and time.time() < deadline:
             timeout = max(0.001, deadline - time.time())
@@ -185,6 +203,11 @@ class GPUEvaluatorService:
                     else:
                         # No pending requests, can stop
                         return []
+                
+                # Filter out stale requests (older than 10 seconds)
+                if current_time - request.timestamp > 10.0:
+                    logger.warning(f"Dropping stale request from worker {request.worker_id}, age: {current_time - request.timestamp:.1f}s")
+                    continue
                 
                 batch.append(request)
                 
@@ -272,7 +295,12 @@ class GPUEvaluatorService:
                 # Put response in the worker's specific queue
                 worker_id = req.worker_id
                 if worker_id in self.response_queues:
-                    self.response_queues[worker_id].put(response)
+                    try:
+                        self.response_queues[worker_id].put(response, timeout=1.0)
+                    except queue.Full:
+                        logger.error(f"Response queue full for worker {worker_id}")
+                        # Skip this worker as it's likely dead
+                        self.cleanup_worker_queue(worker_id)
                 else:
                     logger.error(f"No response queue for worker {worker_id}")
             
@@ -313,7 +341,12 @@ class GPUEvaluatorService:
                 )
                 worker_id = req.worker_id
                 if worker_id in self.response_queues:
-                    self.response_queues[worker_id].put(response)
+                    try:
+                        self.response_queues[worker_id].put(response, timeout=1.0)
+                    except queue.Full:
+                        logger.error(f"Error response queue full for worker {worker_id}")
+                        # Skip this worker as it's likely dead
+                        self.cleanup_worker_queue(worker_id)
                 else:
                     logger.error(f"No response queue for worker {worker_id}")
     
@@ -375,27 +408,34 @@ class RemoteEvaluator:
             timestamp=time.time()
         )
         
-        # Send request
-        self.request_queue.put(request)
+        # Send request with error handling
+        try:
+            self.request_queue.put(request, timeout=1.0)
+        except queue.Full:
+            logger.error(f"Request queue full for worker {self.worker_id}")
+            return np.ones(self.action_size) / self.action_size, 0.0
         
-        # Wait for response
-        timeout = 10.0  # 10 second timeout
+        # Wait for response with improved timeout handling
+        timeout = 5.0  # Reduced timeout
         start_time = time.time()
         
         while time.time() - start_time < timeout:
             try:
                 # Check for response
-                response = self.response_queue.get(timeout=0.1)
+                response = self.response_queue.get(timeout=0.05)  # Shorter poll interval
                 
                 # Check if this is our response
                 if response.worker_id == self.worker_id and response.request_id == request_id:
                     return response.policy, response.value
                 else:
-                    # Not our response, cache it for the right worker
-                    # In practice, workers should only get their own responses
+                    # Not our response, this shouldn't happen with separate queues
                     logger.warning(f"Worker {self.worker_id} received response for worker {response.worker_id}")
                     
             except queue.Empty:
+                # Check if we should give up early
+                if time.time() - request.timestamp > timeout * 2:
+                    logger.warning(f"Request {request_id} is too old, giving up")
+                    break
                 continue
         
         # Timeout - return uniform policy

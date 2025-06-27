@@ -1,0 +1,17 @@
+# ninja log v5
+1	405	1750940366018544541	CMakeFiles/alphazero.dir/src/core/igamestate.cpp.o	52169b2f5bf46293
+2	435	1750940366047544813	CMakeFiles/alphazero.dir/src/games/go/go_rules.cpp.o	d39f766aa49b5644
+1	525	1750940366138545669	CMakeFiles/alphazero.dir/src/core/game_export.cpp.o	d5c9b3d411247a1b
+3	557	1750940366170545970	CMakeFiles/alphazero.dir/src/utils/hash_specializations.cpp.o	6e8a09df1f6ae928
+2	635	1750940366248546704	CMakeFiles/alphazero.dir/src/games/chess/chess_rules.cpp.o	bb1a1197c7531e6
+2	642	1750940366255546770	CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_rules.cpp.o	8050fc22dcdb8d7b
+2	709	1750940366322547400	CMakeFiles/alphazero.dir/src/games/chess/chess960.cpp.o	f56b9d0435d186a4
+3	744	1750940366357547729	CMakeFiles/alphazero.dir/src/utils/zobrist_hash.cpp.o	8c011680d78e462
+3	1065	1750940366678550749	CMakeFiles/alphazero.dir/src/utils/attack_defense_module.cpp.o	5d0e8b50b3732e4e
+1	1146	1750940366759551511	CMakeFiles/alphazero.dir/src/games/chess/chess_state.cpp.o	b9c9cc45ca395fe2
+2	1260	1750940366872552574	CMakeFiles/alphazero.dir/src/games/gomoku/gomoku_state.cpp.o	731c7f4078119507
+2	1322	1750940366935553166	CMakeFiles/alphazero.dir/src/games/go/go_state.cpp.o	3af354d0641fc645
+3	3093	1750940368704569806	CMakeFiles/alphazero.dir/src/utils/logger.cpp.o	e99f75b6bc6d8979
+3	3905	1750940369516577443	CMakeFiles/alphazero_py.dir/src/python/bindings.cpp.o	c5e1d45a7483aac8
+3093	4595	1750940370205583924	lib/Release/libalphazero.so	4f1128d8683c0909
+4595	5851	1750940371465595775	lib/Release/alphazero_py.cpython-312-x86_64-linux-gnu.so	97ccf3b84a38af2c

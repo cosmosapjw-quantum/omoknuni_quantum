@@ -19,13 +19,12 @@ def init_worker_process():
     
     Note: CUDA_VISIBLE_DEVICES should already be set to '' before calling this.
     """
-    # Ensure CUDA is disabled (should already be set by worker function)
-    if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
-        logger.warning("CUDA_VISIBLE_DEVICES not set to '' before init_worker_process!")
-        os.environ['CUDA_VISIBLE_DEVICES'] = ''
-    
-    # Also set other CUDA-related environment variables
+    # Aggressively disable CUDA
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
     os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
+    os.environ['CUDA_CACHE_DISABLE'] = '1'
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_CACHE_PATH'] = '/tmp/cuda_cache_disabled'
     
     # Log initialization only in debug mode
     if logger.isEnabledFor(logging.DEBUG):
@@ -37,7 +36,10 @@ def verify_cuda_disabled():
     try:
         import torch
         if torch.cuda.is_available():
-            # Don't print warning - this is expected before init_worker_process is called
+            # Force disable if still available
+            torch.cuda.set_device = lambda x: None
+            torch.cuda.is_available = lambda: False
+            logger.debug("Forced PyTorch CUDA disable in worker")
             return False
         return True
     except ImportError:

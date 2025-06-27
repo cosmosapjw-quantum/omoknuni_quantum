@@ -70,31 +70,39 @@ class QuantumMCTSVisualizationSuite:
             try:
                 with open(self.data_path, 'r') as f:
                     data = json.load(f)
-                logger.info(f"Successfully loaded {len(data.get('tree_expansion_data', []))} MCTS datasets")
+                datasets = data.get('tree_expansion_data', [])
+                total_sims = sum(d.get('total_simulations', 0) for d in datasets)
+                logger.info(f"Successfully loaded {len(datasets)} MCTS datasets with {total_sims:,} total simulations")
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load data from {self.data_path}: {e}")
                 logger.info("Falling back to mock data generation")
         
-        # Generate comprehensive mock data for demonstration
-        logger.info("Generating mock MCTS data for visualization")
+        # Generate comprehensive large-scale mock data
+        logger.info("Generating large-scale mock MCTS data (1000 games, 1000 sims/move) for visualization")
         
         # Create realistic MCTS tree expansion data
         tree_expansion_data = []
         performance_metrics = []
         
-        for i in range(15):  # 15 different MCTS runs
-            # Realistic visit count distributions
-            visit_counts = np.random.exponential(2 + i * 0.5, 100 + i * 20)
+        # Scale up for 1000 games with 1000 simulations per move
+        num_games = 1000
+        simulations_per_move = 1000
+        
+        for i in range(num_games):
+            # More realistic large-scale MCTS data
+            # Visit counts reflecting 1000 simulations per move
+            base_visits = simulations_per_move * (0.8 + 0.4 * np.random.random())
+            visit_counts = np.random.exponential(base_visits / 50, 200 + i // 5)
             visit_counts = visit_counts[visit_counts > 0]  # Remove zeros
             
-            # Q-values correlated with visit counts
-            q_values = np.random.normal(0, 0.3, len(visit_counts))
+            # Q-values with better convergence for large simulation counts
+            q_values = np.random.normal(0, 0.2, len(visit_counts))
             q_values = np.clip(q_values, -1.0, 1.0)
             
-            # Tree growth over time
-            tree_size = 50 + i * 25
-            max_depth = 5 + i
+            # Larger trees due to more simulations
+            tree_size = 500 + i * 2  # Much larger trees
+            max_depth = 15 + i // 100  # Deeper trees
             
             # Policy distribution evolution
             policy_entropy = 1.0 + 0.2 * np.sin(i * 0.5) + np.random.normal(0, 0.1)
@@ -106,24 +114,31 @@ class QuantumMCTSVisualizationSuite:
                 'max_depth': max_depth,
                 'policy_entropy': policy_entropy,
                 'timestamp': time.time() + i * 100,
+                'total_simulations': int(np.sum(visit_counts)),  # Track total simulations
+                'game_id': i + 1,
+                'simulations_per_move': simulations_per_move,
                 'visit_count_stats': {
                     'count': len(visit_counts),
                     'min': float(np.min(visit_counts)),
                     'max': float(np.max(visit_counts)),
                     'mean': float(np.mean(visit_counts)),
-                    'std': float(np.std(visit_counts))
+                    'std': float(np.std(visit_counts)),
+                    'total': float(np.sum(visit_counts))
                 }
             }
             
             tree_expansion_data.append(tree_data)
             
-            # Performance metrics
+            # Performance metrics scaled for large simulations
             performance_data = {
                 'win_rate': 0.5 + 0.3 * np.sin(i * 0.3) + np.random.normal(0, 0.05),
                 'average_game_length': 50 + np.random.normal(0, 10),
-                'search_time': 1.0 + i * 0.1 + np.random.normal(0, 0.1),
-                'nodes_per_second': 1000 + i * 100 + np.random.normal(0, 50),
-                'memory_usage': 100 + i * 10 + np.random.normal(0, 5)
+                'search_time': 5.0 + i * 0.01 + np.random.normal(0, 0.5),  # Longer search times
+                'nodes_per_second': 5000 + i * 5 + np.random.normal(0, 200),  # Higher throughput
+                'memory_usage': 500 + i * 0.5 + np.random.normal(0, 25),  # More memory usage
+                'total_nodes_expanded': tree_size,
+                'simulations_completed': int(np.sum(visit_counts)),
+                'convergence_quality': 0.7 + 0.2 * np.random.random()  # Quality metric
             }
             
             performance_metrics.append(performance_data)
@@ -134,7 +149,14 @@ class QuantumMCTSVisualizationSuite:
             'metadata': {
                 'generated': True,
                 'timestamp': time.time(),
-                'description': 'Mock data for quantum MCTS visualization'
+                'description': 'Scaled mock data for quantum MCTS visualization',
+                'data_scale': {
+                    'num_games': num_games,
+                    'simulations_per_move': simulations_per_move,
+                    'total_simulations': sum(data['total_simulations'] for data in tree_expansion_data),
+                    'average_tree_size': np.mean([data['tree_size'] for data in tree_expansion_data]),
+                    'average_depth': np.mean([data['max_depth'] for data in tree_expansion_data])
+                }
             }
         }
         
@@ -573,8 +595,26 @@ class QuantumMCTSVisualizationSuite:
         
         # Save master report
         master_report_file = self.output_dir / 'master_report.json'
+        
+        # Convert numpy arrays to JSON-serializable format
+        def convert_numpy_to_json(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_to_json(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_to_json(item) for item in obj]
+            else:
+                return obj
+        
+        json_safe_master_report = convert_numpy_to_json(master_report)
+        
         with open(master_report_file, 'w') as f:
-            json.dump(master_report, f, indent=2)
+            json.dump(json_safe_master_report, f, indent=2)
         
         # Generate summary statistics
         logger.info(f"Analysis Summary:")

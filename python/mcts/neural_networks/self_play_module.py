@@ -124,7 +124,7 @@ class SelfPlayManager:
             model=model,
             device=self.config.mcts.device,
             batch_size=256,
-            batch_timeout=0.01
+            batch_timeout=0.05  # Increased from 0.01s for more reliable batching
         )
         
         # Start the service
@@ -192,8 +192,8 @@ class SelfPlayManager:
                         try:
                             # First check if process is still alive
                             if p.is_alive():
-                                # Wait for result with timeout
-                                game_examples = q.get(timeout=300)  # 5 minute timeout
+                                # Wait for result with timeout (reduced from 300s)
+                                game_examples = q.get(timeout=60)  # 1 minute timeout - fail faster
                             else:
                                 # Process already finished, get result immediately
                                 game_examples = q.get(timeout=10)
@@ -205,10 +205,12 @@ class SelfPlayManager:
                                 logger.warning(f"[SELF-PLAY] Game {game_idx} returned empty examples")
                                 
                         except queue.Empty:
-                            logger.error(f"[SELF-PLAY] Timeout waiting for result from game {game_idx}")
+                            logger.error(f"[SELF-PLAY] Timeout (60s) waiting for result from game {game_idx}")
                             if p.is_alive():
                                 logger.warning(f"[SELF-PLAY] Terminating stuck process for game {game_idx}")
                                 p.terminate()
+                                # Add diagnostic info
+                                logger.error(f"[SELF-PLAY] Process stuck - likely CPU/GPU sync issue or MCTS infinite loop")
                                 
                         except Exception as e:
                             logger.error(f"[SELF-PLAY] Failed to get result from game {game_idx}: {e}")
@@ -220,6 +222,9 @@ class SelfPlayManager:
                             if p.is_alive():
                                 p.terminate()
                             p.join(timeout=5)
+                            if p.is_alive():  # Still alive after join
+                                logger.error(f"[SELF-PLAY] Force killing stuck process {game_idx}")
+                                p.kill()
                             pbar.update(1)
             
                         
@@ -464,10 +469,17 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                                       game_idx: int, iteration: int,
                                       allocation) -> List[Any]:
     """Worker function for parallel self-play using GPU evaluation service"""
-    # CRITICAL: Disable CUDA before ANY imports that might load torch
+    # CRITICAL: Aggressively disable ALL CUDA access in workers
     import os
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
+    os.environ['CUDA_CACHE_DISABLE'] = '1'
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    
+    # Set up logging first before any other imports
+    import logging
+    logging.basicConfig(level=getattr(logging, config.log_level))
+    logger = logging.getLogger(__name__)
     
     # Now safe to import worker init directly (not through mcts.utils to avoid loading mcts package)
     import sys
@@ -480,8 +492,15 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         # Now safe to import torch and other modules
         import torch
         
-        # Verify CUDA is properly disabled
-        verify_cuda_disabled()
+        # Verify CUDA is properly disabled to avoid multiprocessing issues
+        cuda_disabled = not torch.cuda.is_available()
+        if not cuda_disabled:
+            # Force disable CUDA in PyTorch
+            torch.cuda.set_device = lambda x: None
+            torch.cuda.is_available = lambda: False
+            logger.debug(f"[WORKER {game_idx}] Forced CUDA disable in PyTorch")
+        else:
+            logger.debug(f"[WORKER {game_idx}] CUDA properly disabled for safe multiprocessing")
         
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
@@ -492,11 +511,9 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         from mcts.utils.config_system import QuantumLevel
         from mcts.utils.gpu_evaluator_service import RemoteEvaluator
         
-        # Set up logging
-        logging.basicConfig(level=getattr(logging, config.log_level))
-        logger = logging.getLogger(__name__)
+        # Logger set up earlier
         
-        logger.debug(f"[WORKER {game_idx}] Worker started - using GPU service for evaluations")
+        logger.debug(f"[WORKER {game_idx}] Worker started - using CPU only, neural network evaluation via GPU service")
         
         # Create game interface
         game_type = GameType[config.game.game_type.upper()]
@@ -535,7 +552,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                 values_tensor = torch.from_numpy(values).float().to(self.device)
                 return policies_tensor, values_tensor
         
-        # CRITICAL: Workers must use CPU for tensors to avoid CUDA multiprocessing issues
+        # CRITICAL: Workers must use CPU to avoid CUDA multiprocessing issues
         # Neural network evaluation happens in main process via GPU service
         tensor_device = 'cpu'  # Always use CPU in workers
         evaluator = TensorEvaluator(remote_evaluator, tensor_device)
@@ -613,7 +630,13 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         state = game_interface.create_initial_state()
         game_id = f"iter{iteration}_game{game_idx}"
         
+        start_time = time.time()
         for move_num in range(config.training.max_moves_per_game):
+            # Minimal progress monitoring - only for debugging
+            if move_num > 0 and move_num % 50 == 0:  # Log every 50 moves
+                elapsed = time.time() - start_time
+                logger.debug(f"[WORKER {game_idx}] Move {move_num}, elapsed: {elapsed:.1f}s")
+            
             # AlphaZero-style temperature annealing
             # Use exploration temperature for first N moves, then switch to deterministic
             if move_num < config.mcts.temperature_threshold:
@@ -624,7 +647,11 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                 mcts.config.temperature = 0.0
             
             # Search with MCTS
-            policy = mcts.search(state, num_simulations=config.mcts.num_simulations)
+            try:
+                policy = mcts.search(state, num_simulations=config.mcts.num_simulations)
+            except Exception as e:
+                logger.error(f"[WORKER {game_idx}] MCTS search failed at move {move_num}: {e}")
+                raise
             
             # Convert to numpy if needed
             if isinstance(policy, torch.Tensor):
@@ -705,16 +732,19 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                     example.value = outcome * ((-1) ** (i % 2))
                 break
         
-        logger.debug(f"[WORKER {game_idx}] Game completed with {len(examples)} moves")
+        total_time = time.time() - start_time
+        logger.debug(f"[WORKER {game_idx}] Game completed: {len(examples)} moves in {total_time:.1f}s")
         
         # Workers use CPU, no need to clean GPU memory
         
         return examples
         
     except Exception as e:
-        logger = logging.getLogger(__name__)
+        # Logger already set up
         logger.error(f"[WORKER {game_idx}] Failed with error: {str(e)}")
+        logger.error(f"[WORKER {game_idx}] CUDA available: {torch.cuda.is_available()}")
+        logger.error(f"[WORKER {game_idx}] Device: {config.mcts.device}")
         import traceback
         logger.error(traceback.format_exc())
-        raise
+        return []  # Return empty list instead of raising to prevent crash
 

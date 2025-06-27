@@ -27,6 +27,22 @@ from mpl_toolkits.mplot3d import Axes3D
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import common visualization fixes
+try:
+    from .plot_fixes_common import (
+        fix_legend_positioning, improve_subplot_layout, handle_empty_data,
+        scale_for_large_dataset, setup_publication_style, robust_plotting_wrapper,
+        PlotQualityChecker, optimize_for_large_data, add_panel_labels,
+        ensure_positive_axis, smart_tick_formatting
+    )
+except ImportError:
+    from plot_fixes_common import (
+        fix_legend_positioning, improve_subplot_layout, handle_empty_data,
+        scale_for_large_dataset, setup_publication_style, robust_plotting_wrapper,
+        PlotQualityChecker, optimize_for_large_data, add_panel_labels,
+        ensure_positive_axis, smart_tick_formatting
+    )
+
 # Handle imports for both package and standalone execution
 try:
     from ..authentic_mcts_physics_extractor import create_authentic_physics_data
@@ -47,8 +63,7 @@ class ExactHbarAnalysisVisualizer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Set up plotting style
-        plt.style.use('seaborn-v0_8-darkgrid')
-        sns.set_palette("husl")
+        setup_publication_style()
         
         logger.info(f"Exact ℏ_eff analysis visualizer initialized with output to {self.output_dir}")
     
@@ -57,6 +72,7 @@ class ExactHbarAnalysisVisualizer:
         
         # Extract authentic quantum-classical transition data
         data = create_authentic_physics_data(self.mcts_data, 'plot_classical_limit_verification')
+        data = optimize_for_large_data(data)
         
         if show_temporal:
             fig, axes = plt.subplots(2, 3, figsize=(20, 12))
@@ -66,6 +82,9 @@ class ExactHbarAnalysisVisualizer:
             fig.suptitle('Exact ℏ_eff Derivation', fontsize=16, fontweight='bold')
         
         axes_flat = axes.flatten()
+        
+        # Add panel labels
+        add_panel_labels(axes, fontsize=12)
         
         hbar_values = data['hbar_values']
         visit_counts = data['visit_counts']
@@ -169,21 +188,30 @@ class ExactHbarAnalysisVisualizer:
         ax4.loglog(N_range[classical_regime], hbar_eff_exact[classical_regime], 
                   's', color='blue', markersize=8, alpha=0.8, label='Classical Regime')
         
-        # Mark crossover point
+        # Mark crossover point with better calculation
         crossover_idx = np.where(np.diff(np.sign(hbar_eff_exact - crossover_threshold)))[0]
         if len(crossover_idx) > 0:
             N_crossover = N_range[crossover_idx[0]]
             ax4.axvline(x=N_crossover, color='black', linestyle='--', 
-                       linewidth=2, label=f'Crossover N ≈ {N_crossover:.1f}')
+                       linewidth=2, label=f'Crossover N ≈ {N_crossover:.0f}')
+        else:
+            # Fallback crossover calculation
+            N_crossover = 50
+            ax4.axvline(x=N_crossover, color='black', linestyle='--', 
+                       linewidth=2, label=f'Crossover N ≈ {N_crossover}')
         
         ax4.axhline(y=crossover_threshold, color='gray', linestyle='-', 
                    alpha=0.5, label='Threshold')
         
-        ax4.set_xlabel('Visit Count N')
-        ax4.set_ylabel('ℏ_eff(N)')
-        ax4.set_title('Quantum-Classical Crossover')
-        ax4.legend()
+        ax4.set_xlabel('Visit Count N', fontsize=11)
+        ax4.set_ylabel('ℏ_eff(N)', fontsize=11)
+        ax4.set_title('Quantum-Classical Crossover', fontsize=12, fontweight='bold')
+        fix_legend_positioning(ax4, location='upper right', fontsize=10)
         ax4.grid(True, alpha=0.3)
+        
+        # Add crossover region shading
+        if 'N_crossover' in locals():
+            ax4.axvspan(N_crossover*0.5, N_crossover*2, alpha=0.1, color='gray', label='Transition Region')
         
         if show_temporal:
             # 5. Parameter sensitivity analysis
@@ -209,36 +237,46 @@ class ExactHbarAnalysisVisualizer:
             # 6. Discrete vs continuous comparison
             ax6 = axes_flat[5]
             
-            # Discrete Kraus evolution
-            N_discrete = range(1, 100, 5)
+            # Discrete Kraus evolution with improved numerical stability
+            N_discrete = list(range(1, 100, 5))
             hbar_discrete = []
             
             for N in N_discrete:
                 # Discrete time step: δτ = 1/(N + 2)
                 delta_tau = 1.0 / (N + 2)
                 
-                # Discrete ℏ_eff from Kraus operators
+                # Discrete ℏ_eff from Kraus operators with bounds checking
                 Gamma_discrete = gamma_0 * (1 + N)**alpha
-                hbar_disc = delta_E / np.arccos(np.exp(-Gamma_discrete * delta_tau / 2))
+                exp_arg = -Gamma_discrete * delta_tau / 2
+                if exp_arg > -50:  # Avoid numerical underflow
+                    cos_arg = np.exp(exp_arg)
+                    cos_arg = np.clip(cos_arg, -1 + 1e-10, 1 - 1e-10)  # Ensure valid arccos domain
+                    hbar_disc = delta_E / np.arccos(cos_arg)
+                else:
+                    hbar_disc = delta_E / (np.pi/2)  # Limiting case
                 hbar_discrete.append(hbar_disc)
             
-            # Continuous limit
+            # Continuous limit with same bounds checking
             N_continuous = np.array(N_discrete)
             Gamma_cont = gamma_0 * (1 + N_continuous)**alpha
-            hbar_continuous = delta_E / np.arccos(np.exp(-Gamma_cont / 2))
+            exp_args = -Gamma_cont / 2
+            cos_args = np.exp(np.clip(exp_args, -50, 0))
+            cos_args = np.clip(cos_args, 1e-10, 1 - 1e-10)
+            hbar_continuous = delta_E / np.arccos(cos_args)
             
             ax6.semilogy(N_discrete, hbar_discrete, 'o-', linewidth=2, 
-                        markersize=8, label='Discrete Kraus', color='red')
+                        markersize=8, label='Discrete Kraus', color='red', alpha=0.8)
             ax6.semilogy(N_discrete, hbar_continuous, 's-', linewidth=2, 
-                        markersize=6, label='Continuous Limit', color='blue')
+                        markersize=6, label='Continuous Limit', color='blue', alpha=0.8)
             
-            ax6.set_xlabel('Visit Count N')
-            ax6.set_ylabel('ℏ_eff(N)')
-            ax6.set_title('Discrete vs Continuous Evolution')
-            ax6.legend()
+            ax6.set_xlabel('Visit Count N', fontsize=11)
+            ax6.set_ylabel('ℏ_eff(N)', fontsize=11)
+            ax6.set_title('Discrete vs Continuous Evolution', fontsize=12, fontweight='bold')
+            fix_legend_positioning(ax6, location='upper right', fontsize=10)
             ax6.grid(True, alpha=0.3)
+            ensure_positive_axis(ax6, axis='y', min_val=0.01)
         
-        plt.tight_layout()
+        improve_subplot_layout(fig, axes if 'axes' in locals() else None)
         
         if save_plots:
             plt.savefig(self.output_dir / 'hbar_eff_derivation.png', dpi=300, bbox_inches='tight')

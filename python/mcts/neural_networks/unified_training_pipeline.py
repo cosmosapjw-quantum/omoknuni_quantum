@@ -422,6 +422,13 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"  Model accepted: {accepted}")
             tqdm.write(f"{'='*80}")
             
+        # Log profiling summary if enabled
+        if get_profiler().enabled:
+            tqdm.write("\n" + "=" * 80)
+            tqdm.write("TRAINING PROFILING SUMMARY")
+            tqdm.write("=" * 80)
+            log_profiling_summary(top_n=30, min_time=0.1)
+        
         logger.info("Training completed!")
         
         # Run final tournament if requested (disabled by default)

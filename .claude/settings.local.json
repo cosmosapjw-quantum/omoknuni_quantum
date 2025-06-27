@@ -62,7 +62,9 @@
       "Bash(jq:*)",
       "Bash(diff:*)",
       "Bash(grep -B5 -A5 \"self.hbar_values\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)",
-      "Bash(grep -A 10 \"von_neumann_entropy\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)"
+      "Bash(grep -A 10 \"von_neumann_entropy\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python demonstrate_quantum_integration.py)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python final_system_validation.py)"
     ],
     "deny": []
   },

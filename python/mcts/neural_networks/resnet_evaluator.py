@@ -85,7 +85,8 @@ class ResNetEvaluator(Evaluator):
         game_type: str = 'gomoku',
         checkpoint_path: Optional[str] = None,
         device: Optional[str] = None,
-        network_config: Optional[NeuralNetworkConfig] = None
+        network_config: Optional[NeuralNetworkConfig] = None,
+        input_channels: Optional[int] = None
     ):
         """
         Initialize ResNet evaluator
@@ -97,6 +98,7 @@ class ResNetEvaluator(Evaluator):
             checkpoint_path: Path to model checkpoint
             device: Device to run on (auto-detect if None)
             network_config: Neural network architecture config (optional)
+            input_channels: Number of input channels (18 for basic, 20 for enhanced)
         """
         # Determine device from config or parameter
         if device is not None:
@@ -130,8 +132,9 @@ class ResNetEvaluator(Evaluator):
                     num_filters=network_config.num_filters
                 )
             else:
-                # Fallback to function defaults (maintains backward compatibility)
-                self.model = create_resnet_for_game(game_type, input_channels=20)
+                # Use explicit input_channels if provided, otherwise default to 18 for basic representation
+                channels = input_channels if input_channels is not None else 18
+                self.model = create_resnet_for_game(game_type, input_channels=channels)
             action_size = self.model.metadata.num_actions
         
         # Move model to device
@@ -387,6 +390,7 @@ def create_evaluator_for_game(
     num_blocks: Optional[int] = None,
     num_filters: Optional[int] = None,
     config_path: Optional[str] = None,
+    input_channels: Optional[int] = None,
     **kwargs
 ) -> ResNetEvaluator:
     """
@@ -418,7 +422,7 @@ def create_evaluator_for_game(
         network_config = NeuralNetworkConfig(
             num_res_blocks=num_blocks or 10,
             num_filters=num_filters or 256,
-            input_channels=20
+            input_channels=18  # Default to 18 for basic representation
         )
     
     return ResNetEvaluator(
@@ -426,6 +430,7 @@ def create_evaluator_for_game(
         checkpoint_path=checkpoint_path,
         device=device,
         network_config=network_config,
+        input_channels=input_channels,
         **kwargs
     )
 

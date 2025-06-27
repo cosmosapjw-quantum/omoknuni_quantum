@@ -1,0 +1,4 @@
+[console_scripts]
+alphazero-benchmark = benchmark_mcts_profiler:main
+alphazero-selfplay = example_self_play:main
+alphazero-train = mcts.neural_networks.unified_training_pipeline:main

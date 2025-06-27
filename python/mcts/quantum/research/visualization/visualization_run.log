@@ -1,0 +1,1308 @@
+2025-06-26 23:20:04,828 - __main__ - INFO - Quantum MCTS Visualization Suite initialized
+2025-06-26 23:20:04,828 - __main__ - INFO - Output directory: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/quantum_mcts_visualizations
+2025-06-26 23:20:04,828 - __main__ - INFO - 🚀 STARTING COMPREHENSIVE QUANTUM MCTS VISUALIZATION SUITE
+2025-06-26 23:20:04,828 - __main__ - INFO - ================================================================================
+2025-06-26 23:20:04,828 - __main__ - INFO - Loading MCTS data...
+2025-06-26 23:20:04,828 - __main__ - INFO - Loading MCTS data from: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/data_collection/real_mcts_data.json
+2025-06-26 23:20:05,085 - __main__ - INFO - Successfully loaded 1746 MCTS datasets
+2025-06-26 23:20:05,086 - __main__ - INFO - Initializing visualization modules...
+2025-06-26 23:20:05,086 - plot_rg_flow_phase_diagrams - INFO - RG flow visualizer initialized with output to quantum_mcts_visualizations/rg_flow_plots
+2025-06-26 23:20:05,086 - __main__ - INFO - ✓ Initialized rg_flow_phase visualizer
+2025-06-26 23:20:05,087 - plot_statistical_physics - INFO - Statistical physics visualizer initialized with output to quantum_mcts_visualizations/statistical_physics_plots
+2025-06-26 23:20:05,087 - __main__ - INFO - ✓ Initialized statistical_physics visualizer
+2025-06-26 23:20:05,087 - plot_critical_phenomena_scaling - INFO - Critical phenomena visualizer initialized with output to quantum_mcts_visualizations/critical_phenomena_plots
+2025-06-26 23:20:05,087 - __main__ - INFO - ✓ Initialized critical_phenomena visualizer
+2025-06-26 23:20:05,087 - plot_decoherence_darwinism - INFO - Decoherence Darwinism visualizer initialized with output to quantum_mcts_visualizations/decoherence_plots
+2025-06-26 23:20:05,087 - __main__ - INFO - ✓ Initialized decoherence_darwinism visualizer
+2025-06-26 23:20:05,088 - plot_entropy_analysis - INFO - Entropy analysis visualizer initialized with output to quantum_mcts_visualizations/entropy_plots
+2025-06-26 23:20:05,088 - __main__ - INFO - ✓ Initialized entropy_analysis visualizer
+2025-06-26 23:20:05,088 - plot_thermodynamics - INFO - Thermodynamics visualizer initialized with output to quantum_mcts_visualizations/thermodynamics_plots
+2025-06-26 23:20:05,088 - __main__ - INFO - ✓ Initialized thermodynamics visualizer
+2025-06-26 23:20:05,088 - plot_jarzynski_equality - INFO - Jarzynski equality visualizer initialized with output to quantum_mcts_visualizations/jarzynski_plots
+2025-06-26 23:20:05,088 - __main__ - INFO - ✓ Initialized jarzynski_equality visualizer
+2025-06-26 23:20:05,088 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis visualizer initialized with output to quantum_mcts_visualizations/exact_hbar_plots
+2025-06-26 23:20:05,089 - __main__ - INFO - ✓ Initialized exact_hbar_analysis visualizer
+2025-06-26 23:20:05,089 - __main__ - INFO - Successfully initialized 8/8 visualizers
+2025-06-26 23:20:05,089 - __main__ - INFO - ============================================================
+2025-06-26 23:20:05,089 - __main__ - INFO - RUNNING RG FLOW AND PHASE DIAGRAM ANALYSIS
+2025-06-26 23:20:05,089 - __main__ - INFO - ============================================================
+2025-06-26 23:20:05,089 - plot_rg_flow_phase_diagrams - INFO - Generating comprehensive RG flow analysis report...
+2025-06-26 23:20:05,230 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:05,230 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:05,230 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:05,230 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_beta_functions
+2025-06-26 23:20:07,121 - plot_rg_flow_phase_diagrams - INFO - Saved β-functions plot
+2025-06-26 23:20:07,245 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:07,245 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:07,245 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:07,245 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_diagrams
+2025-06-26 23:20:08,738 - plot_rg_flow_phase_diagrams - INFO - Saved phase diagrams plot
+2025-06-26 23:20:08,857 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:08,857 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:08,857 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:08,857 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_rg_trajectories
+2025-06-26 23:20:10,715 - plot_rg_flow_phase_diagrams - INFO - Saved RG trajectories plot
+2025-06-26 23:20:10,715 - __main__ - ERROR - ✗ RG flow analysis failed: Object of type ndarray is not JSON serializable
+2025-06-26 23:20:10,716 - __main__ - ERROR - Traceback (most recent call last):
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 191, in run_rg_flow_analysis
+    report = visualizer.generate_comprehensive_report(save_report=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_rg_flow_phase_diagrams.py", line 779, in generate_comprehensive_report
+    json.dump(report, f, indent=2)
+  File "/usr/lib/python3.12/json/__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "/usr/lib/python3.12/json/encoder.py", line 432, in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 439, in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type ndarray is not JSON serializable
+
+2025-06-26 23:20:10,716 - __main__ - INFO - ============================================================
+2025-06-26 23:20:10,716 - __main__ - INFO - RUNNING STATISTICAL PHYSICS ANALYSIS
+2025-06-26 23:20:10,716 - __main__ - INFO - ============================================================
+2025-06-26 23:20:10,716 - plot_statistical_physics - INFO - Generating comprehensive statistical physics report...
+2025-06-26 23:20:10,836 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:10,836 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:10,836 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:10,836 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_correlation_functions
+2025-06-26 23:20:12,361 - plot_statistical_physics - INFO - Saved correlation functions plot
+2025-06-26 23:20:12,482 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:12,482 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:12,482 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:12,482 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:20:13,363 - plot_statistical_physics - INFO - Saved data collapse plot
+2025-06-26 23:20:13,482 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:13,482 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:13,483 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:13,483 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:20:14,832 - plot_statistical_physics - INFO - Saved finite-size scaling plot
+2025-06-26 23:20:14,948 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:14,949 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:14,949 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:14,949 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_susceptibility_analysis
+2025-06-26 23:20:16,338 - plot_statistical_physics - INFO - Saved susceptibility analysis plot
+2025-06-26 23:20:16,339 - plot_statistical_physics - INFO - Saved comprehensive report to quantum_mcts_visualizations/statistical_physics_plots/statistical_physics_report.json
+2025-06-26 23:20:16,339 - plot_statistical_physics - INFO - Statistical physics analysis complete!
+2025-06-26 23:20:16,339 - __main__ - INFO - Creating statistical physics animations...
+2025-06-26 23:20:16,379 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:19,326 - plot_statistical_physics - INFO - Saved correlations evolution animation
+2025-06-26 23:20:19,558 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:22,372 - plot_statistical_physics - INFO - Saved susceptibility evolution animation
+2025-06-26 23:20:22,372 - __main__ - INFO - ✓ Statistical physics analysis completed in 11.66s
+2025-06-26 23:20:22,372 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:20:22,372 - __main__ - INFO - ============================================================
+2025-06-26 23:20:22,372 - __main__ - INFO - RUNNING CRITICAL PHENOMENA ANALYSIS
+2025-06-26 23:20:22,372 - __main__ - INFO - ============================================================
+2025-06-26 23:20:22,372 - plot_critical_phenomena_scaling - INFO - Generating comprehensive critical phenomena report...
+2025-06-26 23:20:22,495 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:22,495 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:22,495 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:22,495 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_critical_phenomena_scaling
+2025-06-26 23:20:24,065 - plot_critical_phenomena_scaling - INFO - Saved critical exponents plot
+2025-06-26 23:20:24,187 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:24,187 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:24,187 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:24,187 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:20:25,113 - plot_critical_phenomena_scaling - INFO - Saved 3D data collapse plot
+2025-06-26 23:20:25,234 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:25,234 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:25,234 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:25,234 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:20:26,564 - plot_critical_phenomena_scaling - INFO - Saved scaling functions plot
+2025-06-26 23:20:26,565 - plot_critical_phenomena_scaling - INFO - Saved comprehensive report to quantum_mcts_visualizations/critical_phenomena_plots/critical_phenomena_report.json
+2025-06-26 23:20:26,565 - plot_critical_phenomena_scaling - INFO - Critical phenomena analysis complete!
+2025-06-26 23:20:26,565 - __main__ - INFO - Creating critical phenomena animations...
+2025-06-26 23:20:26,608 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:32,623 - plot_critical_phenomena_scaling - INFO - Saved critical order_parameter evolution animation
+2025-06-26 23:20:32,658 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:39,244 - plot_critical_phenomena_scaling - INFO - Saved critical susceptibility evolution animation
+2025-06-26 23:20:39,244 - __main__ - INFO - ✓ Critical phenomena analysis completed in 16.87s
+2025-06-26 23:20:39,244 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:20:39,244 - __main__ - INFO - ============================================================
+2025-06-26 23:20:39,244 - __main__ - INFO - RUNNING DECOHERENCE AND QUANTUM DARWINISM ANALYSIS
+2025-06-26 23:20:39,244 - __main__ - INFO - ============================================================
+2025-06-26 23:20:39,244 - plot_decoherence_darwinism - INFO - Generating comprehensive decoherence analysis report...
+2025-06-26 23:20:39,363 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:39,363 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:39,363 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:39,363 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_decoherence_dynamics
+2025-06-26 23:20:41,014 - plot_decoherence_darwinism - INFO - Saved decoherence dynamics plot
+2025-06-26 23:20:41,133 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:41,134 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:41,134 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:41,134 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_proliferation
+2025-06-26 23:20:42,326 - plot_decoherence_darwinism - INFO - Saved information proliferation plot
+2025-06-26 23:20:42,448 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:42,449 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:42,449 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:42,449 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_pointer_states
+2025-06-26 23:20:43,640 - plot_decoherence_darwinism - INFO - Saved pointer states plot
+2025-06-26 23:20:43,640 - plot_decoherence_darwinism - INFO - Saved comprehensive report to quantum_mcts_visualizations/decoherence_plots/decoherence_darwinism_report.json
+2025-06-26 23:20:43,640 - plot_decoherence_darwinism - INFO - Decoherence and quantum Darwinism analysis complete!
+2025-06-26 23:20:43,641 - __main__ - INFO - Creating decoherence animations...
+2025-06-26 23:20:43,672 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:49,375 - plot_decoherence_darwinism - INFO - Saved coherence_decay evolution animation
+2025-06-26 23:20:49,418 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:20:55,549 - plot_decoherence_darwinism - INFO - Saved purity_evolution evolution animation
+2025-06-26 23:20:55,549 - __main__ - INFO - ✓ Decoherence analysis completed in 16.30s
+2025-06-26 23:20:55,549 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:20:55,549 - __main__ - INFO - ============================================================
+2025-06-26 23:20:55,549 - __main__ - INFO - RUNNING ENTROPY AND INFORMATION ANALYSIS
+2025-06-26 23:20:55,549 - __main__ - INFO - ============================================================
+2025-06-26 23:20:55,549 - plot_entropy_analysis - INFO - Generating comprehensive entropy analysis report...
+2025-06-26 23:20:55,669 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:55,669 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:55,669 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:55,669 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entanglement_analysis
+2025-06-26 23:20:56,895 - plot_entropy_analysis - INFO - Saved entanglement analysis plot
+2025-06-26 23:20:57,016 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:57,016 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:57,016 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:57,016 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entropy_scaling
+2025-06-26 23:20:58,271 - plot_entropy_analysis - INFO - Saved entropy scaling plot
+2025-06-26 23:20:58,390 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:20:58,391 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:20:58,391 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:20:58,391 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_flow
+2025-06-26 23:20:59,936 - plot_entropy_analysis - INFO - Saved information flow plot
+2025-06-26 23:21:00,054 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:00,054 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:00,054 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:00,054 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_entropy
+2025-06-26 23:21:01,353 - plot_entropy_analysis - INFO - Saved thermodynamic entropy plot
+2025-06-26 23:21:01,353 - plot_entropy_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/entropy_plots/entropy_analysis_report.json
+2025-06-26 23:21:01,353 - plot_entropy_analysis - INFO - Entropy analysis complete!
+2025-06-26 23:21:01,353 - __main__ - INFO - Creating entropy animations...
+2025-06-26 23:21:01,391 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:21:07,477 - plot_entropy_analysis - INFO - Saved entanglement entropy evolution animation
+2025-06-26 23:21:07,514 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:21:13,423 - plot_entropy_analysis - INFO - Saved von_neumann entropy evolution animation
+2025-06-26 23:21:13,424 - __main__ - INFO - ✓ Entropy analysis completed in 17.87s
+2025-06-26 23:21:13,424 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:21:13,424 - __main__ - INFO - ============================================================
+2025-06-26 23:21:13,424 - __main__ - INFO - RUNNING THERMODYNAMICS ANALYSIS
+2025-06-26 23:21:13,424 - __main__ - INFO - ============================================================
+2025-06-26 23:21:13,424 - plot_thermodynamics - INFO - Generating comprehensive thermodynamics report...
+2025-06-26 23:21:13,542 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:13,543 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:13,543 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:13,543 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:21:14,807 - plot_thermodynamics - INFO - Saved non-equilibrium thermodynamics plot
+2025-06-26 23:21:14,927 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:14,928 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:14,928 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:14,928 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_transitions
+2025-06-26 23:21:16,242 - plot_thermodynamics - INFO - Saved phase transitions plot
+2025-06-26 23:21:16,362 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:16,362 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:16,362 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:16,363 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_cycles
+2025-06-26 23:21:17,584 - plot_thermodynamics - INFO - Saved thermodynamic cycles plot
+2025-06-26 23:21:17,584 - plot_thermodynamics - INFO - Saved comprehensive report to quantum_mcts_visualizations/thermodynamics_plots/thermodynamics_report.json
+2025-06-26 23:21:17,584 - plot_thermodynamics - INFO - Thermodynamics analysis complete!
+2025-06-26 23:21:17,584 - __main__ - INFO - Creating thermodynamics animations...
+2025-06-26 23:21:17,615 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:21:23,840 - plot_thermodynamics - INFO - Saved otto cycle animation
+2025-06-26 23:21:23,878 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:21:29,706 - plot_thermodynamics - INFO - Saved carnot cycle animation
+2025-06-26 23:21:29,706 - __main__ - INFO - ✓ Thermodynamics analysis completed in 16.28s
+2025-06-26 23:21:29,707 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:21:29,707 - __main__ - INFO - ============================================================
+2025-06-26 23:21:29,707 - __main__ - INFO - RUNNING JARZYNSKI EQUALITY ANALYSIS
+2025-06-26 23:21:29,707 - __main__ - INFO - ============================================================
+2025-06-26 23:21:29,707 - plot_jarzynski_equality - INFO - Generating comprehensive Jarzynski equality report...
+2025-06-26 23:21:29,824 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:29,824 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:29,824 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:29,824 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:21:31,066 - plot_jarzynski_equality - INFO - Saved Jarzynski verification plot
+2025-06-26 23:21:31,185 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:31,185 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:31,185 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:31,185 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:21:32,413 - plot_jarzynski_equality - INFO - Saved work fluctuation analysis plot
+2025-06-26 23:21:33,803 - plot_jarzynski_equality - INFO - Saved path integral formulation plot
+2025-06-26 23:21:33,803 - plot_jarzynski_equality - INFO - Saved comprehensive report to quantum_mcts_visualizations/jarzynski_plots/jarzynski_equality_report.json
+2025-06-26 23:21:33,803 - plot_jarzynski_equality - INFO - Jarzynski equality analysis complete!
+2025-06-26 23:21:33,803 - __main__ - INFO - Creating Jarzynski animations...
+2025-06-26 23:21:33,842 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:21:39,872 - plot_jarzynski_equality - INFO - Saved Jarzynski convergence animation
+2025-06-26 23:21:39,872 - __main__ - INFO - ✓ Jarzynski analysis completed in 10.17s
+2025-06-26 23:21:39,872 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:21:39,872 - __main__ - INFO - ============================================================
+2025-06-26 23:21:39,872 - __main__ - INFO - RUNNING EXACT ℏ_EFF ANALYSIS
+2025-06-26 23:21:39,872 - __main__ - INFO - ============================================================
+2025-06-26 23:21:39,872 - plot_exact_hbar_analysis - INFO - Generating comprehensive exact ℏ_eff analysis report...
+2025-06-26 23:21:39,991 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:21:39,991 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:21:39,991 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:21:39,991 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_classical_limit_verification
+2025-06-26 23:21:41,538 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff derivation plot
+2025-06-26 23:21:42,919 - plot_exact_hbar_analysis - INFO - Saved Lindblad dynamics plot
+2025-06-26 23:21:44,132 - plot_exact_hbar_analysis - INFO - Saved path integral ℏ_eff plot
+2025-06-26 23:21:44,132 - plot_exact_hbar_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/exact_hbar_plots/exact_hbar_analysis_report.json
+2025-06-26 23:21:44,132 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis complete!
+2025-06-26 23:21:44,132 - __main__ - INFO - Creating ℏ_eff animations...
+2025-06-26 23:21:44,169 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:22:06,150 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff evolution animation
+2025-06-26 23:22:06,150 - __main__ - INFO - ✓ Exact ℏ_eff analysis completed in 26.28s
+2025-06-26 23:22:06,150 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:22:06,150 - __main__ - INFO - Generating master report...
+2025-06-26 23:22:06,151 - __main__ - ERROR - Fatal error: Object of type int64 is not JSON serializable
+2025-06-26 23:22:06,151 - __main__ - ERROR - Traceback (most recent call last):
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 650, in main
+    master_report = suite.run_all_analyses(skip_animations=args.skip_animations)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 513, in run_all_analyses
+    master_report = self.generate_master_report(total_time)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 577, in generate_master_report
+    json.dump(master_report, f, indent=2)
+  File "/usr/lib/python3.12/json/__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "/usr/lib/python3.12/json/encoder.py", line 432, in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  [Previous line repeated 1 more time]
+  File "/usr/lib/python3.12/json/encoder.py", line 439, in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type int64 is not JSON serializable
+
+2025-06-26 23:30:45,662 - __main__ - INFO - Quantum MCTS Visualization Suite initialized
+2025-06-26 23:30:45,663 - __main__ - INFO - Output directory: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/quantum_mcts_visualizations
+2025-06-26 23:30:45,663 - __main__ - INFO - 🚀 STARTING COMPREHENSIVE QUANTUM MCTS VISUALIZATION SUITE
+2025-06-26 23:30:45,663 - __main__ - INFO - ================================================================================
+2025-06-26 23:30:45,663 - __main__ - INFO - Loading MCTS data...
+2025-06-26 23:30:45,663 - __main__ - INFO - Loading MCTS data from: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/data_collection/real_mcts_data.json
+2025-06-26 23:30:45,917 - __main__ - INFO - Successfully loaded 1746 MCTS datasets
+2025-06-26 23:30:45,917 - __main__ - INFO - Initializing visualization modules...
+2025-06-26 23:30:45,918 - plot_rg_flow_phase_diagrams - INFO - RG flow visualizer initialized with output to quantum_mcts_visualizations/rg_flow_plots
+2025-06-26 23:30:45,918 - __main__ - INFO - ✓ Initialized rg_flow_phase visualizer
+2025-06-26 23:30:45,918 - plot_statistical_physics - INFO - Statistical physics visualizer initialized with output to quantum_mcts_visualizations/statistical_physics_plots
+2025-06-26 23:30:45,918 - __main__ - INFO - ✓ Initialized statistical_physics visualizer
+2025-06-26 23:30:45,918 - plot_critical_phenomena_scaling - INFO - Critical phenomena visualizer initialized with output to quantum_mcts_visualizations/critical_phenomena_plots
+2025-06-26 23:30:45,918 - __main__ - INFO - ✓ Initialized critical_phenomena visualizer
+2025-06-26 23:30:45,918 - plot_decoherence_darwinism - INFO - Decoherence Darwinism visualizer initialized with output to quantum_mcts_visualizations/decoherence_plots
+2025-06-26 23:30:45,918 - __main__ - INFO - ✓ Initialized decoherence_darwinism visualizer
+2025-06-26 23:30:45,919 - plot_entropy_analysis - INFO - Entropy analysis visualizer initialized with output to quantum_mcts_visualizations/entropy_plots
+2025-06-26 23:30:45,919 - __main__ - INFO - ✓ Initialized entropy_analysis visualizer
+2025-06-26 23:30:45,919 - plot_thermodynamics - INFO - Thermodynamics visualizer initialized with output to quantum_mcts_visualizations/thermodynamics_plots
+2025-06-26 23:30:45,919 - __main__ - INFO - ✓ Initialized thermodynamics visualizer
+2025-06-26 23:30:45,919 - plot_jarzynski_equality - INFO - Jarzynski equality visualizer initialized with output to quantum_mcts_visualizations/jarzynski_plots
+2025-06-26 23:30:45,919 - __main__ - INFO - ✓ Initialized jarzynski_equality visualizer
+2025-06-26 23:30:45,919 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis visualizer initialized with output to quantum_mcts_visualizations/exact_hbar_plots
+2025-06-26 23:30:45,919 - __main__ - INFO - ✓ Initialized exact_hbar_analysis visualizer
+2025-06-26 23:30:45,919 - __main__ - INFO - Successfully initialized 8/8 visualizers
+2025-06-26 23:30:45,920 - __main__ - INFO - ============================================================
+2025-06-26 23:30:45,920 - __main__ - INFO - RUNNING RG FLOW AND PHASE DIAGRAM ANALYSIS
+2025-06-26 23:30:45,920 - __main__ - INFO - ============================================================
+2025-06-26 23:30:45,920 - plot_rg_flow_phase_diagrams - INFO - Generating comprehensive RG flow analysis report...
+2025-06-26 23:30:46,056 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:46,056 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:46,056 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:46,056 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_beta_functions
+2025-06-26 23:30:47,935 - plot_rg_flow_phase_diagrams - INFO - Saved β-functions plot
+2025-06-26 23:30:48,054 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:48,054 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:48,054 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:48,054 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_diagrams
+2025-06-26 23:30:49,550 - plot_rg_flow_phase_diagrams - INFO - Saved phase diagrams plot
+2025-06-26 23:30:49,669 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:49,669 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:49,669 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:49,669 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_rg_trajectories
+2025-06-26 23:30:51,522 - plot_rg_flow_phase_diagrams - INFO - Saved RG trajectories plot
+2025-06-26 23:30:51,522 - plot_rg_flow_phase_diagrams - INFO - Saved comprehensive report to quantum_mcts_visualizations/rg_flow_plots/rg_flow_analysis_report.json
+2025-06-26 23:30:51,522 - plot_rg_flow_phase_diagrams - INFO - RG flow and phase diagram analysis complete!
+2025-06-26 23:30:51,522 - __main__ - INFO - Creating RG flow animation...
+2025-06-26 23:30:51,585 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:30:51,588 - __main__ - WARNING - Animation creation failed: list index out of range
+2025-06-26 23:30:51,588 - __main__ - INFO - ✓ RG flow analysis completed in 5.67s
+2025-06-26 23:30:51,588 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:30:51,588 - __main__ - INFO - ============================================================
+2025-06-26 23:30:51,588 - __main__ - INFO - RUNNING STATISTICAL PHYSICS ANALYSIS
+2025-06-26 23:30:51,588 - __main__ - INFO - ============================================================
+2025-06-26 23:30:51,588 - plot_statistical_physics - INFO - Generating comprehensive statistical physics report...
+2025-06-26 23:30:51,712 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:51,712 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:51,712 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:51,712 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_correlation_functions
+2025-06-26 23:30:53,548 - plot_statistical_physics - INFO - Saved correlation functions plot
+2025-06-26 23:30:53,668 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:53,669 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:53,669 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:53,669 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:30:54,546 - plot_statistical_physics - INFO - Saved data collapse plot
+2025-06-26 23:30:54,666 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:54,666 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:54,666 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:54,666 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:30:56,029 - plot_statistical_physics - INFO - Saved finite-size scaling plot
+2025-06-26 23:30:56,149 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:30:56,149 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:30:56,149 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:30:56,149 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_susceptibility_analysis
+2025-06-26 23:30:57,552 - plot_statistical_physics - INFO - Saved susceptibility analysis plot
+2025-06-26 23:30:57,552 - plot_statistical_physics - INFO - Saved comprehensive report to quantum_mcts_visualizations/statistical_physics_plots/statistical_physics_report.json
+2025-06-26 23:30:57,552 - plot_statistical_physics - INFO - Statistical physics analysis complete!
+2025-06-26 23:30:57,552 - __main__ - INFO - Creating statistical physics animations...
+2025-06-26 23:30:57,594 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:00,518 - plot_statistical_physics - INFO - Saved correlations evolution animation
+2025-06-26 23:31:00,557 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:03,331 - plot_statistical_physics - INFO - Saved susceptibility evolution animation
+2025-06-26 23:31:03,331 - __main__ - INFO - ✓ Statistical physics analysis completed in 11.74s
+2025-06-26 23:31:03,331 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:31:03,331 - __main__ - INFO - ============================================================
+2025-06-26 23:31:03,331 - __main__ - INFO - RUNNING CRITICAL PHENOMENA ANALYSIS
+2025-06-26 23:31:03,331 - __main__ - INFO - ============================================================
+2025-06-26 23:31:03,331 - plot_critical_phenomena_scaling - INFO - Generating comprehensive critical phenomena report...
+2025-06-26 23:31:03,453 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:03,453 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:03,453 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:03,453 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_critical_phenomena_scaling
+2025-06-26 23:31:05,242 - plot_critical_phenomena_scaling - INFO - Saved critical exponents plot
+2025-06-26 23:31:05,363 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:05,363 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:05,363 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:05,363 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:31:06,293 - plot_critical_phenomena_scaling - INFO - Saved 3D data collapse plot
+2025-06-26 23:31:06,412 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:06,412 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:06,412 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:06,412 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:31:07,763 - plot_critical_phenomena_scaling - INFO - Saved scaling functions plot
+2025-06-26 23:31:07,763 - plot_critical_phenomena_scaling - INFO - Saved comprehensive report to quantum_mcts_visualizations/critical_phenomena_plots/critical_phenomena_report.json
+2025-06-26 23:31:07,763 - plot_critical_phenomena_scaling - INFO - Critical phenomena analysis complete!
+2025-06-26 23:31:07,763 - __main__ - INFO - Creating critical phenomena animations...
+2025-06-26 23:31:07,832 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:13,831 - plot_critical_phenomena_scaling - INFO - Saved critical order_parameter evolution animation
+2025-06-26 23:31:13,871 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:20,383 - plot_critical_phenomena_scaling - INFO - Saved critical susceptibility evolution animation
+2025-06-26 23:31:20,383 - __main__ - INFO - ✓ Critical phenomena analysis completed in 17.05s
+2025-06-26 23:31:20,383 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:31:20,383 - __main__ - INFO - ============================================================
+2025-06-26 23:31:20,383 - __main__ - INFO - RUNNING DECOHERENCE AND QUANTUM DARWINISM ANALYSIS
+2025-06-26 23:31:20,383 - __main__ - INFO - ============================================================
+2025-06-26 23:31:20,383 - plot_decoherence_darwinism - INFO - Generating comprehensive decoherence analysis report...
+2025-06-26 23:31:20,504 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:20,504 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:20,504 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:20,504 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_decoherence_dynamics
+2025-06-26 23:31:22,191 - plot_decoherence_darwinism - INFO - Saved decoherence dynamics plot
+2025-06-26 23:31:22,312 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:22,312 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:22,313 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:22,313 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_proliferation
+2025-06-26 23:31:23,498 - plot_decoherence_darwinism - INFO - Saved information proliferation plot
+2025-06-26 23:31:23,620 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:23,620 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:23,620 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:23,620 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_pointer_states
+2025-06-26 23:31:24,813 - plot_decoherence_darwinism - INFO - Saved pointer states plot
+2025-06-26 23:31:24,814 - plot_decoherence_darwinism - INFO - Saved comprehensive report to quantum_mcts_visualizations/decoherence_plots/decoherence_darwinism_report.json
+2025-06-26 23:31:24,814 - plot_decoherence_darwinism - INFO - Decoherence and quantum Darwinism analysis complete!
+2025-06-26 23:31:24,814 - __main__ - INFO - Creating decoherence animations...
+2025-06-26 23:31:24,852 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:30,553 - plot_decoherence_darwinism - INFO - Saved coherence_decay evolution animation
+2025-06-26 23:31:30,590 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:36,664 - plot_decoherence_darwinism - INFO - Saved purity_evolution evolution animation
+2025-06-26 23:31:36,664 - __main__ - INFO - ✓ Decoherence analysis completed in 16.28s
+2025-06-26 23:31:36,664 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:31:36,664 - __main__ - INFO - ============================================================
+2025-06-26 23:31:36,664 - __main__ - INFO - RUNNING ENTROPY AND INFORMATION ANALYSIS
+2025-06-26 23:31:36,664 - __main__ - INFO - ============================================================
+2025-06-26 23:31:36,664 - plot_entropy_analysis - INFO - Generating comprehensive entropy analysis report...
+2025-06-26 23:31:36,784 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:36,785 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:36,785 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:36,785 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entanglement_analysis
+2025-06-26 23:31:38,020 - plot_entropy_analysis - INFO - Saved entanglement analysis plot
+2025-06-26 23:31:38,139 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:38,139 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:38,139 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:38,139 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entropy_scaling
+2025-06-26 23:31:39,369 - plot_entropy_analysis - INFO - Saved entropy scaling plot
+2025-06-26 23:31:39,487 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:39,487 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:39,487 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:39,487 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_flow
+2025-06-26 23:31:41,007 - plot_entropy_analysis - INFO - Saved information flow plot
+2025-06-26 23:31:41,126 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:41,126 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:41,126 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:41,126 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_entropy
+2025-06-26 23:31:42,404 - plot_entropy_analysis - INFO - Saved thermodynamic entropy plot
+2025-06-26 23:31:42,404 - plot_entropy_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/entropy_plots/entropy_analysis_report.json
+2025-06-26 23:31:42,404 - plot_entropy_analysis - INFO - Entropy analysis complete!
+2025-06-26 23:31:42,404 - __main__ - INFO - Creating entropy animations...
+2025-06-26 23:31:42,444 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:48,544 - plot_entropy_analysis - INFO - Saved entanglement entropy evolution animation
+2025-06-26 23:31:48,577 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:31:54,558 - plot_entropy_analysis - INFO - Saved von_neumann entropy evolution animation
+2025-06-26 23:31:54,558 - __main__ - INFO - ✓ Entropy analysis completed in 17.89s
+2025-06-26 23:31:54,558 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:31:54,558 - __main__ - INFO - ============================================================
+2025-06-26 23:31:54,558 - __main__ - INFO - RUNNING THERMODYNAMICS ANALYSIS
+2025-06-26 23:31:54,558 - __main__ - INFO - ============================================================
+2025-06-26 23:31:54,558 - plot_thermodynamics - INFO - Generating comprehensive thermodynamics report...
+2025-06-26 23:31:54,677 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:54,677 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:54,677 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:54,677 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:31:55,960 - plot_thermodynamics - INFO - Saved non-equilibrium thermodynamics plot
+2025-06-26 23:31:56,081 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:56,081 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:56,081 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:56,082 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_transitions
+2025-06-26 23:31:57,432 - plot_thermodynamics - INFO - Saved phase transitions plot
+2025-06-26 23:31:57,559 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:31:57,559 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:31:57,559 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:31:57,559 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_cycles
+2025-06-26 23:31:58,883 - plot_thermodynamics - INFO - Saved thermodynamic cycles plot
+2025-06-26 23:31:58,884 - plot_thermodynamics - INFO - Saved comprehensive report to quantum_mcts_visualizations/thermodynamics_plots/thermodynamics_report.json
+2025-06-26 23:31:58,884 - plot_thermodynamics - INFO - Thermodynamics analysis complete!
+2025-06-26 23:31:58,884 - __main__ - INFO - Creating thermodynamics animations...
+2025-06-26 23:31:58,925 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:32:05,034 - plot_thermodynamics - INFO - Saved otto cycle animation
+2025-06-26 23:32:05,072 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:32:10,754 - plot_thermodynamics - INFO - Saved carnot cycle animation
+2025-06-26 23:32:10,754 - __main__ - INFO - ✓ Thermodynamics analysis completed in 16.20s
+2025-06-26 23:32:10,754 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:32:10,754 - __main__ - INFO - ============================================================
+2025-06-26 23:32:10,754 - __main__ - INFO - RUNNING JARZYNSKI EQUALITY ANALYSIS
+2025-06-26 23:32:10,754 - __main__ - INFO - ============================================================
+2025-06-26 23:32:10,754 - plot_jarzynski_equality - INFO - Generating comprehensive Jarzynski equality report...
+2025-06-26 23:32:10,872 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:32:10,872 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:32:10,872 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:32:10,872 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:32:12,135 - plot_jarzynski_equality - INFO - Saved Jarzynski verification plot
+2025-06-26 23:32:12,253 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:32:12,253 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:32:12,253 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:32:12,253 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:32:13,479 - plot_jarzynski_equality - INFO - Saved work fluctuation analysis plot
+2025-06-26 23:32:14,914 - plot_jarzynski_equality - INFO - Saved path integral formulation plot
+2025-06-26 23:32:14,914 - plot_jarzynski_equality - INFO - Saved comprehensive report to quantum_mcts_visualizations/jarzynski_plots/jarzynski_equality_report.json
+2025-06-26 23:32:14,915 - plot_jarzynski_equality - INFO - Jarzynski equality analysis complete!
+2025-06-26 23:32:14,915 - __main__ - INFO - Creating Jarzynski animations...
+2025-06-26 23:32:14,952 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:32:20,894 - plot_jarzynski_equality - INFO - Saved Jarzynski convergence animation
+2025-06-26 23:32:20,894 - __main__ - INFO - ✓ Jarzynski analysis completed in 10.14s
+2025-06-26 23:32:20,895 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:32:20,895 - __main__ - INFO - ============================================================
+2025-06-26 23:32:20,895 - __main__ - INFO - RUNNING EXACT ℏ_EFF ANALYSIS
+2025-06-26 23:32:20,895 - __main__ - INFO - ============================================================
+2025-06-26 23:32:20,895 - plot_exact_hbar_analysis - INFO - Generating comprehensive exact ℏ_eff analysis report...
+2025-06-26 23:32:21,012 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:32:21,013 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:32:21,013 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:32:21,013 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_classical_limit_verification
+2025-06-26 23:32:22,613 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff derivation plot
+2025-06-26 23:32:24,014 - plot_exact_hbar_analysis - INFO - Saved Lindblad dynamics plot
+2025-06-26 23:32:25,205 - plot_exact_hbar_analysis - INFO - Saved path integral ℏ_eff plot
+2025-06-26 23:32:25,205 - plot_exact_hbar_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/exact_hbar_plots/exact_hbar_analysis_report.json
+2025-06-26 23:32:25,205 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis complete!
+2025-06-26 23:32:25,206 - __main__ - INFO - Creating ℏ_eff animations...
+2025-06-26 23:32:25,244 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:32:46,806 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff evolution animation
+2025-06-26 23:32:46,806 - __main__ - INFO - ✓ Exact ℏ_eff analysis completed in 25.91s
+2025-06-26 23:32:46,806 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:32:46,806 - __main__ - INFO - Generating master report...
+2025-06-26 23:32:46,806 - __main__ - ERROR - Fatal error: Object of type ndarray is not JSON serializable
+2025-06-26 23:32:46,807 - __main__ - ERROR - Traceback (most recent call last):
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 650, in main
+    master_report = suite.run_all_analyses(skip_animations=args.skip_animations)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 513, in run_all_analyses
+    master_report = self.generate_master_report(total_time)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 577, in generate_master_report
+    json.dump(master_report, f, indent=2)
+  File "/usr/lib/python3.12/json/__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "/usr/lib/python3.12/json/encoder.py", line 432, in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.12/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  [Previous line repeated 2 more times]
+  File "/usr/lib/python3.12/json/encoder.py", line 439, in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type ndarray is not JSON serializable
+
+2025-06-26 23:35:04,667 - __main__ - INFO - Quantum MCTS Visualization Suite initialized
+2025-06-26 23:35:04,667 - __main__ - INFO - Output directory: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/quantum_mcts_visualizations
+2025-06-26 23:35:04,667 - __main__ - INFO - 🚀 STARTING COMPREHENSIVE QUANTUM MCTS VISUALIZATION SUITE
+2025-06-26 23:35:04,667 - __main__ - INFO - ================================================================================
+2025-06-26 23:35:04,667 - __main__ - INFO - Loading MCTS data...
+2025-06-26 23:35:04,667 - __main__ - INFO - Loading MCTS data from: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/data_collection/real_mcts_data.json
+2025-06-26 23:35:04,921 - __main__ - INFO - Successfully loaded 1746 MCTS datasets
+2025-06-26 23:35:04,921 - __main__ - INFO - Initializing visualization modules...
+2025-06-26 23:35:04,922 - plot_rg_flow_phase_diagrams - INFO - RG flow visualizer initialized with output to quantum_mcts_visualizations/rg_flow_plots
+2025-06-26 23:35:04,922 - __main__ - INFO - ✓ Initialized rg_flow_phase visualizer
+2025-06-26 23:35:04,922 - plot_statistical_physics - INFO - Statistical physics visualizer initialized with output to quantum_mcts_visualizations/statistical_physics_plots
+2025-06-26 23:35:04,922 - __main__ - INFO - ✓ Initialized statistical_physics visualizer
+2025-06-26 23:35:04,923 - plot_critical_phenomena_scaling - INFO - Critical phenomena visualizer initialized with output to quantum_mcts_visualizations/critical_phenomena_plots
+2025-06-26 23:35:04,923 - __main__ - INFO - ✓ Initialized critical_phenomena visualizer
+2025-06-26 23:35:04,923 - plot_decoherence_darwinism - INFO - Decoherence Darwinism visualizer initialized with output to quantum_mcts_visualizations/decoherence_plots
+2025-06-26 23:35:04,923 - __main__ - INFO - ✓ Initialized decoherence_darwinism visualizer
+2025-06-26 23:35:04,923 - plot_entropy_analysis - INFO - Entropy analysis visualizer initialized with output to quantum_mcts_visualizations/entropy_plots
+2025-06-26 23:35:04,923 - __main__ - INFO - ✓ Initialized entropy_analysis visualizer
+2025-06-26 23:35:04,923 - plot_thermodynamics - INFO - Thermodynamics visualizer initialized with output to quantum_mcts_visualizations/thermodynamics_plots
+2025-06-26 23:35:04,923 - __main__ - INFO - ✓ Initialized thermodynamics visualizer
+2025-06-26 23:35:04,924 - plot_jarzynski_equality - INFO - Jarzynski equality visualizer initialized with output to quantum_mcts_visualizations/jarzynski_plots
+2025-06-26 23:35:04,924 - __main__ - INFO - ✓ Initialized jarzynski_equality visualizer
+2025-06-26 23:35:04,924 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis visualizer initialized with output to quantum_mcts_visualizations/exact_hbar_plots
+2025-06-26 23:35:04,924 - __main__ - INFO - ✓ Initialized exact_hbar_analysis visualizer
+2025-06-26 23:35:04,924 - __main__ - INFO - Successfully initialized 8/8 visualizers
+2025-06-26 23:35:04,924 - __main__ - INFO - ============================================================
+2025-06-26 23:35:04,924 - __main__ - INFO - RUNNING RG FLOW AND PHASE DIAGRAM ANALYSIS
+2025-06-26 23:35:04,924 - __main__ - INFO - ============================================================
+2025-06-26 23:35:04,924 - plot_rg_flow_phase_diagrams - INFO - Generating comprehensive RG flow analysis report...
+2025-06-26 23:35:05,064 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:05,064 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:05,064 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:05,064 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_beta_functions
+2025-06-26 23:35:06,946 - plot_rg_flow_phase_diagrams - INFO - Saved β-functions plot
+2025-06-26 23:35:07,067 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:07,067 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:07,067 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:07,068 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_diagrams
+2025-06-26 23:35:08,553 - plot_rg_flow_phase_diagrams - INFO - Saved phase diagrams plot
+2025-06-26 23:35:08,672 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:08,672 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:08,672 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:08,672 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_rg_trajectories
+2025-06-26 23:35:10,523 - plot_rg_flow_phase_diagrams - INFO - Saved RG trajectories plot
+2025-06-26 23:35:10,524 - plot_rg_flow_phase_diagrams - INFO - Saved comprehensive report to quantum_mcts_visualizations/rg_flow_plots/rg_flow_analysis_report.json
+2025-06-26 23:35:10,524 - plot_rg_flow_phase_diagrams - INFO - RG flow and phase diagram analysis complete!
+2025-06-26 23:35:10,524 - __main__ - INFO - Creating RG flow animation...
+2025-06-26 23:35:10,621 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:10,624 - __main__ - WARNING - Animation creation failed: list index out of range
+2025-06-26 23:35:10,624 - __main__ - INFO - ✓ RG flow analysis completed in 5.70s
+2025-06-26 23:35:10,624 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:35:10,624 - __main__ - INFO - ============================================================
+2025-06-26 23:35:10,624 - __main__ - INFO - RUNNING STATISTICAL PHYSICS ANALYSIS
+2025-06-26 23:35:10,624 - __main__ - INFO - ============================================================
+2025-06-26 23:35:10,624 - plot_statistical_physics - INFO - Generating comprehensive statistical physics report...
+2025-06-26 23:35:10,745 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:10,745 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:10,746 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:10,746 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_correlation_functions
+2025-06-26 23:35:12,235 - plot_statistical_physics - INFO - Saved correlation functions plot
+2025-06-26 23:35:12,354 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:12,355 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:12,355 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:12,355 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:35:13,228 - plot_statistical_physics - INFO - Saved data collapse plot
+2025-06-26 23:35:13,348 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:13,348 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:13,348 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:13,348 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:35:14,721 - plot_statistical_physics - INFO - Saved finite-size scaling plot
+2025-06-26 23:35:14,842 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:14,842 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:14,842 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:14,842 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_susceptibility_analysis
+2025-06-26 23:35:16,230 - plot_statistical_physics - INFO - Saved susceptibility analysis plot
+2025-06-26 23:35:16,231 - plot_statistical_physics - INFO - Saved comprehensive report to quantum_mcts_visualizations/statistical_physics_plots/statistical_physics_report.json
+2025-06-26 23:35:16,231 - plot_statistical_physics - INFO - Statistical physics analysis complete!
+2025-06-26 23:35:16,231 - __main__ - INFO - Creating statistical physics animations...
+2025-06-26 23:35:16,260 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:19,170 - plot_statistical_physics - INFO - Saved correlations evolution animation
+2025-06-26 23:35:19,198 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:21,948 - plot_statistical_physics - INFO - Saved susceptibility evolution animation
+2025-06-26 23:35:21,948 - __main__ - INFO - ✓ Statistical physics analysis completed in 11.32s
+2025-06-26 23:35:21,948 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:35:21,948 - __main__ - INFO - ============================================================
+2025-06-26 23:35:21,948 - __main__ - INFO - RUNNING CRITICAL PHENOMENA ANALYSIS
+2025-06-26 23:35:21,948 - __main__ - INFO - ============================================================
+2025-06-26 23:35:21,948 - plot_critical_phenomena_scaling - INFO - Generating comprehensive critical phenomena report...
+2025-06-26 23:35:22,069 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:22,069 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:22,069 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:22,070 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_critical_phenomena_scaling
+2025-06-26 23:35:23,816 - plot_critical_phenomena_scaling - INFO - Saved critical exponents plot
+2025-06-26 23:35:23,939 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:23,939 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:23,940 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:23,940 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-26 23:35:24,822 - plot_critical_phenomena_scaling - INFO - Saved 3D data collapse plot
+2025-06-26 23:35:24,940 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:24,940 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:24,941 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:24,941 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-26 23:35:26,242 - plot_critical_phenomena_scaling - INFO - Saved scaling functions plot
+2025-06-26 23:35:26,242 - plot_critical_phenomena_scaling - INFO - Saved comprehensive report to quantum_mcts_visualizations/critical_phenomena_plots/critical_phenomena_report.json
+2025-06-26 23:35:26,242 - plot_critical_phenomena_scaling - INFO - Critical phenomena analysis complete!
+2025-06-26 23:35:26,242 - __main__ - INFO - Creating critical phenomena animations...
+2025-06-26 23:35:26,274 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:32,217 - plot_critical_phenomena_scaling - INFO - Saved critical order_parameter evolution animation
+2025-06-26 23:35:32,253 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:38,623 - plot_critical_phenomena_scaling - INFO - Saved critical susceptibility evolution animation
+2025-06-26 23:35:38,623 - __main__ - INFO - ✓ Critical phenomena analysis completed in 16.67s
+2025-06-26 23:35:38,623 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:35:38,623 - __main__ - INFO - ============================================================
+2025-06-26 23:35:38,623 - __main__ - INFO - RUNNING DECOHERENCE AND QUANTUM DARWINISM ANALYSIS
+2025-06-26 23:35:38,623 - __main__ - INFO - ============================================================
+2025-06-26 23:35:38,623 - plot_decoherence_darwinism - INFO - Generating comprehensive decoherence analysis report...
+2025-06-26 23:35:38,745 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:38,745 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:38,745 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:38,745 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_decoherence_dynamics
+2025-06-26 23:35:40,392 - plot_decoherence_darwinism - INFO - Saved decoherence dynamics plot
+2025-06-26 23:35:40,512 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:40,512 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:40,512 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:40,513 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_proliferation
+2025-06-26 23:35:41,691 - plot_decoherence_darwinism - INFO - Saved information proliferation plot
+2025-06-26 23:35:41,809 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:41,809 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:41,810 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:41,810 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_pointer_states
+2025-06-26 23:35:42,989 - plot_decoherence_darwinism - INFO - Saved pointer states plot
+2025-06-26 23:35:42,989 - plot_decoherence_darwinism - INFO - Saved comprehensive report to quantum_mcts_visualizations/decoherence_plots/decoherence_darwinism_report.json
+2025-06-26 23:35:42,990 - plot_decoherence_darwinism - INFO - Decoherence and quantum Darwinism analysis complete!
+2025-06-26 23:35:42,990 - __main__ - INFO - Creating decoherence animations...
+2025-06-26 23:35:43,017 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:48,658 - plot_decoherence_darwinism - INFO - Saved coherence_decay evolution animation
+2025-06-26 23:35:48,688 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:35:54,773 - plot_decoherence_darwinism - INFO - Saved purity_evolution evolution animation
+2025-06-26 23:35:54,773 - __main__ - INFO - ✓ Decoherence analysis completed in 16.15s
+2025-06-26 23:35:54,773 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:35:54,773 - __main__ - INFO - ============================================================
+2025-06-26 23:35:54,773 - __main__ - INFO - RUNNING ENTROPY AND INFORMATION ANALYSIS
+2025-06-26 23:35:54,773 - __main__ - INFO - ============================================================
+2025-06-26 23:35:54,773 - plot_entropy_analysis - INFO - Generating comprehensive entropy analysis report...
+2025-06-26 23:35:54,892 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:54,892 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:54,892 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:54,892 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entanglement_analysis
+2025-06-26 23:35:56,170 - plot_entropy_analysis - INFO - Saved entanglement analysis plot
+2025-06-26 23:35:56,289 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:56,289 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:56,289 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:56,289 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entropy_scaling
+2025-06-26 23:35:57,533 - plot_entropy_analysis - INFO - Saved entropy scaling plot
+2025-06-26 23:35:57,653 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:57,653 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:57,653 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:57,653 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_flow
+2025-06-26 23:35:59,230 - plot_entropy_analysis - INFO - Saved information flow plot
+2025-06-26 23:35:59,348 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:35:59,348 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:35:59,348 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:35:59,348 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_entropy
+2025-06-26 23:36:00,680 - plot_entropy_analysis - INFO - Saved thermodynamic entropy plot
+2025-06-26 23:36:00,680 - plot_entropy_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/entropy_plots/entropy_analysis_report.json
+2025-06-26 23:36:00,680 - plot_entropy_analysis - INFO - Entropy analysis complete!
+2025-06-26 23:36:00,680 - __main__ - INFO - Creating entropy animations...
+2025-06-26 23:36:00,716 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:36:06,782 - plot_entropy_analysis - INFO - Saved entanglement entropy evolution animation
+2025-06-26 23:36:06,829 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:36:12,785 - plot_entropy_analysis - INFO - Saved von_neumann entropy evolution animation
+2025-06-26 23:36:12,785 - __main__ - INFO - ✓ Entropy analysis completed in 18.01s
+2025-06-26 23:36:12,785 - __main__ - INFO - Generated 4 plots
+2025-06-26 23:36:12,785 - __main__ - INFO - ============================================================
+2025-06-26 23:36:12,785 - __main__ - INFO - RUNNING THERMODYNAMICS ANALYSIS
+2025-06-26 23:36:12,785 - __main__ - INFO - ============================================================
+2025-06-26 23:36:12,785 - plot_thermodynamics - INFO - Generating comprehensive thermodynamics report...
+2025-06-26 23:36:12,904 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:12,905 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:12,905 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:12,905 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:36:14,211 - plot_thermodynamics - INFO - Saved non-equilibrium thermodynamics plot
+2025-06-26 23:36:14,331 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:14,331 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:14,331 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:14,331 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_transitions
+2025-06-26 23:36:15,636 - plot_thermodynamics - INFO - Saved phase transitions plot
+2025-06-26 23:36:15,762 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:15,762 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:15,762 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:15,762 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_cycles
+2025-06-26 23:36:17,021 - plot_thermodynamics - INFO - Saved thermodynamic cycles plot
+2025-06-26 23:36:17,021 - plot_thermodynamics - INFO - Saved comprehensive report to quantum_mcts_visualizations/thermodynamics_plots/thermodynamics_report.json
+2025-06-26 23:36:17,021 - plot_thermodynamics - INFO - Thermodynamics analysis complete!
+2025-06-26 23:36:17,021 - __main__ - INFO - Creating thermodynamics animations...
+2025-06-26 23:36:17,048 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:36:23,175 - plot_thermodynamics - INFO - Saved otto cycle animation
+2025-06-26 23:36:23,211 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:36:28,979 - plot_thermodynamics - INFO - Saved carnot cycle animation
+2025-06-26 23:36:28,979 - __main__ - INFO - ✓ Thermodynamics analysis completed in 16.19s
+2025-06-26 23:36:28,979 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:36:28,979 - __main__ - INFO - ============================================================
+2025-06-26 23:36:28,979 - __main__ - INFO - RUNNING JARZYNSKI EQUALITY ANALYSIS
+2025-06-26 23:36:28,979 - __main__ - INFO - ============================================================
+2025-06-26 23:36:28,979 - plot_jarzynski_equality - INFO - Generating comprehensive Jarzynski equality report...
+2025-06-26 23:36:29,096 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:29,097 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:29,097 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:29,097 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:36:30,427 - plot_jarzynski_equality - INFO - Saved Jarzynski verification plot
+2025-06-26 23:36:30,547 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:30,547 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:30,547 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:30,547 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-26 23:36:31,812 - plot_jarzynski_equality - INFO - Saved work fluctuation analysis plot
+2025-06-26 23:36:33,300 - plot_jarzynski_equality - INFO - Saved path integral formulation plot
+2025-06-26 23:36:33,300 - plot_jarzynski_equality - INFO - Saved comprehensive report to quantum_mcts_visualizations/jarzynski_plots/jarzynski_equality_report.json
+2025-06-26 23:36:33,300 - plot_jarzynski_equality - INFO - Jarzynski equality analysis complete!
+2025-06-26 23:36:33,300 - __main__ - INFO - Creating Jarzynski animations...
+2025-06-26 23:36:33,334 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:36:39,297 - plot_jarzynski_equality - INFO - Saved Jarzynski convergence animation
+2025-06-26 23:36:39,297 - __main__ - INFO - ✓ Jarzynski analysis completed in 10.32s
+2025-06-26 23:36:39,297 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:36:39,297 - __main__ - INFO - ============================================================
+2025-06-26 23:36:39,297 - __main__ - INFO - RUNNING EXACT ℏ_EFF ANALYSIS
+2025-06-26 23:36:39,297 - __main__ - INFO - ============================================================
+2025-06-26 23:36:39,297 - plot_exact_hbar_analysis - INFO - Generating comprehensive exact ℏ_eff analysis report...
+2025-06-26 23:36:39,416 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-26 23:36:39,416 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-26 23:36:39,416 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-26 23:36:39,417 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_classical_limit_verification
+2025-06-26 23:36:40,934 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff derivation plot
+2025-06-26 23:36:42,266 - plot_exact_hbar_analysis - INFO - Saved Lindblad dynamics plot
+2025-06-26 23:36:43,415 - plot_exact_hbar_analysis - INFO - Saved path integral ℏ_eff plot
+2025-06-26 23:36:43,415 - plot_exact_hbar_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/exact_hbar_plots/exact_hbar_analysis_report.json
+2025-06-26 23:36:43,415 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis complete!
+2025-06-26 23:36:43,415 - __main__ - INFO - Creating ℏ_eff animations...
+2025-06-26 23:36:43,457 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-26 23:37:04,789 - plot_exact_hbar_analysis - INFO - Saved ℏ_eff evolution animation
+2025-06-26 23:37:04,789 - __main__ - INFO - ✓ Exact ℏ_eff analysis completed in 25.49s
+2025-06-26 23:37:04,789 - __main__ - INFO - Generated 3 plots
+2025-06-26 23:37:04,789 - __main__ - INFO - Generating master report...
+2025-06-26 23:37:04,790 - __main__ - INFO - Analysis Summary:
+2025-06-26 23:37:04,790 - __main__ - INFO -   ✓ Successful analyses: 8/8
+2025-06-26 23:37:04,790 - __main__ - INFO -   📊 Total plots generated: 26
+2025-06-26 23:37:04,790 - __main__ - INFO -   ⏱️ Average analysis time: 14.98s
+2025-06-26 23:37:04,790 - __main__ - INFO -   📁 Output directory: quantum_mcts_visualizations
+2025-06-26 23:37:04,790 - __main__ - INFO - ================================================================================
+2025-06-26 23:37:04,790 - __main__ - INFO - 🎉 QUANTUM MCTS VISUALIZATION SUITE COMPLETED
+2025-06-26 23:37:04,790 - __main__ - INFO - Total execution time: 120.12 seconds
+2025-06-26 23:37:04,790 - __main__ - INFO - Master report saved to: quantum_mcts_visualizations/master_report.json
+2025-06-26 23:37:04,790 - __main__ - INFO - ================================================================================
+2025-06-27 08:23:18,826 - __main__ - INFO - Quantum MCTS Visualization Suite initialized
+2025-06-27 08:23:18,826 - __main__ - INFO - Output directory: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/quantum_mcts_visualizations
+2025-06-27 08:23:18,826 - __main__ - INFO - 🚀 STARTING COMPREHENSIVE QUANTUM MCTS VISUALIZATION SUITE
+2025-06-27 08:23:18,826 - __main__ - INFO - ================================================================================
+2025-06-27 08:23:18,826 - __main__ - INFO - Loading MCTS data...
+2025-06-27 08:23:18,826 - __main__ - INFO - Loading MCTS data from: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/data_collection/real_mcts_data.json
+2025-06-27 08:23:19,107 - __main__ - INFO - Successfully loaded 1746 MCTS datasets with 0 total simulations
+2025-06-27 08:23:19,107 - __main__ - INFO - Initializing visualization modules...
+2025-06-27 08:23:19,109 - plot_rg_flow_phase_diagrams - INFO - RG flow visualizer initialized with output to quantum_mcts_visualizations/rg_flow_plots
+2025-06-27 08:23:19,109 - __main__ - INFO - ✓ Initialized rg_flow_phase visualizer
+2025-06-27 08:23:19,110 - plot_statistical_physics - INFO - Statistical physics visualizer initialized with output to quantum_mcts_visualizations/statistical_physics_plots
+2025-06-27 08:23:19,110 - __main__ - INFO - ✓ Initialized statistical_physics visualizer
+2025-06-27 08:23:19,110 - plot_critical_phenomena_scaling - INFO - Critical phenomena visualizer initialized with output to quantum_mcts_visualizations/critical_phenomena_plots
+2025-06-27 08:23:19,110 - __main__ - INFO - ✓ Initialized critical_phenomena visualizer
+2025-06-27 08:23:19,111 - plot_decoherence_darwinism - INFO - Decoherence Darwinism visualizer initialized with output to quantum_mcts_visualizations/decoherence_plots
+2025-06-27 08:23:19,111 - __main__ - INFO - ✓ Initialized decoherence_darwinism visualizer
+2025-06-27 08:23:19,111 - plot_entropy_analysis - INFO - Entropy analysis visualizer initialized with output to quantum_mcts_visualizations/entropy_plots
+2025-06-27 08:23:19,111 - __main__ - INFO - ✓ Initialized entropy_analysis visualizer
+2025-06-27 08:23:19,112 - plot_thermodynamics - INFO - Thermodynamics visualizer initialized with output to quantum_mcts_visualizations/thermodynamics_plots
+2025-06-27 08:23:19,112 - __main__ - INFO - ✓ Initialized thermodynamics visualizer
+2025-06-27 08:23:19,112 - plot_jarzynski_equality - INFO - Jarzynski equality visualizer initialized with output to quantum_mcts_visualizations/jarzynski_plots
+2025-06-27 08:23:19,112 - __main__ - INFO - ✓ Initialized jarzynski_equality visualizer
+2025-06-27 08:23:19,112 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis visualizer initialized with output to quantum_mcts_visualizations/exact_hbar_plots
+2025-06-27 08:23:19,112 - __main__ - INFO - ✓ Initialized exact_hbar_analysis visualizer
+2025-06-27 08:23:19,112 - __main__ - INFO - Successfully initialized 8/8 visualizers
+2025-06-27 08:23:19,113 - __main__ - INFO - ============================================================
+2025-06-27 08:23:19,113 - __main__ - INFO - RUNNING RG FLOW AND PHASE DIAGRAM ANALYSIS
+2025-06-27 08:23:19,113 - __main__ - INFO - ============================================================
+2025-06-27 08:23:19,113 - plot_rg_flow_phase_diagrams - INFO - Generating comprehensive RG flow analysis report...
+2025-06-27 08:23:19,275 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:19,275 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:19,275 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:19,275 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_beta_functions
+2025-06-27 08:23:21,478 - plot_rg_flow_phase_diagrams - INFO - Saved β-functions plot
+2025-06-27 08:23:21,611 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:21,611 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:21,611 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:21,611 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_diagrams
+2025-06-27 08:23:23,367 - plot_rg_flow_phase_diagrams - INFO - Saved phase diagrams plot
+2025-06-27 08:23:23,506 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:23,506 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:23,506 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:23,506 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_rg_trajectories
+2025-06-27 08:23:25,605 - plot_rg_flow_phase_diagrams - INFO - Saved RG trajectories plot
+2025-06-27 08:23:25,605 - plot_rg_flow_phase_diagrams - INFO - Saved comprehensive report to quantum_mcts_visualizations/rg_flow_plots/rg_flow_analysis_report.json
+2025-06-27 08:23:25,605 - plot_rg_flow_phase_diagrams - INFO - RG flow and phase diagram analysis complete!
+2025-06-27 08:23:25,605 - __main__ - INFO - Creating RG flow animation...
+2025-06-27 08:23:25,663 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:23:25,664 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:23:25,668 - __main__ - WARNING - Animation creation failed: list index out of range
+2025-06-27 08:23:25,668 - __main__ - INFO - ✓ RG flow analysis completed in 6.56s
+2025-06-27 08:23:25,668 - __main__ - INFO - Generated 3 plots
+2025-06-27 08:23:25,668 - __main__ - INFO - ============================================================
+2025-06-27 08:23:25,668 - __main__ - INFO - RUNNING STATISTICAL PHYSICS ANALYSIS
+2025-06-27 08:23:25,668 - __main__ - INFO - ============================================================
+2025-06-27 08:23:25,668 - plot_statistical_physics - INFO - Generating comprehensive statistical physics report...
+2025-06-27 08:23:25,803 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:25,804 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:25,804 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:25,804 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_correlation_functions
+2025-06-27 08:23:27,540 - plot_statistical_physics - INFO - Saved correlation functions plot
+2025-06-27 08:23:27,675 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:27,675 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:27,676 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:27,676 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-27 08:23:28,714 - plot_statistical_physics - INFO - Saved data collapse plot
+2025-06-27 08:23:28,855 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:28,856 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:28,856 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:28,856 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-27 08:23:30,378 - plot_statistical_physics - INFO - Saved finite-size scaling plot
+2025-06-27 08:23:30,509 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:23:30,510 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:23:30,510 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:23:30,510 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_susceptibility_analysis
+2025-06-27 08:23:32,118 - plot_statistical_physics - INFO - Saved susceptibility analysis plot
+2025-06-27 08:23:32,118 - plot_statistical_physics - INFO - Saved comprehensive report to quantum_mcts_visualizations/statistical_physics_plots/statistical_physics_report.json
+2025-06-27 08:23:32,118 - plot_statistical_physics - INFO - Statistical physics analysis complete!
+2025-06-27 08:23:32,119 - __main__ - INFO - Creating statistical physics animations...
+2025-06-27 08:23:32,157 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:23:32,157 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:23:54,266 - plot_statistical_physics - INFO - Saved correlations evolution animation
+2025-06-27 08:23:54,303 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:23:54,303 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:24:15,999 - plot_statistical_physics - INFO - Saved susceptibility evolution animation
+2025-06-27 08:24:15,999 - __main__ - INFO - ✓ Statistical physics analysis completed in 50.33s
+2025-06-27 08:24:15,999 - __main__ - INFO - Generated 4 plots
+2025-06-27 08:24:15,999 - __main__ - INFO - ============================================================
+2025-06-27 08:24:15,999 - __main__ - INFO - RUNNING CRITICAL PHENOMENA ANALYSIS
+2025-06-27 08:24:15,999 - __main__ - INFO - ============================================================
+2025-06-27 08:24:15,999 - plot_critical_phenomena_scaling - INFO - Generating comprehensive critical phenomena report...
+2025-06-27 08:24:16,125 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:24:16,126 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:24:16,126 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:24:16,126 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_critical_phenomena_scaling
+2025-06-27 08:24:18,150 - plot_critical_phenomena_scaling - INFO - Saved critical exponents plot
+2025-06-27 08:24:18,292 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:24:18,292 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:24:18,292 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:24:18,293 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-27 08:24:19,228 - plot_critical_phenomena_scaling - INFO - Saved 3D data collapse plot
+2025-06-27 08:24:19,355 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:24:19,357 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:24:19,357 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:24:19,357 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-27 08:24:20,730 - plot_critical_phenomena_scaling - INFO - Saved scaling functions plot
+2025-06-27 08:24:20,730 - plot_critical_phenomena_scaling - INFO - Saved comprehensive report to quantum_mcts_visualizations/critical_phenomena_plots/critical_phenomena_report.json
+2025-06-27 08:24:20,730 - plot_critical_phenomena_scaling - INFO - Critical phenomena analysis complete!
+2025-06-27 08:24:20,730 - __main__ - INFO - Creating critical phenomena animations...
+2025-06-27 08:24:20,778 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:24:20,778 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:25:07,743 - plot_critical_phenomena_scaling - INFO - Saved critical order_parameter evolution animation
+2025-06-27 08:25:07,781 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:25:07,781 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:25:51,244 - plot_critical_phenomena_scaling - INFO - Saved critical susceptibility evolution animation
+2025-06-27 08:25:51,245 - __main__ - INFO - ✓ Critical phenomena analysis completed in 95.25s
+2025-06-27 08:25:51,245 - __main__ - INFO - Generated 3 plots
+2025-06-27 08:25:51,245 - __main__ - INFO - ============================================================
+2025-06-27 08:25:51,246 - __main__ - INFO - RUNNING DECOHERENCE AND QUANTUM DARWINISM ANALYSIS
+2025-06-27 08:25:51,246 - __main__ - INFO - ============================================================
+2025-06-27 08:25:51,246 - plot_decoherence_darwinism - INFO - Generating comprehensive decoherence analysis report...
+2025-06-27 08:25:51,457 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:25:51,457 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:25:51,457 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:25:51,457 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_decoherence_dynamics
+2025-06-27 08:25:53,332 - plot_decoherence_darwinism - INFO - Saved decoherence dynamics plot
+2025-06-27 08:25:53,477 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:25:53,477 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:25:53,478 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:25:53,478 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_proliferation
+2025-06-27 08:25:54,857 - plot_decoherence_darwinism - INFO - Saved information proliferation plot
+2025-06-27 08:25:54,995 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:25:54,995 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:25:54,995 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:25:54,995 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_pointer_states
+2025-06-27 08:25:56,289 - plot_decoherence_darwinism - INFO - Saved pointer states plot
+2025-06-27 08:25:56,289 - plot_decoherence_darwinism - INFO - Saved comprehensive report to quantum_mcts_visualizations/decoherence_plots/decoherence_darwinism_report.json
+2025-06-27 08:25:56,289 - plot_decoherence_darwinism - INFO - Decoherence and quantum Darwinism analysis complete!
+2025-06-27 08:25:56,289 - __main__ - INFO - Creating decoherence animations...
+2025-06-27 08:25:56,322 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:25:56,322 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:26:41,909 - plot_decoherence_darwinism - INFO - Saved coherence_decay evolution animation
+2025-06-27 08:26:41,943 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:26:41,943 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:27:27,833 - plot_decoherence_darwinism - INFO - Saved purity_evolution evolution animation
+2025-06-27 08:27:27,833 - __main__ - INFO - ✓ Decoherence analysis completed in 96.59s
+2025-06-27 08:27:27,834 - __main__ - INFO - Generated 3 plots
+2025-06-27 08:27:27,834 - __main__ - INFO - ============================================================
+2025-06-27 08:27:27,834 - __main__ - INFO - RUNNING ENTROPY AND INFORMATION ANALYSIS
+2025-06-27 08:27:27,834 - __main__ - INFO - ============================================================
+2025-06-27 08:27:27,834 - plot_entropy_analysis - INFO - Generating comprehensive entropy analysis report...
+2025-06-27 08:27:27,964 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:27:27,964 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:27:27,964 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:27:27,964 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entanglement_analysis
+2025-06-27 08:27:29,337 - plot_entropy_analysis - INFO - Saved entanglement analysis plot
+2025-06-27 08:27:29,465 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:27:29,465 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:27:29,465 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:27:29,465 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entropy_scaling
+2025-06-27 08:27:30,838 - plot_entropy_analysis - INFO - Saved entropy scaling plot
+2025-06-27 08:27:31,007 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:27:31,008 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:27:31,009 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:27:31,010 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_flow
+2025-06-27 08:27:32,751 - plot_entropy_analysis - INFO - Saved information flow plot
+2025-06-27 08:27:32,888 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:27:32,889 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:27:32,889 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:27:32,889 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_entropy
+2025-06-27 08:27:34,349 - plot_entropy_analysis - INFO - Saved thermodynamic entropy plot
+2025-06-27 08:27:34,350 - plot_entropy_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/entropy_plots/entropy_analysis_report.json
+2025-06-27 08:27:34,350 - plot_entropy_analysis - INFO - Entropy analysis complete!
+2025-06-27 08:27:34,350 - __main__ - INFO - Creating entropy animations...
+2025-06-27 08:27:34,405 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:27:34,405 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:28:18,254 - plot_entropy_analysis - INFO - Saved entanglement entropy evolution animation
+2025-06-27 08:28:18,308 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:28:18,308 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:29:02,232 - plot_entropy_analysis - INFO - Saved von_neumann entropy evolution animation
+2025-06-27 08:29:02,232 - __main__ - INFO - ✓ Entropy analysis completed in 94.40s
+2025-06-27 08:29:02,232 - __main__ - INFO - Generated 4 plots
+2025-06-27 08:29:02,232 - __main__ - INFO - ============================================================
+2025-06-27 08:29:02,232 - __main__ - INFO - RUNNING THERMODYNAMICS ANALYSIS
+2025-06-27 08:29:02,232 - __main__ - INFO - ============================================================
+2025-06-27 08:29:02,232 - plot_thermodynamics - INFO - Generating comprehensive thermodynamics report...
+2025-06-27 08:29:02,361 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:29:02,362 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:29:02,362 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:29:02,362 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 08:29:03,790 - plot_thermodynamics - INFO - Saved non-equilibrium thermodynamics plot
+2025-06-27 08:29:03,920 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:29:03,920 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:29:03,920 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:29:03,920 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_transitions
+2025-06-27 08:29:05,286 - plot_thermodynamics - INFO - Saved phase transitions plot
+2025-06-27 08:29:05,414 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:29:05,414 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:29:05,414 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:29:05,414 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_cycles
+2025-06-27 08:29:06,659 - plot_thermodynamics - INFO - Saved thermodynamic cycles plot
+2025-06-27 08:29:06,660 - plot_thermodynamics - INFO - Creating Otto cycle comparison animation...
+2025-06-27 08:29:06,665 - plot_thermodynamics - INFO - Extracted 100 temporal thermodynamic data points from MCTS
+2025-06-27 08:29:06,698 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:29:06,698 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:30:36,741 - plot_thermodynamics - INFO - Saved otto ideal vs MCTS comparison animation
+2025-06-27 08:30:36,741 - plot_thermodynamics - INFO - Creating Carnot cycle comparison animation...
+2025-06-27 08:30:36,746 - plot_thermodynamics - INFO - Extracted 100 temporal thermodynamic data points from MCTS
+2025-06-27 08:30:36,806 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:30:36,807 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:30:36,807 - plot_thermodynamics - WARNING - Failed to create comparison animations: list index out of range
+2025-06-27 08:30:36,808 - plot_thermodynamics - INFO - Saved comprehensive report to quantum_mcts_visualizations/thermodynamics_plots/thermodynamics_report.json
+2025-06-27 08:30:36,808 - plot_thermodynamics - INFO - Thermodynamics analysis complete!
+2025-06-27 08:30:36,808 - __main__ - INFO - Creating thermodynamics animations...
+2025-06-27 08:30:36,863 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:30:36,863 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:31:27,492 - plot_thermodynamics - INFO - Saved otto cycle animation
+2025-06-27 08:31:27,526 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:31:27,527 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:32:17,329 - plot_thermodynamics - INFO - Saved carnot cycle animation
+2025-06-27 08:32:17,329 - __main__ - INFO - ✓ Thermodynamics analysis completed in 195.10s
+2025-06-27 08:32:17,329 - __main__ - INFO - Generated 5 plots
+2025-06-27 08:32:17,329 - __main__ - INFO - ============================================================
+2025-06-27 08:32:17,329 - __main__ - INFO - RUNNING JARZYNSKI EQUALITY ANALYSIS
+2025-06-27 08:32:17,329 - __main__ - INFO - ============================================================
+2025-06-27 08:32:17,329 - plot_jarzynski_equality - INFO - Generating comprehensive Jarzynski equality report...
+2025-06-27 08:32:17,459 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:32:17,459 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:32:17,459 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:32:17,459 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 08:32:18,904 - plot_jarzynski_equality - INFO - Saved Jarzynski verification plot
+2025-06-27 08:32:19,044 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:32:19,044 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:32:19,044 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:32:19,044 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 08:32:20,833 - plot_jarzynski_equality - INFO - Saved work fluctuation analysis plot
+2025-06-27 08:32:21,908 - plot_jarzynski_equality - INFO - Saved path integral formulation plot
+2025-06-27 08:32:21,909 - plot_jarzynski_equality - INFO - Saved comprehensive report to quantum_mcts_visualizations/jarzynski_plots/jarzynski_equality_report.json
+2025-06-27 08:32:21,909 - plot_jarzynski_equality - INFO - Jarzynski equality analysis complete!
+2025-06-27 08:32:21,909 - __main__ - INFO - Creating Jarzynski animations...
+2025-06-27 08:32:21,944 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 08:32:21,944 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 08:33:03,969 - plot_jarzynski_equality - INFO - Saved Jarzynski convergence animation
+2025-06-27 08:33:03,969 - __main__ - INFO - ✓ Jarzynski analysis completed in 46.64s
+2025-06-27 08:33:03,970 - __main__ - INFO - Generated 3 plots
+2025-06-27 08:33:03,970 - __main__ - INFO - ============================================================
+2025-06-27 08:33:03,970 - __main__ - INFO - RUNNING EXACT ℏ_EFF ANALYSIS
+2025-06-27 08:33:03,970 - __main__ - INFO - ============================================================
+2025-06-27 08:33:03,970 - plot_exact_hbar_analysis - INFO - Generating comprehensive exact ℏ_eff analysis report...
+2025-06-27 08:33:04,101 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 08:33:04,101 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 08:33:04,101 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 08:33:04,101 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_classical_limit_verification
+2025-06-27 08:33:04,101 - __main__ - ERROR - ✗ Exact ℏ_eff analysis failed: len() of unsized object
+2025-06-27 08:33:04,102 - __main__ - ERROR - Traceback (most recent call last):
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/run_all_visualizations.py", line 477, in run_exact_hbar_analysis
+    report = visualizer.generate_comprehensive_report(save_report=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_exact_hbar_analysis.py", line 727, in generate_comprehensive_report
+    hbar_results = self.plot_hbar_eff_derivation(save_plots=save_report)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_exact_hbar_analysis.py", line 75, in plot_hbar_eff_derivation
+    data = optimize_for_large_data(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/plot_fixes_common.py", line 290, in optimize_for_large_data
+    if isinstance(value, (list, np.ndarray)) and len(value) > 10000:
+                                                 ^^^^^^^^^^
+TypeError: len() of unsized object
+
+2025-06-27 08:33:04,102 - __main__ - INFO - Generating master report...
+2025-06-27 08:33:04,103 - __main__ - INFO - Analysis Summary:
+2025-06-27 08:33:04,103 - __main__ - INFO -   ✓ Successful analyses: 7/8
+2025-06-27 08:33:04,103 - __main__ - INFO -   📊 Total plots generated: 25
+2025-06-27 08:33:04,103 - __main__ - INFO -   ⏱️ Average analysis time: 83.55s
+2025-06-27 08:33:04,103 - __main__ - INFO -   📁 Output directory: quantum_mcts_visualizations
+2025-06-27 08:33:04,103 - __main__ - INFO - ================================================================================
+2025-06-27 08:33:04,103 - __main__ - INFO - 🎉 QUANTUM MCTS VISUALIZATION SUITE COMPLETED
+2025-06-27 08:33:04,103 - __main__ - INFO - Total execution time: 585.28 seconds
+2025-06-27 08:33:04,104 - __main__ - INFO - Master report saved to: quantum_mcts_visualizations/master_report.json
+2025-06-27 08:33:04,104 - __main__ - INFO - ================================================================================
+2025-06-27 11:47:58,669 - __main__ - INFO - Quantum MCTS Visualization Suite initialized
+2025-06-27 11:47:58,669 - __main__ - INFO - Output directory: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/visualization/quantum_mcts_visualizations
+2025-06-27 11:47:58,669 - __main__ - INFO - 🚀 STARTING COMPREHENSIVE QUANTUM MCTS VISUALIZATION SUITE
+2025-06-27 11:47:58,669 - __main__ - INFO - ================================================================================
+2025-06-27 11:47:58,669 - __main__ - INFO - Loading MCTS data...
+2025-06-27 11:47:58,669 - __main__ - INFO - Loading MCTS data from: /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/data_collection/real_mcts_data.json
+2025-06-27 11:47:58,967 - __main__ - INFO - Successfully loaded 1746 MCTS datasets with 0 total simulations
+2025-06-27 11:47:58,967 - __main__ - INFO - Initializing visualization modules...
+2025-06-27 11:47:58,968 - plot_rg_flow_phase_diagrams - INFO - RG flow visualizer initialized with output to quantum_mcts_visualizations/rg_flow_plots
+2025-06-27 11:47:58,968 - __main__ - INFO - ✓ Initialized rg_flow_phase visualizer
+2025-06-27 11:47:58,968 - plot_statistical_physics - INFO - Statistical physics visualizer initialized with output to quantum_mcts_visualizations/statistical_physics_plots
+2025-06-27 11:47:58,968 - __main__ - INFO - ✓ Initialized statistical_physics visualizer
+2025-06-27 11:47:58,969 - plot_critical_phenomena_scaling - INFO - Critical phenomena visualizer initialized with output to quantum_mcts_visualizations/critical_phenomena_plots
+2025-06-27 11:47:58,969 - __main__ - INFO - ✓ Initialized critical_phenomena visualizer
+2025-06-27 11:47:58,969 - plot_decoherence_darwinism - INFO - Decoherence Darwinism visualizer initialized with output to quantum_mcts_visualizations/decoherence_plots
+2025-06-27 11:47:58,969 - __main__ - INFO - ✓ Initialized decoherence_darwinism visualizer
+2025-06-27 11:47:58,969 - plot_entropy_analysis - INFO - Entropy analysis visualizer initialized with output to quantum_mcts_visualizations/entropy_plots
+2025-06-27 11:47:58,969 - __main__ - INFO - ✓ Initialized entropy_analysis visualizer
+2025-06-27 11:47:58,969 - plot_thermodynamics - INFO - Thermodynamics visualizer initialized with output to quantum_mcts_visualizations/thermodynamics_plots
+2025-06-27 11:47:58,970 - __main__ - INFO - ✓ Initialized thermodynamics visualizer
+2025-06-27 11:47:58,970 - plot_jarzynski_equality - INFO - Jarzynski equality visualizer initialized with output to quantum_mcts_visualizations/jarzynski_plots
+2025-06-27 11:47:58,970 - __main__ - INFO - ✓ Initialized jarzynski_equality visualizer
+2025-06-27 11:47:58,970 - plot_exact_hbar_analysis - INFO - Exact ℏ_eff analysis visualizer initialized with output to quantum_mcts_visualizations/exact_hbar_plots
+2025-06-27 11:47:58,970 - __main__ - INFO - ✓ Initialized exact_hbar_analysis visualizer
+2025-06-27 11:47:58,970 - __main__ - INFO - Successfully initialized 8/8 visualizers
+2025-06-27 11:47:58,970 - __main__ - INFO - ============================================================
+2025-06-27 11:47:58,970 - __main__ - INFO - RUNNING RG FLOW AND PHASE DIAGRAM ANALYSIS
+2025-06-27 11:47:58,970 - __main__ - INFO - ============================================================
+2025-06-27 11:47:58,970 - plot_rg_flow_phase_diagrams - INFO - Generating comprehensive RG flow analysis report...
+2025-06-27 11:47:59,124 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:47:59,124 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:47:59,124 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:47:59,124 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_beta_functions
+2025-06-27 11:48:01,201 - plot_rg_flow_phase_diagrams - INFO - Saved β-functions plot
+2025-06-27 11:48:01,353 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:01,353 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:01,353 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:01,353 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_diagrams
+2025-06-27 11:48:03,052 - plot_rg_flow_phase_diagrams - INFO - Saved phase diagrams plot
+2025-06-27 11:48:03,207 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:03,207 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:03,207 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:03,207 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_rg_trajectories
+2025-06-27 11:48:05,263 - plot_rg_flow_phase_diagrams - INFO - Saved RG trajectories plot
+2025-06-27 11:48:05,263 - plot_rg_flow_phase_diagrams - INFO - Saved comprehensive report to quantum_mcts_visualizations/rg_flow_plots/rg_flow_analysis_report.json
+2025-06-27 11:48:05,263 - plot_rg_flow_phase_diagrams - INFO - RG flow and phase diagram analysis complete!
+2025-06-27 11:48:05,264 - __main__ - INFO - Creating RG flow animation...
+2025-06-27 11:48:05,318 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:48:05,319 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:48:05,322 - __main__ - WARNING - Animation creation failed: list index out of range
+2025-06-27 11:48:05,322 - __main__ - INFO - ✓ RG flow analysis completed in 6.35s
+2025-06-27 11:48:05,322 - __main__ - INFO - Generated 3 plots
+2025-06-27 11:48:05,322 - __main__ - INFO - ============================================================
+2025-06-27 11:48:05,322 - __main__ - INFO - RUNNING STATISTICAL PHYSICS ANALYSIS
+2025-06-27 11:48:05,322 - __main__ - INFO - ============================================================
+2025-06-27 11:48:05,322 - plot_statistical_physics - INFO - Generating comprehensive statistical physics report...
+2025-06-27 11:48:05,466 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:05,467 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:05,467 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:05,467 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_correlation_functions
+2025-06-27 11:48:07,154 - plot_statistical_physics - INFO - Saved correlation functions plot
+2025-06-27 11:48:07,284 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:07,284 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:07,284 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:07,284 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-27 11:48:08,273 - plot_statistical_physics - INFO - Saved data collapse plot
+2025-06-27 11:48:08,391 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:08,391 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:08,391 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:08,391 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-27 11:48:09,928 - plot_statistical_physics - INFO - Saved finite-size scaling plot
+2025-06-27 11:48:10,056 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:10,056 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:10,056 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:10,056 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_susceptibility_analysis
+2025-06-27 11:48:11,562 - plot_statistical_physics - INFO - Saved susceptibility analysis plot
+2025-06-27 11:48:11,562 - plot_statistical_physics - INFO - Saved comprehensive report to quantum_mcts_visualizations/statistical_physics_plots/statistical_physics_report.json
+2025-06-27 11:48:11,562 - plot_statistical_physics - INFO - Statistical physics analysis complete!
+2025-06-27 11:48:11,562 - __main__ - INFO - Creating statistical physics animations...
+2025-06-27 11:48:11,603 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:48:11,603 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:48:33,604 - plot_statistical_physics - INFO - Saved correlations evolution animation
+2025-06-27 11:48:33,632 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:48:33,632 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:48:54,960 - plot_statistical_physics - INFO - Saved susceptibility evolution animation
+2025-06-27 11:48:54,960 - __main__ - INFO - ✓ Statistical physics analysis completed in 49.64s
+2025-06-27 11:48:54,960 - __main__ - INFO - Generated 4 plots
+2025-06-27 11:48:54,960 - __main__ - INFO - ============================================================
+2025-06-27 11:48:54,961 - __main__ - INFO - RUNNING CRITICAL PHENOMENA ANALYSIS
+2025-06-27 11:48:54,961 - __main__ - INFO - ============================================================
+2025-06-27 11:48:54,961 - plot_critical_phenomena_scaling - INFO - Generating comprehensive critical phenomena report...
+2025-06-27 11:48:55,114 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:55,115 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:55,115 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:55,115 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_critical_phenomena_scaling
+2025-06-27 11:48:57,093 - plot_critical_phenomena_scaling - INFO - Saved critical exponents plot
+2025-06-27 11:48:57,226 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:57,226 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:57,226 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:57,226 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_data_collapse
+2025-06-27 11:48:58,176 - plot_critical_phenomena_scaling - INFO - Saved 3D data collapse plot
+2025-06-27 11:48:58,299 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:48:58,300 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:48:58,300 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:48:58,300 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_finite_size_scaling
+2025-06-27 11:48:59,675 - plot_critical_phenomena_scaling - INFO - Saved scaling functions plot
+2025-06-27 11:48:59,675 - plot_critical_phenomena_scaling - INFO - Saved comprehensive report to quantum_mcts_visualizations/critical_phenomena_plots/critical_phenomena_report.json
+2025-06-27 11:48:59,675 - plot_critical_phenomena_scaling - INFO - Critical phenomena analysis complete!
+2025-06-27 11:48:59,675 - __main__ - INFO - Creating critical phenomena animations...
+2025-06-27 11:48:59,705 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:48:59,705 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:49:45,967 - plot_critical_phenomena_scaling - INFO - Saved critical order_parameter evolution animation
+2025-06-27 11:49:46,000 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:49:46,001 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:50:26,753 - plot_critical_phenomena_scaling - INFO - Saved critical susceptibility evolution animation
+2025-06-27 11:50:26,753 - __main__ - INFO - ✓ Critical phenomena analysis completed in 91.79s
+2025-06-27 11:50:26,753 - __main__ - INFO - Generated 3 plots
+2025-06-27 11:50:26,753 - __main__ - INFO - ============================================================
+2025-06-27 11:50:26,753 - __main__ - INFO - RUNNING DECOHERENCE AND QUANTUM DARWINISM ANALYSIS
+2025-06-27 11:50:26,753 - __main__ - INFO - ============================================================
+2025-06-27 11:50:26,753 - plot_decoherence_darwinism - INFO - Generating comprehensive decoherence analysis report...
+2025-06-27 11:50:26,877 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:50:26,877 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:50:26,877 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:50:26,877 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_decoherence_dynamics
+2025-06-27 11:50:28,770 - plot_decoherence_darwinism - INFO - Saved decoherence dynamics plot
+2025-06-27 11:50:28,909 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:50:28,909 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:50:28,909 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:50:28,909 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_proliferation
+2025-06-27 11:50:30,199 - plot_decoherence_darwinism - INFO - Saved information proliferation plot
+2025-06-27 11:50:30,327 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:50:30,327 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:50:30,327 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:50:30,327 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_pointer_states
+2025-06-27 11:50:31,616 - plot_decoherence_darwinism - INFO - Saved pointer states plot
+2025-06-27 11:50:31,616 - plot_decoherence_darwinism - INFO - Saved comprehensive report to quantum_mcts_visualizations/decoherence_plots/decoherence_darwinism_report.json
+2025-06-27 11:50:31,617 - plot_decoherence_darwinism - INFO - Decoherence and quantum Darwinism analysis complete!
+2025-06-27 11:50:31,617 - __main__ - INFO - Creating decoherence animations...
+2025-06-27 11:50:31,651 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:50:31,652 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:51:16,327 - plot_decoherence_darwinism - INFO - Saved coherence_decay evolution animation
+2025-06-27 11:51:16,368 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:51:16,368 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:52:01,433 - plot_decoherence_darwinism - INFO - Saved purity_evolution evolution animation
+2025-06-27 11:52:01,433 - __main__ - INFO - ✓ Decoherence analysis completed in 94.68s
+2025-06-27 11:52:01,433 - __main__ - INFO - Generated 3 plots
+2025-06-27 11:52:01,433 - __main__ - INFO - ============================================================
+2025-06-27 11:52:01,433 - __main__ - INFO - RUNNING ENTROPY AND INFORMATION ANALYSIS
+2025-06-27 11:52:01,433 - __main__ - INFO - ============================================================
+2025-06-27 11:52:01,433 - plot_entropy_analysis - INFO - Generating comprehensive entropy analysis report...
+2025-06-27 11:52:01,562 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:52:01,562 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:52:01,562 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:52:01,562 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entanglement_analysis
+2025-06-27 11:52:02,956 - plot_entropy_analysis - INFO - Saved entanglement analysis plot
+2025-06-27 11:52:03,086 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:52:03,086 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:52:03,087 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:52:03,087 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_entropy_scaling
+2025-06-27 11:52:04,442 - plot_entropy_analysis - INFO - Saved entropy scaling plot
+2025-06-27 11:52:04,581 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:52:04,581 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:52:04,581 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:52:04,581 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_information_flow
+2025-06-27 11:52:06,328 - plot_entropy_analysis - INFO - Saved information flow plot
+2025-06-27 11:52:06,458 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:52:06,459 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:52:06,459 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:52:06,459 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_entropy
+2025-06-27 11:52:07,903 - plot_entropy_analysis - INFO - Saved thermodynamic entropy plot
+2025-06-27 11:52:07,904 - plot_entropy_analysis - INFO - Saved comprehensive report to quantum_mcts_visualizations/entropy_plots/entropy_analysis_report.json
+2025-06-27 11:52:07,904 - plot_entropy_analysis - INFO - Entropy analysis complete!
+2025-06-27 11:52:07,904 - __main__ - INFO - Creating entropy animations...
+2025-06-27 11:52:07,936 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:52:07,936 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:52:51,387 - plot_entropy_analysis - INFO - Saved entanglement entropy evolution animation
+2025-06-27 11:52:51,421 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:52:51,421 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:53:35,748 - plot_entropy_analysis - INFO - Saved von_neumann entropy evolution animation
+2025-06-27 11:53:35,748 - __main__ - INFO - ✓ Entropy analysis completed in 94.31s
+2025-06-27 11:53:35,748 - __main__ - INFO - Generated 4 plots
+2025-06-27 11:53:35,749 - __main__ - INFO - ============================================================
+2025-06-27 11:53:35,749 - __main__ - INFO - RUNNING THERMODYNAMICS ANALYSIS
+2025-06-27 11:53:35,749 - __main__ - INFO - ============================================================
+2025-06-27 11:53:35,749 - plot_thermodynamics - INFO - Generating comprehensive thermodynamics report...
+2025-06-27 11:53:35,875 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:53:35,875 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:53:35,875 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:53:35,875 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_non_equilibrium_thermodynamics
+2025-06-27 11:53:37,277 - plot_thermodynamics - INFO - Saved non-equilibrium thermodynamics plot
+2025-06-27 11:53:37,430 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:53:37,430 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:53:37,431 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:53:37,431 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_phase_transitions
+2025-06-27 11:53:38,858 - plot_thermodynamics - INFO - Saved phase transitions plot
+2025-06-27 11:53:38,996 - authentic_mcts_physics_extractor - INFO - Extracted 1794 visit counts from 1746 tree snapshots
+2025-06-27 11:53:38,996 - authentic_mcts_physics_extractor - INFO - Visit count range: 1.0 - 100.0
+2025-06-27 11:53:38,997 - authentic_mcts_physics_extractor - INFO - Q-value range: -1.000 - 1.000
+2025-06-27 11:53:38,997 - authentic_mcts_physics_extractor - INFO - Creating authentic physics data for plot_thermodynamic_cycles
+2025-06-27 11:53:40,311 - plot_thermodynamics - INFO - Saved thermodynamic cycles plot
+2025-06-27 11:53:40,311 - plot_thermodynamics - INFO - Creating Otto cycle comparison animation...
+2025-06-27 11:53:40,317 - plot_thermodynamics - INFO - Extracted 100 temporal thermodynamic data points from MCTS
+2025-06-27 11:53:40,369 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:53:40,369 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:55:10,190 - plot_thermodynamics - INFO - Saved otto ideal vs MCTS comparison animation
+2025-06-27 11:55:10,190 - plot_thermodynamics - INFO - Creating Carnot cycle comparison animation...
+2025-06-27 11:55:10,195 - plot_thermodynamics - INFO - Extracted 100 temporal thermodynamic data points from MCTS
+2025-06-27 11:55:10,232 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:55:10,232 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:55:10,233 - plot_thermodynamics - WARNING - Failed to create comparison animations: list index out of range
+2025-06-27 11:55:10,233 - plot_thermodynamics - INFO - Saved comprehensive report to quantum_mcts_visualizations/thermodynamics_plots/thermodynamics_report.json
+2025-06-27 11:55:10,233 - plot_thermodynamics - INFO - Thermodynamics analysis complete!
+2025-06-27 11:55:10,233 - __main__ - INFO - Creating thermodynamics animations...
+2025-06-27 11:55:10,265 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:55:10,265 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.
+2025-06-27 11:56:00,009 - plot_thermodynamics - INFO - Saved otto cycle animation
+2025-06-27 11:56:00,046 - matplotlib.animation - INFO - Animation.save using <class 'matplotlib.animation.PillowWriter'>
+2025-06-27 11:56:00,046 - matplotlib.animation - INFO - Disabling savefig.bbox = 'tight', as it may cause frame size to vary, which is inappropriate for animation.

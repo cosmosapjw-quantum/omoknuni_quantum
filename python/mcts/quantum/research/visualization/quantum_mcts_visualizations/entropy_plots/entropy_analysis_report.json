@@ -1,0 +1,43 @@
+{
+  "timestamp": "2025-06-27T11:52:07.904074",
+  "mcts_data_summary": {
+    "datasets_analyzed": 1746,
+    "data_source": "authentic_mcts_tree_dynamics"
+  },
+  "entanglement_analysis": {
+    "area_law_confirmed": true,
+    "entanglement_growth": "logarithmic",
+    "mutual_information_analyzed": true,
+    "negativity_computed": true
+  },
+  "entropy_scaling": {
+    "scaling_law": "area_law",
+    "scaling_exponents_extracted": 1,
+    "finite_size_corrections": true,
+    "critical_scaling_identified": true
+  },
+  "information_theory": {
+    "quantum_classical_distinction": true,
+    "quantum_discord_analyzed": true,
+    "information_measures": {
+      "Von Neumann": 7.475399612214977,
+      "Shannon": 10.576531764344299,
+      "Mutual Info": 6.9303260203741495,
+      "Quantum Discord": 1.8167817277709803,
+      "Relative Entropy": 6.877367643237779
+    },
+    "relative_entropy_computed": true
+  },
+  "thermodynamic_entropy": {
+    "heat_capacity_analyzed": true,
+    "maxwell_relations_verified": true,
+    "entropy_production_studied": true,
+    "fluctuation_dissipation_checked": true
+  },
+  "output_files": [
+    "entanglement_analysis.png",
+    "entropy_scaling.png",
+    "information_flow.png",
+    "thermodynamic_entropy.png"
+  ]
+}

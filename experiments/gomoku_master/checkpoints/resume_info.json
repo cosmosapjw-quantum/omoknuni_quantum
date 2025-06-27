@@ -1,0 +1,6 @@
+{
+  "iteration": 1,
+  "checkpoint_path": "/home/cosmosapjw/omoknuni_quantum/experiments/gomoku_master/checkpoints/checkpoint_iter_1.pt",
+  "buffer_path": "/home/cosmosapjw/omoknuni_quantum/experiments/gomoku_master/self_play_data/replay_buffer_iter_1.pkl",
+  "timestamp": "2025-06-27T10:08:52.425153"
+}
