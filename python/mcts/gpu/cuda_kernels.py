@@ -11,6 +11,8 @@ from typing import Tuple, Optional, List, Dict
 import math
 import logging
 import numpy as np
+import os
+import multiprocessing
 
 try:
     import triton
@@ -28,8 +30,26 @@ CUDA_AVAILABLE = torch.cuda.is_available()
 
 # Configure for optimal performance
 if CUDA_AVAILABLE:
-    # Set CUDA memory allocator settings for better performance
-    torch.cuda.set_per_process_memory_fraction(0.9)  # Use up to 90% of GPU memory
+    # Set CUDA memory allocator settings for better performance with error handling
+    try:
+        # Only set memory fraction in main process to avoid OOM in multiprocessing workers
+        if multiprocessing.current_process().name == 'MainProcess':
+            # Use conservative memory fraction to avoid conflicts
+            torch.cuda.set_per_process_memory_fraction(0.4)
+        else:
+            # For worker processes, use a much smaller fraction
+            torch.cuda.set_per_process_memory_fraction(0.1)
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            # Fallback to even more conservative allocation
+            try:
+                torch.cuda.set_per_process_memory_fraction(0.2)
+            except RuntimeError:
+                # If still failing, continue without setting fraction
+                pass
+        else:
+            raise e
+    
     torch.backends.cudnn.benchmark = True  # Enable cuDNN autotuner
     torch.backends.cuda.matmul.allow_tf32 = True  # Allow TF32 for better perf
     
@@ -927,7 +947,7 @@ def create_gpu_accelerated_evaluator(model, config):
     # JIT compile for better performance
     try:
         model = torch.jit.script(model)
-        logger.info("Model JIT compiled for better performance")
+        logger.debug("Model JIT compiled for better performance")
     except Exception as e:
         logger.warning(f"JIT compilation failed: {e}")
         

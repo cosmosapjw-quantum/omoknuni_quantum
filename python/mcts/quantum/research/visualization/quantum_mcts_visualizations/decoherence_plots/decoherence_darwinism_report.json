@@ -1,11 +1,11 @@
 {
-  "timestamp": "2025-06-27T11:50:31.616706",
+  "timestamp": "2025-06-30T22:34:13.575823",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "decoherence_analysis": {
-    "decoherence_time_scaling_exponent": 1.0,
+    "decoherence_time_scaling_exponent": 0.9999999999999988,
     "coherence_decay_confirmed": true,
     "environment_coupling_effects": true,
     "temperature_dependence": true
@@ -17,7 +17,7 @@
     "darwinism_criteria_satisfied": true
   },
   "pointer_states": {
-    "dominant_pointer_state_index": 0,
+    "dominant_pointer_state_index": 4,
     "stability_analysis": {
       "most_stable_energies": [
         -2.0,

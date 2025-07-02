@@ -18,6 +18,15 @@ import json
 import time
 import logging
 import numpy as np
+import warnings
+
+# Suppress all warnings at the start to clean up output
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
+# Set CUDA environment variables for optimal performance
+os.environ['CUDA_HOME'] = '/usr/local/cuda'
+os.environ['TORCH_CUDA_ARCH_LIST'] = '8.6'
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -60,6 +69,9 @@ for name in ['matplotlib', 'PIL', 'numba', 'cuda', 'gpu']:
 # Add the MCTS modules to path
 mcts_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(mcts_root))
+
+# Import PyTorch
+import torch
 
 # Import MCTS modules
 try:
@@ -151,10 +163,13 @@ class RealGameSession:
 class RealMCTSDataCollector:
     """Collects comprehensive data from real MCTS self-play runs"""
     
-    def __init__(self, evaluator_type: str = "mock", device: str = "cpu", verbose: bool = False):
+    def __init__(self, evaluator_type: str = "mock", device: str = "cpu", verbose: bool = False,
+                 auto_optimize: bool = True, workload_type: str = "balanced"):
         self.evaluator_type = evaluator_type
         self.device = device
         self.verbose = verbose
+        self.auto_optimize = auto_optimize
+        self.workload_type = workload_type
         self.game_sessions: List[RealGameSession] = []
         self._use_enhanced_representation = False  # Track if we need enhanced representation
         
@@ -173,13 +188,14 @@ class RealMCTSDataCollector:
             'total_tree_snapshots': 0,
             'evaluator_type': evaluator_type,
             'device': device,
-            'data_version': '4.0.0-real'
+            'data_version': '4.0.0-real',
+            'hardware_optimized': auto_optimize
         }
         
         # Real MCTS Data Collector initialized
     
     def _initialize_mcts_system(self):
-        """Initialize real MCTS components"""
+        """Initialize real MCTS components with hardware optimization"""
         
         # Create evaluator
         if self.evaluator_type == "mock":
@@ -201,9 +217,40 @@ class RealMCTSDataCollector:
             logger.warning(f"Unknown evaluator type: {self.evaluator_type}, using mock evaluator")
             self.evaluator = MockEvaluator(game_type='gomoku', device=self.device)
         
-        # MCTS configuration matching gomoku_classical.yaml self-play settings
+        # Get hardware-optimized MCTS configuration - adjusted for low GPU utilization
+        if self.auto_optimize:
+            try:
+                # Direct import from relative path
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+                from utils.hardware_optimizer import HardwareOptimizer
+                optimizer = HardwareOptimizer()
+                hw_profile = optimizer.detect_hardware()
+                allocation = optimizer.calculate_optimal_allocation(self.workload_type)
+                
+                # Reduced simulations to prevent timeouts, but keep reasonable tree size for GPU efficiency
+                wave_size = allocation.mcts_wave_size  # Keep original for GPU throughput
+                max_tree_nodes = allocation.mcts_max_tree_nodes  # Keep original - no memory issues
+                memory_pool_mb = allocation.mcts_memory_pool_mb  # Keep original - no memory issues
+                num_simulations = min(200, allocation.mcts_simulations_per_move // 5)  # Reduce only simulations
+                
+                logger.info(f"Timeout-optimized MCTS: wave_size={wave_size}, "
+                           f"max_nodes={max_tree_nodes}, simulations={num_simulations}")
+            except ImportError:
+                logger.warning("Hardware optimizer not available, using timeout-safe defaults")
+                wave_size = 2048  # Reasonable for GPU throughput
+                max_tree_nodes = 100000  # Reasonable size
+                memory_pool_mb = 512  # Reasonable memory
+                num_simulations = 150  # Reduced simulations only
+        else:
+            # Use timeout-safe defaults
+            wave_size = 2048
+            max_tree_nodes = 100000  
+            memory_pool_mb = 512
+            num_simulations = 150
+        
+        # MCTS configuration with hardware-aware settings
         self.mcts_config = MCTSConfig(
-            num_simulations=500,  # Match training config default (overridden by command line)
+            num_simulations=num_simulations,
             c_puct=1.4,  # Match training config
             temperature=1.5,  # Match training config
             dirichlet_alpha=0.2,  # Keep positive value to avoid numpy error
@@ -213,16 +260,17 @@ class RealMCTSDataCollector:
             board_size=15,
             # QUANTUM FEATURES DISABLED for pure classical MCTS data
             enable_quantum=False,
-            # Wave parallelization settings - match training config
-            wave_size=3072,
-            min_wave_size=3072,
-            max_wave_size=3072,
+            # Wave parallelization settings - hardware optimized
+            wave_size=wave_size,
+            min_wave_size=wave_size,
+            max_wave_size=wave_size,
             adaptive_wave_sizing=False,  # Match training config
-            # Memory settings - match training config
-            max_tree_nodes=200000,  # Match training config
-            use_mixed_precision=True,  # Match training config
-            use_cuda_graphs=True,  # Match training config
-            use_tensor_cores=True,  # Match training config
+            # Memory settings - hardware optimized
+            max_tree_nodes=max_tree_nodes,
+            memory_pool_size_mb=memory_pool_mb,
+            use_mixed_precision=self.device == 'cuda',  # Only on GPU
+            use_cuda_graphs=self.device == 'cuda',  # Only on GPU
+            use_tensor_cores=self.device == 'cuda',  # Only on GPU
             # Virtual loss
             virtual_loss=0.5,  # Match training config
             # Disable debug logging for performance
@@ -280,12 +328,23 @@ class RealMCTSDataCollector:
         
         if total_nodes > 0:
             # Convert tensors to lists with proper type conversion for JSON
-            visit_counts = [int(x) for x in tree.visit_counts[:extract_limit].cpu().numpy()]
-            value_sums = [float(x) for x in tree.value_sums[:extract_limit].cpu().numpy()]
-            node_priors = [float(x) for x in tree.node_priors[:extract_limit].cpu().numpy()]
-            parent_indices = [int(x) for x in tree.parent_indices[:extract_limit].cpu().numpy()]
-            parent_actions = [int(x) for x in tree.parent_actions[:extract_limit].cpu().numpy()]
-            node_phases = [float(x) for x in tree.phases[:extract_limit].cpu().numpy()]
+            # Handle both CPU and GPU tensors safely
+            try:
+                visit_counts = [int(x) for x in tree.visit_counts[:extract_limit].cpu().numpy()]
+                value_sums = [float(x) for x in tree.value_sums[:extract_limit].cpu().numpy()]
+                node_priors = [float(x) for x in tree.node_priors[:extract_limit].cpu().numpy()]
+                parent_indices = [int(x) for x in tree.parent_indices[:extract_limit].cpu().numpy()]
+                parent_actions = [int(x) for x in tree.parent_actions[:extract_limit].cpu().numpy()]
+                node_phases = [float(x) for x in tree.phases[:extract_limit].cpu().numpy()]
+            except Exception as e:
+                logger.error(f"Failed to extract tree data: {e}")
+                # Return empty lists if extraction fails
+                visit_counts = [0] * extract_limit
+                value_sums = [0.0] * extract_limit
+                node_priors = [0.0] * extract_limit  
+                parent_indices = [-1] * extract_limit
+                parent_actions = [-1] * extract_limit
+                node_phases = [0.0] * extract_limit
             
             # Calculate Q-values
             q_values = []
@@ -363,6 +422,9 @@ class RealMCTSDataCollector:
         
         # Starting real MCTS game
         
+        # Reset MCTS tree for new game
+        self.mcts.clear()
+        
         # Initialize game state
         if game_type.lower() == "gomoku":
             state = alphazero_py.GomokuState()
@@ -407,22 +469,19 @@ class RealMCTSDataCollector:
             else:
                 temperature = 0.1  # More deterministic late game
             
-            # Reset tree for new position
-            self.mcts.reset_tree()
+            # Reset tree for fresh search (but capture snapshot before reset)
+            # Note: MCTS needs proper tree management between moves
             
             # Run MCTS search
             search_start = time.perf_counter()
             policy = self.mcts.search(state, self.mcts_config.num_simulations)
             search_time = time.perf_counter() - search_start
             
-            # DEBUG: Check tree state after search
-            if move_count <= 2:  # Only debug first few moves
-                root_children, _, _ = self.mcts.tree.get_children(0)
-                total_visits = self.mcts.tree.visit_counts[0].item()
-                logger.warning(f"Move {move_count}: Root has {len(root_children)} children, {total_visits} total visits")
-                if len(root_children) > 0:
-                    child_visits = [self.mcts.tree.visit_counts[child].item() for child in root_children[:5]]
-                    logger.warning(f"  Child visits: {child_visits}")
+            # CRITICAL: Extract tree snapshot IMMEDIATELY after search before any other operations
+            if move_count % snapshot_frequency == 0 or move_count <= 10:
+                snapshot = self._extract_tree_snapshot(move_count, current_player, search_time, policy)
+                game_session.tree_snapshots.append(snapshot)
+            
             
             total_search_time += search_time
             game_session.total_simulations += self.mcts_config.num_simulations
@@ -430,11 +489,6 @@ class RealMCTSDataCollector:
             # Update peak performance
             sims_per_sec = self.mcts_config.num_simulations / search_time
             game_session.peak_sims_per_second = max(game_session.peak_sims_per_second, sims_per_sec)
-            
-            # Extract tree snapshot
-            if move_count % snapshot_frequency == 0 or move_count <= 10:
-                snapshot = self._extract_tree_snapshot(move_count, current_player, search_time, policy)
-                game_session.tree_snapshots.append(snapshot)
             
             # Normalize policy to ensure probabilities sum to 1
             policy_sum = np.sum(policy)
@@ -444,13 +498,38 @@ class RealMCTSDataCollector:
                 # Fallback to uniform distribution if policy is all zeros
                 policy = np.ones(len(policy)) / len(policy)
             
-            # Select action based on policy and temperature
+            # Get legal moves and validate action bounds
+            legal_moves = state.get_legal_moves()
+            if not legal_moves:
+                raise ValueError(f"No legal actions available at move {move_count}")
+            
+            # Validate action space bounds
+            max_action = len(policy) - 1
+            legal_moves = [a for a in legal_moves if 0 <= a <= max_action]
+            if not legal_moves:
+                raise ValueError(f"No legal actions within policy bounds [0, {max_action}] at move {move_count}")
+            
+            # Select action based on policy and temperature, restricting to legal moves only
             if temperature > 0.5:
-                # Sample from policy
-                action = np.random.choice(len(policy), p=policy)
+                # Sample from legal moves policy distribution
+                legal_policy_values = np.array([policy[a] for a in legal_moves])
+                if np.sum(legal_policy_values) > 0:
+                    legal_policy_values = legal_policy_values / np.sum(legal_policy_values)
+                    action_idx = np.random.choice(len(legal_moves), p=legal_policy_values)
+                    action = legal_moves[action_idx]
+                else:
+                    # Fallback to uniform random from legal moves
+                    action = np.random.choice(legal_moves)
             else:
-                # Select best action
-                action = np.argmax(policy)
+                # Select best legal action
+                legal_policies = [(a, policy[a]) for a in legal_moves]
+                legal_policies.sort(key=lambda x: x[1], reverse=True)
+                action = legal_policies[0][0]
+            
+            # Final validation
+            if action not in legal_moves:
+                logger.error(f"Action selection bug: selected action {action} not in legal moves at move {move_count}")
+                action = legal_moves[0]  # Emergency fallback
             
             # Record move
             move_data = {
@@ -481,6 +560,9 @@ class RealMCTSDataCollector:
             
             # Apply action to game state
             state.make_move(action)
+            
+            # Update MCTS tree root to new position (preserves tree statistics)
+            self.mcts.update_root(action)
             
             # Action details (suppressed for clean output)
         
@@ -515,16 +597,48 @@ class RealMCTSDataCollector:
                                   game_type: str = "gomoku",
                                   board_size: int = 15,
                                   snapshot_frequency: int = 5,
-                                  num_workers: int = 1) -> Dict[str, Any]:
-        """Run a complete real MCTS data collection session with optional parallelization"""
+                                  num_workers: Optional[int] = None,
+                                  auto_optimize: bool = True,
+                                  workload_type: str = "balanced") -> Dict[str, Any]:
+        """Run a complete real MCTS data collection session with optional parallelization
         
-        print(f"🎯 Starting MCTS data collection: {n_games} games")  # Use print instead of logger
+        Args:
+            n_games: Number of games to collect
+            game_type: Type of game
+            board_size: Board size
+            snapshot_frequency: How often to take tree snapshots
+            num_workers: Number of parallel workers (None for auto-detection)
+            auto_optimize: Whether to auto-optimize based on hardware
+            workload_type: "latency", "throughput", or "balanced"
+        """
+        
+        # Auto-detect optimal number of workers if not specified
+        if num_workers is None and auto_optimize:
+            try:
+                # Direct import from relative path
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+                from utils.hardware_optimizer import HardwareOptimizer
+                optimizer = HardwareOptimizer()
+                hw_profile = optimizer.detect_hardware()
+                allocation = optimizer.calculate_optimal_allocation(workload_type)
+                num_workers = allocation.data_collector_workers
+                
+                print(f"🔧 Auto-detected hardware: {hw_profile.cpu_model} ({hw_profile.cpu_cores_physical} cores)")
+                print(f"📊 Optimized for {workload_type} workload: {num_workers} workers")
+            except ImportError:
+                logger.warning("Hardware optimizer not available, defaulting to 1 worker")
+                num_workers = 1
+        elif num_workers is None:
+            num_workers = 1
+        
+        print(f"🎯 Starting MCTS data collection: {n_games} games with {num_workers} workers")
         self.collection_metadata['collection_start'] = time.time()
         
         if num_workers > 1:
             # Use parallel data collection
             self._run_parallel_data_collection(n_games, game_type, board_size, 
-                                              snapshot_frequency, num_workers)
+                                              snapshot_frequency, num_workers, 
+                                              auto_optimize, workload_type)
             return self._finalize_collection_session(n_games)
         else:
             # Use sequential data collection (original behavior)
@@ -556,9 +670,15 @@ class RealMCTSDataCollector:
     
     def _run_parallel_data_collection(self, n_games: int, game_type: str, 
                                      board_size: int, snapshot_frequency: int, 
-                                     num_workers: int):
+                                     num_workers: int, auto_optimize: bool = True,
+                                     workload_type: str = "balanced"):
         """Run parallel data collection using the same architecture as training pipeline"""
-        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
+        # Direct import from relative path
+        import sys
+        import importlib
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+        from utils.gpu_evaluator_service import GPUEvaluatorService
         import resource
         
         logger.info(f"Starting parallel data collection with {num_workers} workers")
@@ -599,11 +719,14 @@ class RealMCTSDataCollector:
             model = create_resnet_for_game('gomoku', input_channels=18)
             logger.info("Created ResNet model for mock evaluation mode")
         
+        # Create GPU service with auto-optimization
         gpu_service = GPUEvaluatorService(
             model=model,
             device=self.device,
-            batch_size=64,  # Reduced batch size to avoid queue overflow
-            batch_timeout=0.01  # Reduced timeout for faster response
+            batch_size=None,  # Let it auto-detect
+            batch_timeout=None,  # Let it auto-detect
+            auto_optimize=auto_optimize,
+            workload_type=workload_type
         )
         
         # Start the service
@@ -614,33 +737,41 @@ class RealMCTSDataCollector:
             # Get the request queue
             request_queue = gpu_service.get_request_queue()
             
-            # Use hardware-aware resource allocation like self-play module
-            from mcts.utils.config_system import AlphaZeroConfig
-            temp_config = AlphaZeroConfig()
-            temp_config.adjust_for_hardware()
-            allocation = getattr(temp_config, '_resource_allocation', None)
-            
-            if allocation is None:
-                # Fallback: calculate allocation if not already done
-                hardware = temp_config.detect_hardware()
-                allocation = temp_config.calculate_resource_allocation(hardware, num_workers)
-                temp_config._resource_allocation = allocation
-            
-            # Use hardware-aware concurrent worker limit
-            max_concurrent = allocation['max_concurrent_workers']
-            games_per_batch = max_concurrent
-            
-            logger.info(f"Hardware-aware allocation: max_concurrent={max_concurrent}, batch_size={games_per_batch}")
+            # Use hardware optimizer for better resource allocation
+            if auto_optimize:
+                try:
+                    # Direct import from relative path
+                    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+                    from utils.hardware_optimizer import HardwareOptimizer
+                    optimizer = HardwareOptimizer()
+                    hw_profile = optimizer.detect_hardware()
+                    allocation = optimizer.calculate_optimal_allocation(workload_type, num_workers)
+                    
+                    max_concurrent = allocation.data_collector_max_concurrent
+                    chunk_size = allocation.data_collector_chunk_size
+                    games_per_batch = min(max_concurrent, chunk_size)
+                    
+                    logger.info(f"Hardware-optimized allocation: max_concurrent={max_concurrent}, "
+                              f"chunk_size={chunk_size}, batch_size={games_per_batch}")
+                except ImportError:
+                    logger.warning("Hardware optimizer not available, using fallback allocation")
+                    # Fallback allocation - reduce worker overhead for better GPU utilization
+                    cpu_count = mp.cpu_count()
+                    max_concurrent = min(num_workers, max(2, cpu_count // 4))  # Fewer workers for better GPU batching
+                    games_per_batch = max_concurrent
+                    chunk_size = min(30, max_concurrent * 3)  # Smaller chunks for better control
+            else:
+                # Manual allocation - reduce worker overhead for better GPU utilization
+                cpu_count = mp.cpu_count()
+                max_concurrent = min(num_workers, max(2, cpu_count // 4))  # Fewer workers
+                games_per_batch = max_concurrent
+                chunk_size = min(30, max_concurrent * 3)  # Smaller chunks
             
             logger.info(f"Processing games in batches of {games_per_batch}")
             
             # Track active processes globally
             active_processes = {}
             completed_games = 0
-            
-            # Process games in smaller chunks if we have many games
-            # Use chunk size based on max_concurrent to avoid fd exhaustion
-            chunk_size = max(50, max_concurrent * 10)  # Adaptive chunk size
             
             for chunk_start in range(0, n_games, chunk_size):
                 chunk_end = min(chunk_start + chunk_size, n_games)
@@ -679,7 +810,7 @@ class RealMCTSDataCollector:
                         
                         # Track which processes are still running
                         running_processes = list(range(len(batch_processes)))
-                        batch_timeout = time.time() + 180  # 3 minute total batch timeout
+                        batch_timeout = time.time() + 900  # 15 minute total batch timeout - much more lenient
                         
                         while running_processes and time.time() < batch_timeout:
                             for idx in running_processes[:]:  # Copy list to modify during iteration
@@ -705,13 +836,13 @@ class RealMCTSDataCollector:
                                 except queue.Empty:
                                     # Check if process is still alive
                                     if not p.is_alive():
-                                        logger.error(f"Process for game {game_idx} died unexpectedly")
+                                        tqdm.write(f"⚠️  Game {game_idx} process died")
                                         running_processes.remove(idx)
                                         pbar.update(1)
                                     # Otherwise, continue waiting
                                 
                                 except Exception as e:
-                                    logger.error(f"Failed to get result from game {game_idx}: {e}")
+                                    tqdm.write(f"⚠️  Game {game_idx} failed: {str(e)[:50]}...")
                                     running_processes.remove(idx)
                                     pbar.update(1)
                             
@@ -720,23 +851,22 @@ class RealMCTSDataCollector:
                                 time.sleep(0.1)
                         
                         # Clean up any remaining processes
-                        for idx in running_processes:
-                            p = batch_processes[idx]
-                            game_idx = batch_start + idx
-                            logger.error(f"Timeout waiting for result from game {game_idx}")
-                            
-                            # Terminate stuck process
-                            if p.is_alive():
-                                logger.warning(f"Terminating stuck process for game {game_idx}")
-                                p.terminate()
-                                p.join(timeout=2)
+                        if running_processes:
+                            tqdm.write(f"⚠️  {len(running_processes)} games timed out, cleaning up...")
+                            for idx in running_processes:
+                                p = batch_processes[idx]
+                                game_idx = batch_start + idx
                                 
-                                if p.is_alive():  # Still alive after join
-                                    logger.error(f"Force killing stuck process {game_idx}")
-                                    p.kill()
-                                    p.join(timeout=1)
-                            
-                            pbar.update(1)
+                                # Terminate stuck process
+                                if p.is_alive():
+                                    p.terminate()
+                                    p.join(timeout=2)
+                                    
+                                    if p.is_alive():  # Still alive after join
+                                        p.kill()
+                                        p.join(timeout=1)
+                                
+                                pbar.update(1)
                         
                         # Clean up all resources for this batch (simplified like self-play)
                         for idx, p in enumerate(batch_processes):
@@ -756,6 +886,19 @@ class RealMCTSDataCollector:
                         
                         # Clear lists and force garbage collection
                         batch_processes.clear()
+                        
+                        # IMPORTANT: Close all queues to free file descriptors
+                        for q in batch_queues:
+                            try:
+                                # Drain any remaining items
+                                while not q.empty():
+                                    q.get_nowait()
+                            except:
+                                pass
+                            # Close the queue
+                            q.close()
+                            q.join_thread()
+                        
                         batch_queues.clear()
                 
                 # Between chunks, do a more thorough cleanup
@@ -916,7 +1059,7 @@ def _play_game_worker_data_collection(mcts_config, request_queue, response_queue
         
         # Set a timeout for the entire game to prevent hanging
         game_start_time = time.time()
-        game_timeout = 180  # 3 minutes per game max
+        game_timeout = 600  # 10 minutes per game max - increased for complex games
         
         # Wrap evaluator to return torch tensors
         class TensorEvaluator:
@@ -1007,7 +1150,7 @@ def _create_worker_data_collector(mcts, mcts_config):
                                                board_size: int = 15,
                                                snapshot_frequency: int = 5,
                                                game_idx: int = 0,
-                                               game_timeout: int = 180) -> 'RealGameSession':
+                                               game_timeout: int = 600) -> 'RealGameSession':
             """Simplified game play for worker processes"""
             
             game_id = f"{game_type}_{int(time.time())}_{game_idx}"
@@ -1061,8 +1204,8 @@ def _create_worker_data_collector(mcts, mcts_config):
                 else:
                     temperature = 0.1
                 
-                # Reset tree for new position
-                self.mcts.reset_tree()
+                # Preserve tree statistics for data collection by not resetting
+                # self.mcts.reset_tree()  # Disabled to maintain statistics
                 
                 # Run MCTS search
                 search_start = time.perf_counter()
@@ -1088,11 +1231,38 @@ def _create_worker_data_collector(mcts, mcts_config):
                 else:
                     policy = np.ones(len(policy)) / len(policy)
                 
-                # Select action
+                # Get legal moves and validate action bounds
+                legal_moves = state.get_legal_moves()
+                if not legal_moves:
+                    raise ValueError(f"No legal actions available at move {move_count}")
+                
+                # Validate action space bounds
+                max_action = len(policy) - 1
+                legal_moves = [a for a in legal_moves if 0 <= a <= max_action]
+                if not legal_moves:
+                    raise ValueError(f"No legal actions within policy bounds [0, {max_action}] at move {move_count}")
+                
+                # Select action, restricting to legal moves only
                 if temperature > 0.5:
-                    action = np.random.choice(len(policy), p=policy)
+                    # Sample from legal moves policy distribution
+                    legal_policy_values = np.array([policy[a] for a in legal_moves])
+                    if np.sum(legal_policy_values) > 0:
+                        legal_policy_values = legal_policy_values / np.sum(legal_policy_values)
+                        action_idx = np.random.choice(len(legal_moves), p=legal_policy_values)
+                        action = legal_moves[action_idx]
+                    else:
+                        # Fallback to uniform random from legal moves
+                        action = np.random.choice(legal_moves)
                 else:
-                    action = np.argmax(policy)
+                    # Select best legal action
+                    legal_policies = [(a, policy[a]) for a in legal_moves]
+                    legal_policies.sort(key=lambda x: x[1], reverse=True)
+                    action = legal_policies[0][0]
+                
+                # Final validation
+                if action not in legal_moves:
+                    logger.error(f"Action selection bug: selected action {action} not in legal moves at move {move_count}")
+                    action = legal_moves[0]  # Emergency fallback
                 
                 # Record move
                 move_data = {
@@ -1289,8 +1459,13 @@ def main():
     parser.add_argument('--snapshot-freq', type=int, default=5, help='Snapshot frequency')
     parser.add_argument('--evaluator', type=str, default='mock', help='Evaluator type (mock/resnet)')
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu/cuda)')
-    parser.add_argument('--simulations', type=int, default=800, help='MCTS simulations per move')
-    parser.add_argument('--workers', type=int, default=1, help='Number of parallel workers (1=sequential)')
+    parser.add_argument('--simulations', type=int, default=None, help='MCTS simulations per move (None for auto)')
+    parser.add_argument('--workers', type=int, default=None, help='Number of parallel workers (None for auto)')
+    parser.add_argument('--workload', type=str, default='balanced', 
+                        choices=['latency', 'throughput', 'balanced'],
+                        help='Workload type for optimization')
+    parser.add_argument('--no-auto-optimize', action='store_true', 
+                        help='Disable automatic hardware optimization')
     
     args = parser.parse_args()
     
@@ -1298,36 +1473,61 @@ def main():
     print("REAL MCTS DATA COLLECTOR FOR QUANTUM RESEARCH")
     print(f"{'='*70}")
     print(f"Collecting data from {args.n_games} real MCTS self-play games")
-    print(f"MCTS simulations per move: {args.simulations}")
     print(f"Device: {args.device}")
     print(f"Evaluator: {args.evaluator}")
+    print(f"Workload type: {args.workload}")
+    print(f"Auto-optimization: {'Enabled' if not args.no_auto_optimize else 'Disabled'}")
     print(f"{'='*70}")
+    
+    # Show hardware optimization report if enabled
+    auto_optimize = not args.no_auto_optimize
+    if auto_optimize:
+        try:
+            # Direct import from relative path
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+            from utils.hardware_optimizer import HardwareOptimizer
+            optimizer = HardwareOptimizer()
+            hw_profile = optimizer.detect_hardware()
+            allocation = optimizer.calculate_optimal_allocation(args.workload)
+            print("\n" + optimizer.get_optimization_report())
+        except ImportError as e:
+            print(f"⚠️  Hardware optimizer not available: {e}")
     
     # Pre-compile CUDA kernels to avoid JIT overhead during data collection
     if args.device == 'cuda':
-        print("🔧 Pre-compiling CUDA kernels...")
+        print("\n🔧 Pre-compiling CUDA kernels...")
         _precompile_cuda_kernels(args.device)
     
     # Performance warning for ResNet evaluator
     if args.evaluator == 'resnet':
-        print("⚠️  Warning: ResNet evaluator may cause file I/O overhead during data collection.")
+        print("\n⚠️  Warning: ResNet evaluator may cause file I/O overhead during data collection.")
         print("📝 For performance testing, consider using --evaluator mock instead.")
     
-    # Create collector
-    collector = RealMCTSDataCollector(evaluator_type=args.evaluator, device=args.device)
+    # Create collector with hardware optimization
+    collector = RealMCTSDataCollector(
+        evaluator_type=args.evaluator, 
+        device=args.device,
+        auto_optimize=auto_optimize,
+        workload_type=args.workload
+    )
     
-    # Override simulation count if specified
-    collector.mcts_config.num_simulations = args.simulations
-    collector.mcts = MCTS(collector.mcts_config, collector.evaluator)
-    collector.mcts.optimize_for_hardware()
+    # Override simulation count if specified (otherwise use hardware-optimized value)
+    if args.simulations is not None:
+        collector.mcts_config.num_simulations = args.simulations
+        collector.mcts = MCTS(collector.mcts_config, collector.evaluator)
+        collector.mcts.optimize_for_hardware()
     
-    # Run collection
+    # Run collection with hardware optimization
     summary = collector.run_data_collection_session(
         n_games=args.n_games,
         game_type=args.game_type,
         board_size=args.board_size,
         snapshot_frequency=args.snapshot_freq,
-        num_workers=args.workers
+        num_workers=args.workers,
+        auto_optimize=auto_optimize,
+        workload_type=args.workload
     )
     
     # Export data

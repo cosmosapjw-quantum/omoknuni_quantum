@@ -1,24 +1,24 @@
 {
-  "timestamp": "2025-06-27T11:56:53.660260",
+  "timestamp": "2025-06-30T21:54:21.336178",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "jarzynski_equality": {
     "convergence_verified": true,
-    "final_error": 0.9228584114465708,
+    "final_error": 1.0348506145759466,
     "trajectories_analyzed": 100,
-    "free_energy_estimate": 0.07714158855342922,
+    "free_energy_estimate": -0.03485061457594656,
     "true_free_energy": 1.0
   },
   "fluctuation_theorems": {
     "crooks_theorem_verified": true,
     "work_distribution_analyzed": true,
     "cumulant_analysis": {
-      "Mean": 1.8728188334167128,
-      "Variance": 0.3995068046806064,
-      "Skewness": -0.036194743325076204,
-      "Kurtosis": -0.8605425233895758
+      "Mean": 1.779285868783989,
+      "Variance": 0.32193386313872174,
+      "Skewness": -0.22343143057793186,
+      "Kurtosis": -1.2473404320976513
     },
     "large_deviation_function": true,
     "fluctuation_dissipation_checked": true

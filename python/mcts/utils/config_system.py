@@ -92,7 +92,11 @@ class MCTSFullConfig:
     use_cuda_graphs: bool = True
     use_mixed_precision: bool = True
     use_tensor_cores: bool = True
-    compile_mode: str = "reduce-overhead"  # torch.compile mode
+    
+    # TensorRT acceleration
+    use_tensorrt: bool = True
+    tensorrt_fp16: bool = True
+    tensorrt_fallback: bool = True
     
     # Quantum features
     quantum_level: QuantumLevel = QuantumLevel.CLASSICAL

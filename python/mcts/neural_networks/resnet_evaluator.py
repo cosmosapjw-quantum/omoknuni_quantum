@@ -171,8 +171,8 @@ class ResNetEvaluator(Evaluator):
         self.batch_size = config.batch_size if hasattr(config, 'batch_size') else 512
         self._return_torch_tensors = False  # Default to numpy arrays for compatibility
         
-        logger.info(f"Initialized ResNetEvaluator for {game_type} on {device}")
-        logger.info(f"Model has {sum(p.numel() for p in self.model.parameters())} parameters")
+        logger.debug(f"Initialized ResNetEvaluator for {game_type} on {device}")
+        logger.debug(f"Model has {sum(p.numel() for p in self.model.parameters())} parameters")
     
     @torch.no_grad()
     def evaluate_batch(
@@ -263,6 +263,60 @@ class ResNetEvaluator(Evaluator):
         # Update timing
         self.total_time += time.time() - start_time
         
+        return policies, values
+    
+    @torch.no_grad()
+    def forward_batch(
+        self,
+        states_tensor: torch.Tensor,
+        legal_mask_tensor: Optional[torch.Tensor] = None,
+        temperature: float = 1.0
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        GPU-native forward pass that keeps tensors on GPU
+        
+        This method is optimized for GPU service usage and avoids any CPU-GPU transfers.
+        Used by GPUEvaluatorService for maximum performance.
+        
+        Args:
+            states_tensor: Input states already on GPU (batch_size, channels, height, width)
+            legal_mask_tensor: Optional legal move masks on GPU (batch_size, num_actions)
+            temperature: Temperature for policy scaling
+            
+        Returns:
+            Tuple of (policies, values) as GPU tensors
+                - policies: Action probabilities (batch_size, num_actions)
+                - values: Position evaluations (batch_size,)
+        """
+        # Track evaluations
+        batch_size = states_tensor.shape[0]
+        self.eval_count += batch_size
+        
+        # Forward pass with autocast
+        from mcts.utils.autocast_utils import safe_autocast
+        with safe_autocast(device=self.device, enabled=self.use_amp):
+            log_policies, values = self.model(states_tensor)
+        
+        # Apply temperature BEFORE converting to probabilities (more efficient)
+        if temperature != 1.0:
+            log_policies = log_policies / temperature
+        
+        # Convert to probabilities
+        policies = torch.exp(log_policies)
+        
+        # Apply legal move masking if provided
+        if legal_mask_tensor is not None:
+            # Zero out illegal moves
+            policies = policies * legal_mask_tensor
+            
+            # Renormalize
+            policies_sum = policies.sum(dim=-1, keepdim=True)
+            policies = policies / (policies_sum + 1e-8)
+        
+        # Squeeze value dimension
+        values = values.squeeze(-1)
+        
+        # Return GPU tensors (no CPU transfer!)
         return policies, values
     
     def evaluate(

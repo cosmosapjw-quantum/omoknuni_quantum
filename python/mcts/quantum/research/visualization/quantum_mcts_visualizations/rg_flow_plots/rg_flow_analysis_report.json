@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-06-27T11:48:05.263592",
+  "timestamp": "2025-06-30T22:30:57.726470",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "beta_function_analysis": {
     "fixed_points_found": 1,
-    "flow_magnitude_max": 3.675802568441315,
+    "flow_magnitude_max": 4.205044360386627,
     "stability_analyzed": true
   },
   "phase_diagram_analysis": {

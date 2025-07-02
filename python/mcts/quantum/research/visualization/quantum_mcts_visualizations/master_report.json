@@ -1,377 +1,37 @@
 {
   "quantum_mcts_visualization_suite": {
-    "timestamp": 1750993055.4459844,
-    "total_execution_time": 576.776260137558,
-    "successful_analyses": 7,
+    "timestamp": 1751290152.0336199,
+    "total_execution_time": 4.114630937576294,
+    "successful_analyses": 0,
     "total_analyses": 8,
-    "success_rate": 0.875,
-    "total_plots_generated": 25
+    "success_rate": 0.0,
+    "total_plots_generated": 0
   },
-  "execution_times": {
-    "rg_flow_phase": 6.351908445358276,
-    "statistical_physics": 49.63805031776428,
-    "critical_phenomena": 91.79220080375671,
-    "decoherence_darwinism": 94.68020582199097,
-    "entropy_analysis": 94.31495928764343,
-    "thermodynamics": 193.35480523109436,
-    "jarzynski_equality": 46.212886810302734
-  },
+  "execution_times": {},
   "analysis_reports": {
     "rg_flow_phase": {
-      "timestamp": "2025-06-27T11:48:05.263592",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "beta_function_analysis": {
-        "fixed_points_found": 1,
-        "flow_magnitude_max": 3.675802568441315,
-        "stability_analyzed": true
-      },
-      "phase_diagram_analysis": {
-        "phase_boundaries_detected": 1,
-        "quantum_classical_transition": true,
-        "critical_points": 0
-      },
-      "rg_trajectory_analysis": {
-        "trajectories_analyzed": 2,
-        "convergence_properties": {
-          "flow_lengths": [
-            0.5590169943749475,
-            1.118033988749895
-          ],
-          "convergence_times": [
-            10.0,
-            15.0
-          ],
-          "lyapunov_exponents": [
-            -0.1,
-            -0.2
-          ]
-        },
-        "blocking_transformation": true
-      },
-      "output_files": [
-        "beta_functions.png",
-        "phase_diagrams.png",
-        "rg_trajectories.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "statistical_physics": {
-      "timestamp": "2025-06-27T11:48:11.562291",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "correlation_analysis": {
-        "system_sizes_analyzed": [
-          2,
-          5,
-          10
-        ],
-        "spatial_correlation_extracted": true,
-        "temporal_correlation_extracted": true,
-        "correlation_lengths": "computed_from_exponential_fits"
-      },
-      "finite_size_scaling": {
-        "scaling_laws_analyzed": [
-          "effective_action_scaling",
-          "entropy_scaling",
-          "gap_scaling",
-          "correlation_length_scaling",
-          "susceptibility_scaling"
-        ],
-        "scaling_exponents": {
-          "effective_action_scaling": {
-            "exponent": 1.0,
-            "prefactor": 1.0
-          },
-          "entropy_scaling": {
-            "exponent": 0.5,
-            "prefactor": 0.5
-          },
-          "gap_scaling": {
-            "exponent": -1.0,
-            "prefactor": 1.0
-          },
-          "correlation_length_scaling": {
-            "exponent": 0.5,
-            "prefactor": 1.0
-          },
-          "susceptibility_scaling": {
-            "exponent": 1.0,
-            "prefactor": 0.1
-          }
-        },
-        "data_collapse_quality": "good"
-      },
-      "critical_phenomena": {
-        "critical_temperatures": [
-          0.02631887170769563,
-          0.02631887170769563,
-          0.02631887170769563
-        ],
-        "critical_exponents": {
-          "gamma_nu": -2.0587159462240856e-16
-        },
-        "phase_transitions_detected": true
-      },
-      "output_files": [
-        "correlation_functions.png",
-        "data_collapse.png",
-        "finite_size_scaling.png",
-        "susceptibility_analysis.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "critical_phenomena": {
-      "timestamp": "2025-06-27T11:48:59.675329",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "critical_exponents": {
-        "extracted": {
-          "\u03b2": 0.7355286145858684,
-          "\u03b3": 2.5437632590497192,
-          "\u03bd": 0.9818765464424584,
-          "\u03b1": 0.03624690711508327,
-          "\u03b4": 4.458415088965585
-        },
-        "theoretical": {
-          "\u03b2": 0.125,
-          "\u03b3": 1.75,
-          "\u03bd": 1.0,
-          "\u03b1": 0.0,
-          "\u03b4": 15.0,
-          "z": 2.125
-        },
-        "universality_class": "2D Ising"
-      },
-      "scaling_analysis": {
-        "data_collapse_quality": "good",
-        "optimal_scaling_exponent": 0.1,
-        "hyperscaling_validation": [
-          1.0,
-          0.0,
-          1.0,
-          2.0
-        ],
-        "best_scaling_form": "Power Law"
-      },
-      "universal_properties": {
-        "scaling_functions": {
-          "magnetization": "f_M(x) = tanh(x/2) * exp(-|x|/10)",
-          "susceptibility": "f_\u03c7(x) = 1/(1+x\u00b2) + exp(-|x|)",
-          "heat_capacity": "f_C(x) = log(1 + 1/|x|)",
-          "correlation": "G(r) ~ r^(-\u03b7) * exp(-r/\u03be)"
-        },
-        "universal_constants": {
-          "binder_crossing": 0.61,
-          "critical_exponents": {
-            "effective_action_scaling": {
-              "exponent": 1.0,
-              "prefactor": 1.0
-            },
-            "entropy_scaling": {
-              "exponent": 0.5,
-              "prefactor": 0.5
-            },
-            "gap_scaling": {
-              "exponent": -1.0,
-              "prefactor": 1.0
-            },
-            "correlation_length_scaling": {
-              "exponent": 0.5,
-              "prefactor": 1.0
-            },
-            "susceptibility_scaling": {
-              "exponent": 1.0,
-              "prefactor": 0.1
-            }
-          }
-        },
-        "critical_phenomena_confirmed": true
-      },
-      "output_files": [
-        "critical_exponents.png",
-        "data_collapse_3d.png",
-        "scaling_functions.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "decoherence_darwinism": {
-      "timestamp": "2025-06-27T11:50:31.616706",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "decoherence_analysis": {
-        "decoherence_time_scaling_exponent": 1.0,
-        "coherence_decay_confirmed": true,
-        "environment_coupling_effects": true,
-        "temperature_dependence": true
-      },
-      "quantum_darwinism": {
-        "information_proliferation_detected": true,
-        "redundancy_plateau_formation": true,
-        "classical_objectivity_emergence": true,
-        "darwinism_criteria_satisfied": true
-      },
-      "pointer_states": {
-        "dominant_pointer_state_index": 0,
-        "stability_analysis": {
-          "most_stable_energies": [
-            -2.0,
-            -2.2,
-            -2.4
-          ],
-          "average_classical_weight": 0.6
-        },
-        "classical_weight_analysis": true,
-        "environmental_selection_confirmed": true
-      },
-      "quantum_classical_transition": {
-        "decoherence_mechanisms_identified": true,
-        "pointer_basis_emergence": true,
-        "information_theoretical_analysis": true,
-        "classical_limit_approach": true
-      },
-      "output_files": [
-        "decoherence_dynamics.png",
-        "information_proliferation.png",
-        "pointer_states.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "entropy_analysis": {
-      "timestamp": "2025-06-27T11:52:07.904074",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "entanglement_analysis": {
-        "area_law_confirmed": true,
-        "entanglement_growth": "logarithmic",
-        "mutual_information_analyzed": true,
-        "negativity_computed": true
-      },
-      "entropy_scaling": {
-        "scaling_law": "area_law",
-        "scaling_exponents_extracted": 1,
-        "finite_size_corrections": true,
-        "critical_scaling_identified": true
-      },
-      "information_theory": {
-        "quantum_classical_distinction": true,
-        "quantum_discord_analyzed": true,
-        "information_measures": {
-          "Von Neumann": 7.475399612214977,
-          "Shannon": 10.576531764344299,
-          "Mutual Info": 6.9303260203741495,
-          "Quantum Discord": 1.8167817277709803,
-          "Relative Entropy": 6.877367643237779
-        },
-        "relative_entropy_computed": true
-      },
-      "thermodynamic_entropy": {
-        "heat_capacity_analyzed": true,
-        "maxwell_relations_verified": true,
-        "entropy_production_studied": true,
-        "fluctuation_dissipation_checked": true
-      },
-      "output_files": [
-        "entanglement_analysis.png",
-        "entropy_scaling.png",
-        "information_flow.png",
-        "thermodynamic_entropy.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "thermodynamics": {
-      "timestamp": "2025-06-27T11:55:10.233067",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "non_equilibrium_thermodynamics": {
-        "entropy_production_analyzed": true,
-        "work_distributions_computed": true,
-        "driving_protocols_compared": true,
-        "fluctuation_theorems_verified": true
-      },
-      "phase_transitions": {
-        "phase_transitions_detected": 4,
-        "critical_temperatures_extracted": 4,
-        "order_parameters_analyzed": true,
-        "correlation_length_divergence": true
-      },
-      "thermodynamic_cycles": {
-        "otto_cycle_analyzed": true,
-        "carnot_cycle_analyzed": true,
-        "quantum_enhancement_detected": true,
-        "efficiency_analysis": {
-          "otto_avg": 0.97515,
-          "carnot_avg": 0.97515,
-          "quantum_avg": 1.0197
-        },
-        "work_extraction_optimized": true
-      },
-      "statistical_mechanics": {
-        "heat_capacity_peaks_identified": true,
-        "susceptibility_divergence_analyzed": true,
-        "finite_size_scaling_performed": true,
-        "universality_class_identification": true
-      },
-      "output_files": [
-        "non_equilibrium_thermodynamics.png",
-        "phase_transitions.png",
-        "thermodynamic_cycles.png",
-        "otto_ideal_vs_mcts_comparison.gif",
-        "carnot_ideal_vs_mcts_comparison.gif"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "jarzynski_equality": {
-      "timestamp": "2025-06-27T11:56:53.660260",
-      "mcts_data_summary": {
-        "datasets_analyzed": 1746,
-        "data_source": "authentic_mcts_tree_dynamics"
-      },
-      "jarzynski_equality": {
-        "convergence_verified": true,
-        "final_error": 0.9228584114465708,
-        "trajectories_analyzed": 100,
-        "free_energy_estimate": 0.07714158855342922,
-        "true_free_energy": 1.0
-      },
-      "fluctuation_theorems": {
-        "crooks_theorem_verified": true,
-        "work_distribution_analyzed": true,
-        "cumulant_analysis": {
-          "Mean": 1.8728188334167128,
-          "Variance": 0.3995068046806064,
-          "Skewness": -0.036194743325076204,
-          "Kurtosis": -0.8605425233895758
-        },
-        "large_deviation_function": true,
-        "fluctuation_dissipation_checked": true
-      },
-      "path_integral_analysis": {
-        "path_ensemble_generated": true,
-        "action_distribution_computed": true,
-        "effective_action_scaling": true,
-        "quantum_classical_transition": true
-      },
-      "non_equilibrium_physics": {
-        "entropy_production_positive": true,
-        "irreversibility_quantified": true,
-        "second_law_verified": true,
-        "work_heat_decomposition": true
-      },
-      "output_files": [
-        "jarzynski_verification.png",
-        "work_fluctuation_analysis.png",
-        "path_integral_formulation.png"
-      ]
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     },
     "exact_hbar_analysis": {
-      "error": "len() of unsized object"
+      "error": "'numpy.ndarray' object has no attribute 'extend'"
     }
   },
   "output_structure": {
@@ -388,13 +48,13 @@
     ]
   },
   "summary": {
-    "rg_flow_analysis": "completed",
-    "statistical_physics": "completed",
-    "critical_phenomena": "completed",
-    "decoherence_darwinism": "completed",
-    "entropy_analysis": "completed",
-    "thermodynamics": "completed",
-    "jarzynski_equality": "completed",
+    "rg_flow_analysis": "failed",
+    "statistical_physics": "failed",
+    "critical_phenomena": "failed",
+    "decoherence_darwinism": "failed",
+    "entropy_analysis": "failed",
+    "thermodynamics": "failed",
+    "jarzynski_equality": "failed",
     "exact_hbar_analysis": "failed"
   }
 }

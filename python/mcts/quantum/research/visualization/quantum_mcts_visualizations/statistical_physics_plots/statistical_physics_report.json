@@ -1,14 +1,14 @@
 {
-  "timestamp": "2025-06-27T11:48:11.562291",
+  "timestamp": "2025-06-30T22:31:04.737510",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "correlation_analysis": {
     "system_sizes_analyzed": [
-      2,
-      5,
-      10
+      4,
+      9,
+      18
     ],
     "spatial_correlation_extracted": true,
     "temporal_correlation_extracted": true,
@@ -48,12 +48,12 @@
   },
   "critical_phenomena": {
     "critical_temperatures": [
-      0.02631887170769563,
-      0.02631887170769563,
-      0.02631887170769563
+      0.5513118998306591,
+      0.5513118998306591,
+      0.5513118998306591
     ],
     "critical_exponents": {
-      "gamma_nu": -2.0587159462240856e-16
+      "gamma_nu": -7.232180708392858e-16
     },
     "phase_transitions_detected": true
   },

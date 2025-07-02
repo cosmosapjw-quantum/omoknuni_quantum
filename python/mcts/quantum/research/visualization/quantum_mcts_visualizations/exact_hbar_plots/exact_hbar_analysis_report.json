@@ -1,7 +1,7 @@
 {
-  "timestamp": "2025-06-26T23:36:43.415139",
+  "timestamp": "2025-06-30T21:55:02.068651",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "exact_hbar_eff_analysis": {

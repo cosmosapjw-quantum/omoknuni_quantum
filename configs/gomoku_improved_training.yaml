@@ -1,0 +1,193 @@
+# Improved Gomoku Training Configuration
+# Fixes critical issues identified in diagnostic analysis
+# Target: Stable, high-quality training with proper exploration
+
+experiment_name: gomoku_improved_training
+seed: 42
+log_level: INFO
+num_iterations: 100  # More iterations for proper learning
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false     # Pure freestyle Gomoku
+  gomoku_use_omok: false      # No opening restrictions
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  # CRITICAL FIX: Increased simulations for quality play
+  num_simulations: 600        # 3x increase from 200
+  c_puct: 1.5                # Slightly higher for better exploration
+  dirichlet_alpha: 0.3       # Standard for Gomoku
+  dirichlet_epsilon: 0.25    # Good noise level
+  temperature: 1.0
+  temperature_threshold: 25   # More exploration moves (was 15)
+  temperature_final: 0.1     # Still deterministic but not zero
+  
+  # Performance optimization
+  min_wave_size: 2048        # Keep optimized for RTX 3060 Ti
+  max_wave_size: 2048        
+  adaptive_wave_sizing: false
+  batch_size: 512            # Restored - TensorRT limit increased
+  virtual_loss: 0.5          # Increased for better parallel exploration
+  
+  # CRITICAL FIX: Enable tree reuse
+  tree_reuse: true           # Essential for move quality
+  tree_reuse_fraction: 0.5   # Reuse 50% of tree
+  
+  # Memory optimization
+  memory_pool_size_mb: 2048  # Increased for tree reuse
+  max_tree_nodes: 300000     # Increased for deeper search
+  
+  # GPU optimization
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Classical mode (no quantum overhead)
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device configuration
+  device: cuda
+  num_threads: 12
+  
+  # TensorRT acceleration
+  use_tensorrt: true
+  tensorrt_fp16: true
+  tensorrt_fallback: true
+
+network:
+  # Balanced ResNet for quality and speed
+  model_type: resnet
+  input_channels: 18
+  input_representation: basic
+  num_res_blocks: 10          # Slightly larger than 8 for better learning
+  num_filters: 128           # Keep at 128 for speed
+  value_head_hidden_size: 256
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.1
+  batch_norm: true
+  batch_norm_momentum: 0.99
+  l2_regularization: 0.0001
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # CRITICAL FIX: Reduced learning rate for stability
+  batch_size: 256            # Smaller batches for better convergence
+  learning_rate: 0.003       # Much lower than 0.02
+  learning_rate_schedule: cosine  # Smoother than exponential
+  lr_warmup_steps: 1000      # Warmup for stability
+  lr_decay_steps: 50
+  lr_decay_rate: 0.9
+  min_learning_rate: 0.0001
+  
+  # Adam optimizer
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 1
+  max_grad_norm: 5.0         # Higher clipping threshold
+  gradient_clip_value: null
+  
+  # Training loop
+  num_epochs: 6              # More epochs for better convergence
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0005
+  
+  # Self-play settings
+  num_games_per_iteration: 100  # More games for diversity
+  num_workers: 8
+  max_moves_per_game: 225    # Full board
+  resign_threshold: -0.90    # Less aggressive resignation
+  resign_check_moves: 15     # Check more moves
+  resign_start_iteration: 10 # Start later
+  
+  # CRITICAL FIX: Larger replay buffer
+  window_size: 30000         # 2x larger for more diversity
+  sample_weight_by_game_length: true  # Weight longer games more
+  augment_data: true
+  shuffle_buffer_size: 10000
+  dataloader_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  
+  # Mixed precision
+  mixed_precision: true
+  amp_opt_level: O1
+  loss_scale: dynamic
+  
+  # Paths
+  save_dir: experiments/gomoku_improved_training/checkpoints
+  tensorboard_dir: experiments/gomoku_improved_training/runs
+  data_dir: experiments/gomoku_improved_training/self_play_data
+
+arena:
+  # CRITICAL FIX: More games and fairer evaluation
+  num_games: 40              # Increased from 12
+  num_workers: 4             # More workers for faster eval
+  win_threshold: 0.52        # More lenient (was 0.60)
+  statistical_significance: true  # Enable proper testing
+  confidence_level: 0.95
+  
+  # Game settings - match training
+  temperature: 0.0           # Deterministic
+  mcts_simulations: 600      # Match training simulations
+  c_puct: 1.5               # Match training
+  max_moves: 225
+  time_limit_seconds: null
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 32.0         # Standard K-factor
+  elo_initial_rating: 0.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Enhanced ELO tracking
+  elo_enable_deflation: true
+  elo_uncertainty_tracking: true
+  elo_validation_enabled: true
+  elo_health_monitoring: true
+  
+  # Performance expectations
+  min_win_rate_vs_random: 0.85  # Slightly lower but still strong
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 20  # More games per pair
+  
+  # Data saving
+  save_game_records: true    # Enable for analysis
+  save_arena_logs: true
+  arena_log_dir: experiments/gomoku_improved_training/arena_logs
+  elo_save_path: experiments/gomoku_improved_training/elo_ratings.json
+
+# Training Strategy Comments:
+# 
+# Key improvements from problematic config:
+# 1. MCTS simulations: 200 → 600 (3x increase)
+# 2. Tree reuse: disabled → enabled with 50% reuse
+# 3. Learning rate: 0.02 → 0.003 (85% reduction)
+# 4. Arena games: 12 → 40 (3.3x increase)
+# 5. Win threshold: 60% → 52% (more reasonable)
+# 6. Temperature threshold: 15 → 25 (more exploration)
+# 7. Window size: 15000 → 30000 (2x diversity)
+# 8. Batch size: 512 → 256 (better convergence)
+#
+# Expected improvements:
+# - Higher quality self-play games
+# - More stable training with proper convergence
+# - Better exploration-exploitation balance
+# - Fairer model evaluation
+# - Consistent ELO improvement

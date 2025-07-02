@@ -1,7 +1,7 @@
 {
-  "timestamp": "2025-06-27T11:52:07.904074",
+  "timestamp": "2025-06-30T22:36:16.030528",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "entanglement_analysis": {
@@ -20,11 +20,11 @@
     "quantum_classical_distinction": true,
     "quantum_discord_analyzed": true,
     "information_measures": {
-      "Von Neumann": 7.475399612214977,
-      "Shannon": 10.576531764344299,
-      "Mutual Info": 6.9303260203741495,
-      "Quantum Discord": 1.8167817277709803,
-      "Relative Entropy": 6.877367643237779
+      "Von Neumann": 7.415387608763176,
+      "Shannon": 10.077669186223583,
+      "Mutual Info": 7.110271102386467,
+      "Quantum Discord": 1.8375339174239727,
+      "Relative Entropy": 6.525541095711596
     },
     "relative_entropy_computed": true
   },

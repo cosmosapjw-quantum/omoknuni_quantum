@@ -1,7 +1,7 @@
 {
-  "timestamp": "2025-06-27T11:55:10.233067",
+  "timestamp": "2025-06-30T21:52:37.567031",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "non_equilibrium_thermodynamics": {
@@ -21,9 +21,9 @@
     "carnot_cycle_analyzed": true,
     "quantum_enhancement_detected": true,
     "efficiency_analysis": {
-      "otto_avg": 0.97515,
-      "carnot_avg": 0.97515,
-      "quantum_avg": 1.0197
+      "otto_avg": 8.748557434046232e-16,
+      "carnot_avg": 8.748557434046232e-16,
+      "quantum_avg": 9.14823772291129e-16
     },
     "work_extraction_optimized": true
   },

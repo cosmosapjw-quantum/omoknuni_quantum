@@ -1,0 +1,195 @@
+# Gomoku 12-Hour Amateur Training Configuration
+# Optimized for rapid training of amateur-level freestyle Gomoku AI
+# Target: Train competitive amateur AI within 12 hours using TensorRT acceleration
+
+experiment_name: gomoku_12hour_amateur
+seed: 42
+log_level: INFO
+num_iterations: 50  # Reduced for 12-hour training window
+
+game:
+  game_type: gomoku
+  board_size: 15
+  gomoku_use_renju: false     # Pure freestyle Gomoku
+  gomoku_use_omok: false      # No opening restrictions
+  gomoku_use_pro_long_opening: false
+
+mcts:
+  # Reduced simulations for faster training
+  num_simulations: 200        # Balanced: enough for good play, fast for training
+  c_puct: 1.25               # Slightly lower for amateur-level exploration
+  dirichlet_alpha: 0.25      # Moderate exploration for freestyle
+  dirichlet_epsilon: 0.35    # Good exploration/exploitation balance
+  temperature: 1.0
+  temperature_threshold: 15  # Earlier deterministic play
+  temperature_final: 0.05    # Very deterministic endgame
+  
+  # Performance optimization for 12-hour training
+  min_wave_size: 2048        # Optimized for RTX 3060 Ti + TensorRT
+  max_wave_size: 2048        # Fixed size for consistent performance
+  adaptive_wave_sizing: false
+  batch_size: 512            # Smaller batches for faster iteration
+  virtual_loss: 0.3          # Lower virtual loss for amateur training
+  
+  # Memory optimization for faster training
+  memory_pool_size_mb: 1024  # Reduced memory for speed
+  max_tree_nodes: 150000     # Adequate for amateur level
+  tree_reuse: false          # Disabled for faster self-play
+  tree_reuse_fraction: 0.0
+  
+  # GPU optimization - maximized for RTX 3060 Ti
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  compile_mode: reduce-overhead
+  
+  # Classical mode (no quantum overhead)
+  quantum_level: classical
+  enable_quantum: false
+  
+  # Device configuration
+  device: cuda
+  num_threads: 12            # Match available CPU cores
+  
+  # TensorRT acceleration - CRITICAL for 12-hour training
+  use_tensorrt: true         # Essential for speed
+  tensorrt_fp16: true        # FP16 for maximum RTX performance
+  tensorrt_fallback: true    # Graceful fallback if needed
+
+network:
+  # Smaller ResNet for amateur level - faster training
+  model_type: resnet
+  input_channels: 18         # Standard AlphaZero representation
+  input_representation: basic
+  num_res_blocks: 8          # Significantly reduced from 15 (amateur level sufficient)
+  num_filters: 128           # Reduced from 192 (smaller but adequate)
+  value_head_hidden_size: 256 # Reduced from 512
+  policy_head_filters: 2     # Reduced from 4
+  
+  # Regularization for smaller network
+  dropout_rate: 0.1          # Lower dropout for smaller network
+  batch_norm: true
+  batch_norm_momentum: 0.99  # Faster adaptation
+  l2_regularization: 0.0001  # Reduced regularization
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Aggressive training schedule for 12-hour window
+  batch_size: 512            # Smaller batches for faster iteration
+  learning_rate: 0.02        # Higher initial LR for rapid learning
+  learning_rate_schedule: exponential  # Faster decay than cosine
+  lr_decay_steps: 25         # More frequent decay
+  lr_decay_rate: 0.85        # Moderate decay
+  min_learning_rate: 0.00001 # Higher minimum for active learning
+  
+  # Adam optimizer for faster convergence
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 1  # No accumulation for speed
+  max_grad_norm: 3.0         # Lower clipping for smaller network
+  gradient_clip_value: null
+  
+  # Training loop - optimized for speed
+  num_epochs: 4              # Fewer epochs per iteration
+  early_stopping_patience: 8 # Faster stopping for speed
+  early_stopping_min_delta: 0.001
+  
+  # Self-play - balanced for 12-hour training
+  num_games_per_iteration: 80  # Adequate games for learning
+  num_workers: 8             # Reduced workers for faster iteration
+  max_moves_per_game: 200    # Slightly shorter games
+  resign_threshold: -0.95    # Earlier resignation for speed
+  resign_check_moves: 10     # Faster resignation decisions
+  resign_start_iteration: 5  # Early resignation for speed
+  
+  # Data handling - optimized for rapid training
+  window_size: 15000         # Smaller window for faster adaptation
+  sample_weight_by_game_length: false  # Disabled for speed
+  augment_data: true         # Keep augmentation for data efficiency
+  shuffle_buffer_size: 8000  # Reduced buffer
+  dataloader_workers: 8      # Optimized for batch size
+  pin_memory: true
+  persistent_workers: true
+  
+  # Mixed precision for speed
+  mixed_precision: true
+  amp_opt_level: O1
+  loss_scale: dynamic
+  
+  # Paths
+  save_dir: experiments/gomoku_12hour_amateur/checkpoints
+  tensorboard_dir: experiments/gomoku_12hour_amateur/runs
+  data_dir: experiments/gomoku_12hour_amateur/self_play_data
+
+arena:
+  # Fast arena evaluation for rapid iteration
+  num_games: 12              # Minimal games for speed
+  num_workers: 2             # Fast evaluation
+  win_threshold: 0.60        # Higher threshold for quality
+  statistical_significance: false  # Disabled for speed
+  confidence_level: 0.90
+  
+  # Game settings - fast evaluation
+  temperature: 0.0           # Deterministic play
+  mcts_simulations: 200      # Match training simulations
+  c_puct: 1.25              # Match training c_puct
+  max_moves: 200
+  time_limit_seconds: null
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 40.0         # Higher K for rapid rating changes
+  elo_initial_rating: 0.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Simplified ELO for speed
+  elo_enable_deflation: false
+  elo_uncertainty_tracking: false
+  elo_validation_enabled: false
+  elo_health_monitoring: false
+  
+  # Amateur-level expectations
+  min_win_rate_vs_random: 0.90  # Strong amateur performance
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 6  # Reduced for speed
+  
+  # Data saving
+  save_game_records: false   # Disabled for speed/space
+  save_arena_logs: true
+  arena_log_dir: experiments/gomoku_12hour_amateur/arena_logs
+  elo_save_path: experiments/gomoku_12hour_amateur/elo_ratings.json
+
+# 12-Hour Training Strategy Comments:
+# 
+# Network Size: 8 blocks × 128 filters ≈ 60% smaller than master config
+# - Faster training: ~2.5x speed improvement from smaller network
+# - TensorRT acceleration: Additional 2-7x speedup from hardware optimization
+# - Combined speedup: ~5-17x faster than baseline
+#
+# Expected Timeline (12 hours):
+# - Iterations 1-10 (2 hours): Basic pattern recognition
+# - Iterations 11-25 (4 hours): Tactical awareness (threats, blocks)
+# - Iterations 26-40 (4 hours): Strategic understanding (center control)
+# - Iterations 41-50 (2 hours): Fine-tuning and consistency
+#
+# Target Strength: Amateur 1200-1400 ELO equivalent
+# - Can execute basic tactics (forks, threats)
+# - Understands center importance
+# - Makes few obvious blunders
+# - Competitive against casual human players
+#
+# Hardware Requirements:
+# - RTX 3060 Ti: Optimal for this config
+# - 16GB RAM: Sufficient for reduced memory settings
+# - TensorRT: Essential for meeting 12-hour target

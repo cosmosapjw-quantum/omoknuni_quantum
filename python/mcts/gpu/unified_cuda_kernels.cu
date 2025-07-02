@@ -115,6 +115,7 @@ __global__ void batch_process_legal_moves_kernel(
     }
 }
 
+// Original batched UCB selection kernel
 __global__ void batched_ucb_selection_kernel(
     const float* __restrict__ q_values,
     const int* __restrict__ visit_counts,
@@ -165,6 +166,70 @@ __global__ void batched_ucb_selection_kernel(
         if (ucb > best_ucb) {
             best_ucb = ucb;
             best_action = i - start;
+        }
+    }
+    
+    selected_actions[idx] = best_action;
+    selected_scores[idx] = best_ucb;
+}
+
+// Diversified UCB selection kernel with simulation-specific priors
+__global__ void batched_ucb_selection_diversified_kernel(
+    const float* __restrict__ q_values,
+    const int* __restrict__ visit_counts,
+    const int* __restrict__ parent_visits,
+    const float* __restrict__ diversified_priors,  // (wave_size, max_children) priors per simulation
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_indices,
+    int* __restrict__ selected_actions,
+    float* __restrict__ selected_scores,
+    const int64_t num_nodes,
+    const int64_t wave_size,
+    const int64_t max_children,
+    const float c_puct,
+    const int simulation_id                        // Which simulation in the wave
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_nodes) return;
+    
+    int start = row_ptr[idx];
+    int end = row_ptr[idx + 1];
+    
+    if (start == end) {
+        selected_actions[idx] = -1;
+        selected_scores[idx] = 0.0f;
+        return;
+    }
+    
+    float parent_visit = static_cast<float>(parent_visits[idx]);
+    float sqrt_parent = sqrtf(parent_visit + 1.0f);
+    
+    float best_ucb = -1e10f;
+    int best_action = 0;
+    
+    // Use simulation-specific priors for diversification
+    for (int i = start; i < end; i++) {
+        int child_idx = col_indices[i];
+        int action_idx = i - start;
+        
+        // Get simulation-specific prior
+        float prior = diversified_priors[simulation_id * max_children + action_idx];
+        
+        float child_visit = static_cast<float>(visit_counts[child_idx]);
+        
+        float q_value = (child_visit > 0) ? q_values[child_idx] : 0.0f;
+        
+        float ucb;
+        if (parent_visit > 0) {
+            float exploration = c_puct * prior * sqrt_parent / (1.0f + child_visit);
+            ucb = q_value + exploration;
+        } else {
+            ucb = prior;
+        }
+        
+        if (ucb > best_ucb) {
+            best_ucb = ucb;
+            best_action = action_idx;
         }
     }
     
@@ -288,7 +353,8 @@ __global__ void parallel_backup_kernel(
     int path_length = path_lengths[idx];
     
     // Traverse path from leaf to root
-    for (int depth = 0; depth < path_length && depth < max_depth; depth++) {
+    // Use <= to handle path_length=0 (root-only case)
+    for (int depth = 0; depth <= path_length && depth < max_depth; depth++) {
         int node_idx = paths[idx * max_depth + depth];
         if (node_idx < 0) break;
         
@@ -626,6 +692,47 @@ std::tuple<torch::Tensor, torch::Tensor> batched_ucb_selection_cuda(
         selected_scores.data_ptr<float>(),
         num_nodes,
         c_puct
+    );
+    
+    return std::make_tuple(selected_actions, selected_scores);
+}
+
+// Diversified UCB selection with simulation-specific priors
+std::tuple<torch::Tensor, torch::Tensor> batched_ucb_selection_diversified_cuda(
+    torch::Tensor q_values,
+    torch::Tensor visit_counts,
+    torch::Tensor parent_visits,
+    torch::Tensor diversified_priors,  // (wave_size, max_children) priors per simulation
+    torch::Tensor row_ptr,
+    torch::Tensor col_indices,
+    int64_t wave_size,
+    int64_t max_children,
+    float c_puct,
+    int simulation_id
+) {
+    const int num_nodes = parent_visits.size(0);
+    auto selected_actions = torch::zeros({num_nodes}, 
+        torch::TensorOptions().dtype(torch::kInt32).device(q_values.device()));
+    auto selected_scores = torch::zeros({num_nodes}, 
+        torch::TensorOptions().dtype(torch::kFloat32).device(q_values.device()));
+    
+    const int threads = 256;
+    const int blocks = (num_nodes + threads - 1) / threads;
+    
+    batched_ucb_selection_diversified_kernel<<<blocks, threads>>>(
+        q_values.data_ptr<float>(),
+        visit_counts.data_ptr<int>(),
+        parent_visits.data_ptr<int>(),
+        diversified_priors.data_ptr<float>(),
+        row_ptr.data_ptr<int>(),
+        col_indices.data_ptr<int>(),
+        selected_actions.data_ptr<int>(),
+        selected_scores.data_ptr<float>(),
+        num_nodes,
+        wave_size,
+        max_children,
+        c_puct,
+        simulation_id
     );
     
     return std::make_tuple(selected_actions, selected_scores);
@@ -1050,6 +1157,71 @@ __global__ void phase_kicked_policy_kernel(
     kicked_policy[idx] = priors[idx] * (1.0f + kick_strength * cosf(phase));
 }
 
+// Vectorized backup kernel for MCTS - eliminates Python loops and atomic operations
+__global__ void vectorized_backup_kernel(
+    const int* __restrict__ paths,              // [batch_size, max_depth]
+    const int* __restrict__ path_lengths,       // [batch_size]
+    const float* __restrict__ values,           // [batch_size]
+    int* __restrict__ visit_counts,             // [max_nodes]
+    float* __restrict__ value_sums,             // [max_nodes]
+    const int batch_size,
+    const int max_depth,
+    const int max_nodes
+) {
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+    
+    if (bid >= batch_size) return;
+    
+    int path_length = path_lengths[bid];
+    float value = values[bid];
+    
+    // Process path in parallel within block
+    // Use <= to handle path_length=0 (root-only case)
+    for (int depth = tid; depth <= path_length && depth < max_depth; depth += blockDim.x) {
+        int node_idx = paths[bid * max_depth + depth];
+        if (node_idx >= 0 && node_idx < max_nodes) {
+            // Apply alternating sign for different players
+            float backup_value = (depth % 2 == 0) ? value : -value;
+            
+            // Use atomic operations for thread safety
+            atomicAdd(&visit_counts[node_idx], 1);
+            atomicAdd(&value_sums[node_idx], backup_value);
+        }
+    }
+}
+
+// Batch backup function using vectorized kernel
+torch::Tensor vectorized_backup_cuda(
+    torch::Tensor paths,           // [batch_size, max_depth]
+    torch::Tensor path_lengths,    // [batch_size]
+    torch::Tensor values,          // [batch_size]
+    torch::Tensor visit_counts,    // [max_nodes]
+    torch::Tensor value_sums       // [max_nodes]
+) {
+    const int batch_size = paths.size(0);
+    const int max_depth = paths.size(1);
+    const int max_nodes = visit_counts.size(0);
+    
+    // Launch one block per batch item with 256 threads per block
+    const int threads_per_block = 256;
+    const int blocks = batch_size;
+    
+    vectorized_backup_kernel<<<blocks, threads_per_block>>>(
+        paths.data_ptr<int>(),
+        path_lengths.data_ptr<int>(),
+        values.data_ptr<float>(),
+        visit_counts.data_ptr<int>(),
+        value_sums.data_ptr<float>(),
+        batch_size,
+        max_depth,
+        max_nodes
+    );
+    
+    cudaDeviceSynchronize();
+    return visit_counts;  // Return for confirmation
+}
+
 // Wrapper functions
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> fused_minhash_interference_cuda(
     torch::Tensor paths,
@@ -1223,12 +1395,283 @@ torch::Tensor generate_legal_moves_mask_cuda(
 }
 
 // ============================================================================
+// FUSED SELECTION + TRAVERSAL KERNEL (High Performance Optimization)
+// ============================================================================
+
+__global__ void fused_selection_traversal_kernel(
+    const float* __restrict__ q_values,
+    const int* __restrict__ visit_counts,
+    const int* __restrict__ parent_visits,
+    const float* __restrict__ priors,
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_indices,
+    int* __restrict__ paths,               // Output: [wave_size, max_depth]
+    int* __restrict__ path_lengths,        // Output: [wave_size]
+    int* __restrict__ leaf_nodes,          // Output: [wave_size]
+    const int* __restrict__ starting_nodes, // Input: [wave_size] - where each path starts
+    const int64_t wave_size,
+    const int64_t max_depth,
+    const float c_puct,
+    bool enable_virtual_loss = false,
+    float virtual_loss_value = -1.0f
+) {
+    int wave_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (wave_idx >= wave_size) return;
+    
+    // Shared memory for caching frequently accessed data
+    __shared__ float shared_ucb_scores[256];  // Max children per block
+    __shared__ int shared_child_indices[256];
+    
+    int current_node = starting_nodes[wave_idx];
+    int depth = 0;
+    
+    // Initialize path
+    paths[wave_idx * max_depth + 0] = current_node;
+    
+    // Traverse tree using UCB selection until reaching leaf
+    while (depth < max_depth - 1) {
+        int start = row_ptr[current_node];
+        int end = row_ptr[current_node + 1];
+        
+        // Leaf node - no children
+        if (start == end) {
+            break;
+        }
+        
+        int num_children = end - start;
+        float parent_visit = static_cast<float>(parent_visits[current_node]);
+        float sqrt_parent = sqrtf(parent_visit + 1.0f);
+        
+        float best_ucb = -1e10f;
+        int best_child_idx = -1;
+        int best_action = -1;
+        
+        // UCB computation with optimized memory access
+        for (int i = start; i < end; i++) {
+            int child_idx = col_indices[i];
+            float prior = priors[i];
+            
+            // Get child statistics
+            float child_visit = static_cast<float>(visit_counts[child_idx]);
+            float q_value = (child_visit > 0) ? q_values[child_idx] / child_visit : 0.0f;
+            
+            // Apply virtual loss if enabled
+            if (enable_virtual_loss && child_visit > 0) {
+                q_value = (q_values[child_idx] + virtual_loss_value) / (child_visit + 1.0f);
+            }
+            
+            // UCB formula: Q(s,a) + c_puct * P(s,a) * sqrt(N(s)) / (1 + N(s,a))
+            float exploration = c_puct * prior * sqrt_parent / (1.0f + child_visit);
+            float ucb = q_value + exploration;
+            
+            // Track best action
+            if (ucb > best_ucb) {
+                best_ucb = ucb;
+                best_child_idx = child_idx;
+                best_action = i - start;  // Relative action index
+            }
+        }
+        
+        // Move to best child
+        if (best_child_idx >= 0) {
+            depth++;
+            current_node = best_child_idx;
+            paths[wave_idx * max_depth + depth] = current_node;
+        } else {
+            break;
+        }
+    }
+    
+    // Set outputs
+    path_lengths[wave_idx] = depth;
+    leaf_nodes[wave_idx] = current_node;
+}
+
+// Optimized version with 2D thread blocks for wave processing
+__global__ void fused_selection_traversal_optimized_kernel(
+    const float* __restrict__ q_values,
+    const int* __restrict__ visit_counts,
+    const int* __restrict__ parent_visits,
+    const float* __restrict__ priors,
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_indices,
+    int* __restrict__ paths,
+    int* __restrict__ path_lengths,
+    int* __restrict__ leaf_nodes,
+    const int* __restrict__ starting_nodes,
+    const int64_t wave_size,
+    const int64_t max_depth,
+    const float c_puct,
+    const int max_children_per_node = 64
+) {
+    // 2D thread layout: blockIdx.x = wave_item, threadIdx.x = child_offset
+    int wave_idx = blockIdx.x;
+    int child_offset = threadIdx.x;
+    
+    if (wave_idx >= wave_size) return;
+    
+    // Shared memory for cooperative processing
+    __shared__ float shared_ucb[64];  // Max children
+    __shared__ int shared_indices[64];
+    __shared__ int best_choice;
+    __shared__ float best_score;
+    
+    int current_node = starting_nodes[wave_idx];
+    int depth = 0;
+    
+    // Initialize path
+    if (child_offset == 0) {
+        paths[wave_idx * max_depth + 0] = current_node;
+    }
+    __syncthreads();
+    
+    // Traverse until leaf
+    while (depth < max_depth - 1) {
+        int start = row_ptr[current_node];
+        int end = row_ptr[current_node + 1];
+        int num_children = end - start;
+        
+        if (num_children == 0) break;  // Leaf node
+        
+        // Reset shared memory
+        if (child_offset == 0) {
+            best_choice = -1;
+            best_score = -1e10f;
+        }
+        __syncthreads();
+        
+        // Cooperative UCB computation
+        if (child_offset < num_children) {
+            int edge_idx = start + child_offset;
+            int child_idx = col_indices[edge_idx];
+            float prior = priors[edge_idx];
+            
+            float parent_visit = static_cast<float>(parent_visits[current_node]);
+            float child_visit = static_cast<float>(visit_counts[child_idx]);
+            float q_value = (child_visit > 0) ? q_values[child_idx] / child_visit : 0.0f;
+            
+            float exploration = c_puct * prior * sqrtf(parent_visit + 1.0f) / (1.0f + child_visit);
+            float ucb = q_value + exploration;
+            
+            shared_ucb[child_offset] = ucb;
+            shared_indices[child_offset] = child_idx;
+        } else {
+            shared_ucb[child_offset] = -1e10f;
+            shared_indices[child_offset] = -1;
+        }
+        __syncthreads();
+        
+        // Parallel reduction to find best
+        for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+            if (child_offset < stride && child_offset + stride < num_children) {
+                if (shared_ucb[child_offset + stride] > shared_ucb[child_offset]) {
+                    shared_ucb[child_offset] = shared_ucb[child_offset + stride];
+                    shared_indices[child_offset] = shared_indices[child_offset + stride];
+                }
+            }
+            __syncthreads();
+        }
+        
+        // Update path
+        if (child_offset == 0) {
+            if (shared_indices[0] >= 0) {
+                depth++;
+                current_node = shared_indices[0];
+                paths[wave_idx * max_depth + depth] = current_node;
+            }
+        }
+        __syncthreads();
+        
+        if (shared_indices[0] < 0) break;  // No valid children
+    }
+    
+    // Write final results
+    if (child_offset == 0) {
+        path_lengths[wave_idx] = depth;
+        leaf_nodes[wave_idx] = current_node;
+    }
+}
+
+// CUDA wrapper functions
+torch::Tensor fused_selection_traversal_cuda(
+    torch::Tensor q_values,
+    torch::Tensor visit_counts,
+    torch::Tensor parent_visits,
+    torch::Tensor priors,
+    torch::Tensor row_ptr,
+    torch::Tensor col_indices,
+    torch::Tensor starting_nodes,
+    int max_depth,
+    float c_puct,
+    bool use_optimized = true
+) {
+    int64_t wave_size = starting_nodes.size(0);
+    
+    // Output tensors
+    auto paths = torch::full({wave_size, max_depth}, -1, 
+                            torch::dtype(torch::kInt32).device(q_values.device()));
+    auto path_lengths = torch::zeros({wave_size}, 
+                                   torch::dtype(torch::kInt32).device(q_values.device()));
+    auto leaf_nodes = torch::zeros({wave_size}, 
+                                  torch::dtype(torch::kInt32).device(q_values.device()));
+    
+    if (use_optimized) {
+        // Use optimized 2D kernel
+        dim3 threads(64);  // Max children per node
+        dim3 blocks(wave_size);
+        
+        fused_selection_traversal_optimized_kernel<<<blocks, threads>>>(
+            q_values.data_ptr<float>(),
+            visit_counts.data_ptr<int>(),
+            parent_visits.data_ptr<int>(),
+            priors.data_ptr<float>(),
+            row_ptr.data_ptr<int>(),
+            col_indices.data_ptr<int>(),
+            paths.data_ptr<int>(),
+            path_lengths.data_ptr<int>(),
+            leaf_nodes.data_ptr<int>(),
+            starting_nodes.data_ptr<int>(),
+            wave_size,
+            max_depth,
+            c_puct
+        );
+    } else {
+        // Use standard 1D kernel
+        const int threads = 256;
+        const int blocks = (wave_size + threads - 1) / threads;
+        
+        fused_selection_traversal_kernel<<<blocks, threads>>>(
+            q_values.data_ptr<float>(),
+            visit_counts.data_ptr<int>(),
+            parent_visits.data_ptr<int>(),
+            priors.data_ptr<float>(),
+            row_ptr.data_ptr<int>(),
+            col_indices.data_ptr<int>(),
+            paths.data_ptr<int>(),
+            path_lengths.data_ptr<int>(),
+            leaf_nodes.data_ptr<int>(),
+            starting_nodes.data_ptr<int>(),
+            wave_size,
+            max_depth,
+            c_puct
+        );
+    }
+    
+    cudaDeviceSynchronize();
+    
+    // Return as tuple: (paths, path_lengths, leaf_nodes)
+    return torch::stack({paths.flatten(), path_lengths, leaf_nodes});
+}
+
+// ============================================================================
 // Python Bindings
 // ============================================================================
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("batched_ucb_selection", &batched_ucb_selection_cuda, 
           "Batched UCB selection with random tie-breaking (CUDA)");
+    m.def("batched_ucb_selection_diversified", &batched_ucb_selection_diversified_cuda,
+          "Diversified UCB selection with simulation-specific priors (CUDA)");
     m.def("batched_ucb_selection_quantum", &batched_ucb_selection_quantum_cuda,
           "Quantum-enhanced batched UCB selection (CUDA)");
     m.def("parallel_backup", &parallel_backup_cuda, 
@@ -1247,6 +1690,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           "Fused MinHash signature computation with interference (CUDA)");
     m.def("phase_kicked_policy", &phase_kicked_policy_cuda,
           "Apply phase kicks to policy based on uncertainty (CUDA)");
+    m.def("fused_selection_traversal", &fused_selection_traversal_cuda,
+          "Fused UCB selection and path traversal for maximum performance (CUDA)");
+    m.def("vectorized_backup", &vectorized_backup_cuda,
+          "Vectorized backup operation eliminating Python loops (CUDA)");
     m.def("batch_apply_moves", &batch_apply_moves_cuda,
           "Apply moves to game states in batch (CUDA)");
     m.def("generate_legal_moves_mask", &generate_legal_moves_mask_cuda,

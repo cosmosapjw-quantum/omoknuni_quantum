@@ -53,41 +53,56 @@ if USE_CUDA:
             '-gencode=arch=compute_86,code=sm_86',
         ]
     
-    # Quantum CUDA extension
+    # MODULAR CUDA KERNELS (NEW OPTIMIZED SYSTEM)
+    # Core MCTS kernels
     ext_modules.append(
         CUDAExtension(
-            name='mcts.gpu.quantum_cuda_kernels',
-            sources=['mcts/gpu/quantum_cuda_kernels.cu'],
+            name='mcts.gpu.mcts_core_kernels',
+            sources=['mcts/gpu/mcts_core_kernels.cu'],
             extra_compile_args={
                 'cxx': ['-O3'],
-                'nvcc': ['-O3', '--use_fast_math'] + gencode_flags
+                'nvcc': ['-O3', '--use_fast_math', '-lineinfo'] + gencode_flags
             }
         )
     )
     
-    # Unified CUDA kernels extension
+    # UCB selection kernels
     ext_modules.append(
         CUDAExtension(
-            name='mcts.gpu.unified_cuda_kernels',
-            sources=['mcts/gpu/unified_cuda_kernels.cu'],
+            name='mcts.gpu.mcts_selection_kernels',
+            sources=['mcts/gpu/mcts_selection_kernels.cu'],
             extra_compile_args={
                 'cxx': ['-O3'],
-                'nvcc': ['-O3', '--use_fast_math'] + gencode_flags
+                'nvcc': ['-O3', '--use_fast_math', '-lineinfo'] + gencode_flags
             }
         )
     )
     
-    # Quantum v5.0 CUDA kernels extension
+    # Quantum-enhanced kernels
     ext_modules.append(
         CUDAExtension(
-            name='mcts.gpu.quantum_v5_cuda_kernels',
-            sources=['mcts/gpu/quantum_v5_cuda_kernels.cu'],
+            name='mcts.gpu.mcts_quantum_kernels',
+            sources=['mcts/gpu/mcts_quantum_kernels.cu'],
             extra_compile_args={
                 'cxx': ['-O3'],
-                'nvcc': ['-O3', '--use_fast_math'] + gencode_flags
+                'nvcc': ['-O3', '--use_fast_math', '-lineinfo'] + gencode_flags
             }
         )
     )
+    
+    # LEGACY CUDA KERNELS (for backward compatibility)
+    # Note: These are kept for fallback support but the modular system is preferred
+    if os.path.exists('mcts/gpu/unified_cuda_kernels.cu'):
+        ext_modules.append(
+            CUDAExtension(
+                name='mcts.gpu.unified_cuda_kernels_legacy',
+                sources=['mcts/gpu/unified_cuda_kernels.cu'],
+                extra_compile_args={
+                    'cxx': ['-O3'],
+                    'nvcc': ['-O3', '--use_fast_math'] + gencode_flags
+                }
+            )
+        )
 
 setup(
     name="omoknuni-mcts",

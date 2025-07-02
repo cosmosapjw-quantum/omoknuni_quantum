@@ -259,8 +259,19 @@ class ELOTracker:
         return growth
     
     def update_ratings(self, player1: str, player2: str,
-                      wins: int, draws: int, losses: int):
-        """Update ELO ratings based on match results with adaptive K-factor, uncertainty tracking, and deflation"""
+                      wins: int, draws: int, losses: int,
+                      protect_best_elo: bool = False, best_player: Optional[str] = None):
+        """Update ELO ratings based on match results with adaptive K-factor, uncertainty tracking, and deflation
+        
+        Args:
+            player1: First player name
+            player2: Second player name
+            wins: Number of wins for player1
+            draws: Number of draws
+            losses: Number of losses for player1
+            protect_best_elo: If True, prevent best model's ELO from decreasing when it wins
+            best_player: The player identifier of the current best model
+        """
         total_games = wins + draws + losses
         if total_games == 0:
             return
@@ -311,12 +322,19 @@ class ELOTracker:
         
         # Update game counts (only for non-anchor players)
         if player1 not in self.anchor_players:
+            if player1 not in self.game_counts:
+                self.game_counts[player1] = 0
             self.game_counts[player1] += total_games
         if player2 not in self.anchor_players:
+            if player2 not in self.game_counts:
+                self.game_counts[player2] = 0
             self.game_counts[player2] += total_games
         
         # Update uncertainty (decreases with more games, increases with surprising results)
         if player1 not in self.anchor_players:
+            # Ensure player exists in rating_uncertainty
+            if player1 not in self.rating_uncertainty:
+                self.rating_uncertainty[player1] = 350.0
             # Reduce uncertainty based on games played
             uncertainty_decay = 0.98
             self.rating_uncertainty[player1] *= uncertainty_decay
@@ -330,6 +348,9 @@ class ELOTracker:
             self.rating_uncertainty[player1] = np.clip(self.rating_uncertainty[player1], 50.0, 350.0)
             
         if player2 not in self.anchor_players:
+            # Ensure player exists in rating_uncertainty
+            if player2 not in self.rating_uncertainty:
+                self.rating_uncertainty[player2] = 350.0
             uncertainty_decay = 0.98
             self.rating_uncertainty[player2] *= uncertainty_decay
             
@@ -345,6 +366,16 @@ class ELOTracker:
         # Update ratings (but keep anchor players fixed)
         if player1 not in self.anchor_players:
             new_r1 = r1 + delta1
+            
+            # CRITICAL: Protect best model's ELO from decreasing when it wins
+            if protect_best_elo and best_player and player1 == best_player:
+                # Check if best model won (positive score means it won)
+                if s1 > 0.5:  # Best model won overall
+                    # Never let best model's ELO decrease when it wins
+                    if new_r1 < r1:
+                        logger.debug(f"Protecting best model {player1} ELO: would decrease {r1:.1f} -> {new_r1:.1f}, keeping at {r1:.1f}")
+                        new_r1 = r1
+            
             self.ratings[player1] = new_r1
             
             # Track iteration ELO if player is an iteration model
@@ -362,6 +393,16 @@ class ELOTracker:
             
         if player2 not in self.anchor_players:
             new_r2 = r2 + delta2
+            
+            # CRITICAL: Protect best model's ELO from decreasing when it wins
+            if protect_best_elo and best_player and player2 == best_player:
+                # Check if best model won (negative score for player2 means it won)
+                if s2 > 0.5:  # Best model won overall
+                    # Never let best model's ELO decrease when it wins
+                    if new_r2 < r2:
+                        logger.debug(f"Protecting best model {player2} ELO: would decrease {r2:.1f} -> {new_r2:.1f}, keeping at {r2:.1f}")
+                        new_r2 = r2
+            
             self.ratings[player2] = new_r2
             
             # Track iteration ELO if player is an iteration model
@@ -457,10 +498,40 @@ class ELOTracker:
         """Get sorted leaderboard"""
         return sorted(self.ratings.items(), key=lambda x: x[1], reverse=True)
     
-    def get_detailed_leaderboard(self) -> List[Dict]:
-        """Get detailed leaderboard with uncertainty and game counts"""
+    def get_detailed_leaderboard(self, max_iterations: int = 10) -> List[Dict]:
+        """Get detailed leaderboard with uncertainty and game counts
+        
+        Args:
+            max_iterations: Maximum number of recent iterations to show (0 = all)
+        """
         leaderboard = []
+        
+        # Get current highest iteration number to determine recent iterations
+        max_iter = 0
+        for player in self.ratings.keys():
+            if player.startswith("iter_"):
+                try:
+                    iter_num = int(player.split("_")[1])
+                    max_iter = max(max_iter, iter_num)
+                except (ValueError, IndexError):
+                    pass
+        
+        # Determine which iterations to include
+        if max_iterations > 0 and max_iter > max_iterations:
+            min_iter_to_show = max_iter - max_iterations + 1
+        else:
+            min_iter_to_show = 0
+        
         for player, rating in self.ratings.items():
+            # Filter out old iterations if requested
+            if max_iterations > 0 and player.startswith("iter_"):
+                try:
+                    iter_num = int(player.split("_")[1])
+                    if iter_num < min_iter_to_show:
+                        continue  # Skip old iterations
+                except (ValueError, IndexError):
+                    pass  # Keep non-standard iter names
+            
             uncertainty = self.rating_uncertainty.get(player, 0)
             games = self.game_counts.get(player, 0)
             lower, upper = self.get_confidence_interval(player)
@@ -685,14 +756,58 @@ class ELOTracker:
         
         return {"status": "insufficient_data"}
     
+    def cleanup_old_iterations(self, keep_recent: int = 15):
+        """Remove old iteration entries to keep the ratings dictionary clean
+        
+        Args:
+            keep_recent: Number of recent iterations to keep (default: 15)
+        """
+        # Find current highest iteration number
+        max_iter = 0
+        iteration_players = []
+        
+        for player in list(self.ratings.keys()):
+            if player.startswith("iter_"):
+                try:
+                    iter_num = int(player.split("_")[1])
+                    max_iter = max(max_iter, iter_num)
+                    iteration_players.append((player, iter_num))
+                except (ValueError, IndexError):
+                    pass
+        
+        # Determine cutoff for old iterations
+        if max_iter > keep_recent:
+            cutoff_iter = max_iter - keep_recent
+            
+            # Remove old iterations
+            removed_count = 0
+            for player, iter_num in iteration_players:
+                if iter_num < cutoff_iter:
+                    # Remove from all tracking dictionaries
+                    if player in self.ratings:
+                        del self.ratings[player]
+                    if player in self.rating_uncertainty:
+                        del self.rating_uncertainty[player]
+                    if player in self.game_counts:
+                        del self.game_counts[player]
+                    if iter_num in self.iteration_elos:
+                        del self.iteration_elos[iter_num]
+                    removed_count += 1
+            
+            if removed_count > 0:
+                logger.debug(f"Cleaned up {removed_count} old iteration entries (kept recent {keep_recent})")
+    
     def log_detailed_summary(self):
         """Log detailed summary of current ratings state"""
         logger.info("=" * 80)
         logger.info("ELO TRACKER DETAILED SUMMARY")
         logger.info("=" * 80)
         
-        # Leaderboard
-        leaderboard = self.get_detailed_leaderboard()
+        # Clean up old iterations before showing summary
+        self.cleanup_old_iterations()
+        
+        # Leaderboard (show recent iterations only)
+        leaderboard = self.get_detailed_leaderboard(max_iterations=10)
         logger.info(f"{'Player':<20} {'Rating':<10} {'±σ':<8} {'Games':<8} {'95% CI':<20}")
         logger.info("-" * 70)
         
@@ -1036,8 +1151,10 @@ class ArenaManager:
                 gpu_service1 = GPUEvaluatorService(
                     model=actual_model1,
                     device=self.config.mcts.device,
-                    batch_size=256,
-                    batch_timeout=0.01
+                    auto_optimize=True,
+                    workload_type="latency",  # Arena prefers low latency
+                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', True),  # Use config or default to True
+                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True)  # Use config or default to True
                 )
                 gpu_service1.start()
                 logger.debug(f"[ARENA] GPU evaluation service 1 started")
@@ -1053,8 +1170,10 @@ class ArenaManager:
                 gpu_service2 = GPUEvaluatorService(
                     model=actual_model2,
                     device=self.config.mcts.device,
-                    batch_size=256,
-                    batch_timeout=0.01
+                    auto_optimize=True,
+                    workload_type="latency",  # Arena prefers low latency
+                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', True),  # Use config or default to True
+                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True)  # Use config or default to True
                 )
                 gpu_service2.start()
                 logger.debug(f"[ARENA] GPU evaluation service 2 started")
@@ -1642,8 +1761,10 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
                 action_size=action_size
             )
         else:
-            # Use remote evaluator for neural network
-            evaluator1 = RemoteEvaluator(request_queue1, response_queue1, action_size, worker_id=game_idx)
+            # Use remote evaluator for neural network with optimized timeout
+            batch_timeout = config_dict.get('mcts', {}).get('gpu_batch_timeout', 0.1)  # Arena timeout
+            evaluator1 = RemoteEvaluator(request_queue1, response_queue1, action_size, 
+                                       worker_id=game_idx, batch_timeout=batch_timeout)
         
         if is_random2:
             evaluator2 = RandomEvaluator(
@@ -1651,8 +1772,10 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
                 action_size=action_size
             )
         else:
-            # Use remote evaluator for neural network
-            evaluator2 = RemoteEvaluator(request_queue2, response_queue2, action_size, worker_id=game_idx)
+            # Use remote evaluator for neural network with optimized timeout
+            batch_timeout = config_dict.get('mcts', {}).get('gpu_batch_timeout', 0.1)  # Arena timeout
+            evaluator2 = RemoteEvaluator(request_queue2, response_queue2, action_size, 
+                                       worker_id=game_idx, batch_timeout=batch_timeout)
         
         # Wrap evaluators to return torch tensors if GPU is available
         class TensorEvaluator:

@@ -64,7 +64,14 @@
       "Bash(grep -B5 -A5 \"self.hbar_values\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)",
       "Bash(grep -A 10 \"von_neumann_entropy\" /home/cosmosapjw/omoknuni_quantum/python/mcts/quantum/research/plot_quantum_classical_transition.py)",
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python demonstrate_quantum_integration.py)",
-      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python final_system_validation.py)"
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python final_system_validation.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python -c \"\nfrom mcts.gpu.cuda_kernel_manager import get_kernel_status\nstatus = get_kernel_status()\nprint('Kernel Manager Status:')\nfor k, v in status.items():\n    print(f'  {k}: {v}')\n\")",
+      "Bash(DISABLE_CUDA_COMPILE=1 python test_classical_performance.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python benchmark_classical_optimization.py --trials=3 --simulations=100 --wave-size=512)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python test_ultra_fast_performance.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python test_simple_fast_performance.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python test_zero_overhead_performance.py)",
+      "Bash(DISABLE_CUDA_COMPILE=1 python benchmark_classical_optimization.py --trials=5 --simulations=1000 --wave-size=1024)"
     ],
     "deny": []
   },

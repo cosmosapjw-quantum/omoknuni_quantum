@@ -7,6 +7,9 @@ from .config_system import AlphaZeroConfig, MCTSFullConfig, QuantumLevel, create
 # Worker init must be importable without torch
 from .worker_init import init_worker_process, verify_cuda_disabled, get_cpu_device, ensure_cpu_tensor, create_cpu_only_config
 
+# Hardware optimization (uses psutil but not torch)
+from .hardware_optimizer import HardwareOptimizer, HardwareProfile, OptimalResourceAllocation, optimize_for_hardware
+
 # Lazy imports for torch-dependent modules to avoid importing torch in workers
 def _lazy_import_torch_modules():
     """Import torch-dependent modules only when needed"""
@@ -14,7 +17,11 @@ def _lazy_import_torch_modules():
     global GPUEvaluatorService, RemoteEvaluator
     
     from .safe_multiprocessing import serialize_state_dict_for_multiprocessing, deserialize_state_dict_from_multiprocessing
-    from .gpu_evaluator_service import GPUEvaluatorService, RemoteEvaluator
+    # Force fresh import to get updated GPUEvaluatorService
+    import importlib
+    gpu_module = importlib.import_module('.gpu_evaluator_service', __name__)
+    GPUEvaluatorService = gpu_module.GPUEvaluatorService
+    RemoteEvaluator = gpu_module.RemoteEvaluator
 
 # Initialize as None - will be imported on first use
 serialize_state_dict_for_multiprocessing = None
@@ -48,4 +55,8 @@ __all__ = [
     "get_cpu_device",
     "ensure_cpu_tensor",
     "create_cpu_only_config",
+    "HardwareOptimizer",
+    "HardwareProfile",
+    "OptimalResourceAllocation",
+    "optimize_for_hardware",
 ]

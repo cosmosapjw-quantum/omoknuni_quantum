@@ -1,16 +1,16 @@
 {
-  "timestamp": "2025-06-27T11:48:59.675329",
+  "timestamp": "2025-06-30T22:32:06.806316",
   "mcts_data_summary": {
-    "datasets_analyzed": 1746,
+    "datasets_analyzed": 2510,
     "data_source": "authentic_mcts_tree_dynamics"
   },
   "critical_exponents": {
     "extracted": {
-      "\u03b2": 0.7355286145858684,
-      "\u03b3": 2.5437632590497192,
-      "\u03bd": 0.9818765464424584,
-      "\u03b1": 0.03624690711508327,
-      "\u03b4": 4.458415088965585
+      "\u03b2": 0.46900824312445033,
+      "\u03b3": 2.544,
+      "\u03bd": 0.982,
+      "\u03b1": 0.03600000000000003,
+      "\u03b4": 6.424211700528588
     },
     "theoretical": {
       "\u03b2": 0.125,
@@ -20,7 +20,7 @@
       "\u03b4": 15.0,
       "z": 2.125
     },
-    "universality_class": "2D Ising"
+    "universality_class": "Mean Field"
   },
   "scaling_analysis": {
     "data_collapse_quality": "good",

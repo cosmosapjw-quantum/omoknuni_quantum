@@ -27,6 +27,13 @@ def load_quantum_cuda_kernels():
         logger.info("CUDA not available - quantum CUDA kernels disabled")
         return False
     
+    # Check if JIT compilation is disabled
+    import os
+    if os.environ.get('DISABLE_JIT_COMPILATION', '0') == '1' or \
+       os.environ.get('MCTS_DISABLE_CUDA_KERNELS', '0') == '1':
+        logger.info("JIT compilation disabled - quantum CUDA kernels will use fallback")
+        return False
+    
     try:
         # Try to import pre-compiled module
         import mcts.gpu.quantum_cuda_kernels as quantum_module
@@ -37,7 +44,11 @@ def load_quantum_cuda_kernels():
     except ImportError:
         pass
     
-    # Try JIT compilation
+    # Try JIT compilation only if explicitly enabled
+    if os.environ.get('ENABLE_JIT_COMPILATION', '0') != '1':
+        logger.debug("JIT compilation not explicitly enabled - using fallback")
+        return False
+    
     try:
         from torch.utils.cpp_extension import load
         
@@ -290,5 +301,62 @@ def generate_quantum_phases(
     return phases
 
 
-# Auto-load on import
-load_quantum_cuda_kernels()
+def is_quantum_cuda_available() -> bool:
+    """Check if quantum CUDA kernels are available"""
+    return _QUANTUM_CUDA_AVAILABLE
+
+def get_quantum_cuda_info() -> dict:
+    """Get information about quantum CUDA kernel availability"""
+    if not _QUANTUM_CUDA_AVAILABLE:
+        return {
+            'available': False,
+            'functions': [],
+            'reason': 'Kernels not loaded or compilation failed'
+        }
+    
+    info = {
+        'available': True,
+        'functions': []
+    }
+    
+    # Check which functions are available
+    if _QUANTUM_CUDA_MODULE is not None:
+        function_list = [
+            'batched_ucb_selection_quantum',
+            'generate_quantum_phases'
+        ]
+        
+        for func_name in function_list:
+            if hasattr(_QUANTUM_CUDA_MODULE, func_name):
+                info['functions'].append(func_name)
+    
+    return info
+
+def quantum_bonus_computation(
+    visit_counts: torch.Tensor,
+    quantum_coefficient: float = 0.15,
+    discrete_time: bool = True
+) -> torch.Tensor:
+    """
+    Fast quantum bonus computation (CPU fallback since no CUDA kernel for this yet).
+    
+    Args:
+        visit_counts: Visit counts [batch_size]
+        quantum_coefficient: Quantum correction strength
+        discrete_time: Use discrete time formulation τ(N) = log(N+2)
+        
+    Returns:
+        Quantum bonuses [batch_size]
+    """
+    # CPU implementation (no CUDA kernel for this specific function yet)
+    if discrete_time:
+        log_term = torch.log(visit_counts + 2)
+        decoherence = torch.pow(visit_counts + 1e-8, -0.1)
+        return quantum_coefficient * log_term * decoherence
+    else:
+        sqrt_term = torch.rsqrt(visit_counts + 1)
+        log_term = torch.log(visit_counts + 2)
+        return quantum_coefficient * log_term * sqrt_term
+
+# Don't auto-load on import to prevent hanging
+# load_quantum_cuda_kernels() - removed to prevent import-time JIT compilation

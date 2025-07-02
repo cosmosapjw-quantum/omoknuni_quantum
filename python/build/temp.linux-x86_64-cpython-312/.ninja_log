@@ -1,4 +1,0 @@
-# ninja log v5
-0	51775	1750984166130075412	/home/cosmosapjw/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/mcts/gpu/quantum_cuda_kernels.o	bb09410ee6ae5a42
-3	54405	1750984220749517029	/home/cosmosapjw/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/mcts/gpu/unified_cuda_kernels.o	81f2f2cfece1d477
-3	55492	1750984276481981736	/home/cosmosapjw/omoknuni_quantum/python/build/temp.linux-x86_64-cpython-312/mcts/gpu/quantum_v5_cuda_kernels.o	ec33f47721c90c0d

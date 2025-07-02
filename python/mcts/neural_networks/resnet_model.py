@@ -65,6 +65,21 @@ class PolicyHead(nn.Module):
         # Fully connected layers
         self.fc1 = nn.Linear(2 * board_size * board_size, fc_hidden)
         self.fc2 = nn.Linear(fc_hidden, num_actions)
+        
+        # Custom initialization for fc2 to prevent gradient explosion
+        self._initialize_policy_weights()
+    
+    def _initialize_policy_weights(self):
+        """Initialize policy head weights to prevent gradient explosion"""
+        # Standard initialization for fc1
+        nn.init.kaiming_normal_(self.fc1.weight)
+        if self.fc1.bias is not None:
+            nn.init.constant_(self.fc1.bias, 0)
+        
+        # Special small initialization for fc2 to prevent extreme log probabilities
+        nn.init.normal_(self.fc2.weight, mean=0.0, std=0.005)
+        if self.fc2.bias is not None:
+            nn.init.constant_(self.fc2.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through policy head"""
@@ -186,9 +201,12 @@ class ResNetModel(BaseGameModel):
                 nn.init.constant_(module.weight, 1)
                 nn.init.constant_(module.bias, 0)
             elif isinstance(module, nn.Linear):
+                # Standard initialization for most linear layers
                 nn.init.kaiming_normal_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
+        
+        # Policy head has its own custom initialization in PolicyHead.__init__
     
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass through network

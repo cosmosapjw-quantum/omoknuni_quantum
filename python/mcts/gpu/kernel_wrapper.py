@@ -51,10 +51,12 @@ class CUDAKernelWrapper:
             # We'll check for known kernel names
             known_kernels = [
                 'batched_ucb_selection', 'batched_ucb_selection_quantum',
+                'batched_ucb_selection_diversified',  # New diversified kernel
                 'parallel_backup', 'quantum_interference', 'batched_add_children',
                 'evaluate_gomoku_positions', 'find_expansion_nodes',
                 'batch_process_legal_moves', 'fused_minhash_interference',
-                'phase_kicked_policy', 'batch_apply_moves', 'generate_legal_moves_mask'
+                'phase_kicked_policy', 'batch_apply_moves', 'generate_legal_moves_mask',
+                'fused_selection_traversal', 'vectorized_backup'  # Our optimized kernels
             ]
             
             for kernel_name in known_kernels:

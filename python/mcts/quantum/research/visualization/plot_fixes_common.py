@@ -287,7 +287,14 @@ def optimize_for_large_data(data_dict: Dict[str, Any]) -> Dict[str, Any]:
     optimized = {}
     
     for key, value in data_dict.items():
-        if isinstance(value, (list, np.ndarray)) and len(value) > 10000:
+        # Check if value has a length (exclude scalar numpy arrays)
+        has_length = False
+        if isinstance(value, list):
+            has_length = True
+        elif isinstance(value, np.ndarray) and value.ndim > 0:
+            has_length = True
+            
+        if has_length and len(value) > 10000:
             # Subsample large arrays for visualization
             if isinstance(value, list):
                 value = np.array(value)

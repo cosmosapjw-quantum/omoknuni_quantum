@@ -6,6 +6,7 @@ Run from the project root directory.
 
 import sys
 import os
+import time
 import multiprocessing
 import warnings
 
@@ -30,37 +31,40 @@ import argparse
 def _precompile_cuda_kernels(device: str):
     """Pre-compile CUDA kernels to avoid JIT overhead during training"""
     try:
-        from mcts.gpu.unified_kernels import get_unified_kernels
-        from mcts.core.mcts import MCTS, MCTSConfig
-        from mcts.neural_networks.mock_evaluator import MockEvaluator
-        import torch
+        print("  📦 Pre-compiling CUDA kernels in main process...")
+        print(f"  🔧 Process ID: {os.getpid()}")
         
-        # Force kernel loading
-        print("  📦 Loading unified kernels...")
-        kernels = get_unified_kernels(torch.device(device))
+        from mcts.gpu.cuda_singleton import get_cuda_module
         
-        # Create minimal MCTS instance to trigger kernel compilation
-        print("  ⚙️  Initializing MCTS system...")
-        mcts_config = MCTSConfig(
-            num_simulations=10,  # Minimal simulations
-            wave_size=100,       # Small wave size
-            device=device,
-            enable_quantum=False  # Keep it simple
-        )
+        # Force compilation in main process
+        start_time = time.time()
+        module = get_cuda_module()
+        compile_time = time.time() - start_time
         
-        evaluator = MockEvaluator()
-        mcts = MCTS(mcts_config, evaluator)
-        
-        # Run a minimal search to trigger any lazy compilation
-        print("  🔥 Warming up kernels...")
-        import alphazero_py
-        game_state = alphazero_py.GomokuState()
-        mcts.search(game_state, 5)  # Very small search to trigger compilation
-        
-        print("  ✅ CUDA kernels pre-compiled successfully!")
+        if module:
+            print(f"  ✅ CUDA kernels compiled successfully in {compile_time:.2f}s")
+            
+            # Verify critical functions are available
+            critical_functions = ['batched_ucb_selection', 'parallel_backup', 'vectorized_backup']
+            available = []
+            for func in critical_functions:
+                if hasattr(module, func):
+                    available.append(func)
+            
+            print(f"  🎯 Available functions: {len(available)}/{len(critical_functions)}")
+            if len(available) < len(critical_functions):
+                missing = [f for f in critical_functions if f not in available]
+                print(f"  ⚠️  Missing functions: {missing}")
+        else:
+            print("  ⚠️  CUDA compilation returned None")
+            
+        # Small delay to ensure marker file is written
+        time.sleep(0.5)
         
     except Exception as e:
         print(f"  ⚠️  Kernel pre-compilation failed: {e}")
+        import traceback
+        traceback.print_exc()
         print("  📝 Continuing with PyTorch fallback...")
 
 def main():
@@ -115,6 +119,17 @@ def main():
     # Pre-compile CUDA kernels to avoid JIT overhead during training
     if config.mcts.device == 'cuda':
         print("🔧 Pre-compiling CUDA kernels...")
+        
+        # Clean up any stale marker files from previous runs
+        import tempfile
+        marker_file = os.path.join(tempfile.gettempdir(), 'cuda_singleton_compiled.marker')
+        if os.path.exists(marker_file):
+            try:
+                os.remove(marker_file)
+                print("  🧹 Cleaned up stale marker file")
+            except:
+                pass
+        
         _precompile_cuda_kernels(config.mcts.device)
     
     # Create and run pipeline

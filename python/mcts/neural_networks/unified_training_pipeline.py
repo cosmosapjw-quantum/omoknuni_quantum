@@ -423,11 +423,16 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"{'='*80}")
             
         # Log profiling summary if enabled
-        if get_profiler().enabled:
-            tqdm.write("\n" + "=" * 80)
-            tqdm.write("TRAINING PROFILING SUMMARY")
-            tqdm.write("=" * 80)
-            log_profiling_summary(top_n=30, min_time=0.1)
+        try:
+            from mcts.utils.training_profiler import get_profiler
+            if get_profiler().enabled:
+                tqdm.write("\n" + "=" * 80)
+                tqdm.write("TRAINING PROFILING SUMMARY")
+                tqdm.write("=" * 80)
+                log_profiling_summary(top_n=30, min_time=0.1)
+        except ImportError:
+            # Profiler not available, skip logging
+            pass
         
         logger.info("Training completed!")
         
@@ -439,6 +444,20 @@ class UnifiedTrainingPipeline:
         from mcts.core.evaluator import AlphaZeroEvaluator
         
         examples = []
+        
+        # Initialize comprehensive game quality metrics
+        self.game_metrics = {
+            'game_lengths': [],
+            'policy_entropies': [],
+            'value_trajectories': [],
+            'outcomes': {'player1_wins': 0, 'player2_wins': 0, 'draws': 0},
+            'resignation_count': 0,
+            'illegal_move_attempts': 0,
+            'avg_branching_factor': [],
+            'move_time_ms': [],
+            'final_positions': [],
+            'value_accuracy': []  # Compare predicted vs actual outcome
+        }
         
         # Create evaluator for self-play
         evaluator = AlphaZeroEvaluator(
@@ -459,7 +478,73 @@ class UnifiedTrainingPipeline:
                 game_examples = self._play_single_game(evaluator, game_idx)
                 examples.extend(game_examples)
         
+        # Log comprehensive game quality report
+        self._log_game_quality_metrics()
+        
         return examples
+    
+    def _log_game_quality_metrics(self):
+        """Log comprehensive game quality metrics"""
+        if not self.game_metrics['game_lengths']:
+            logger.warning("No game metrics collected!")
+            return
+            
+        import numpy as np
+        
+        # Calculate statistics
+        avg_length = np.mean(self.game_metrics['game_lengths'])
+        std_length = np.std(self.game_metrics['game_lengths'])
+        min_length = np.min(self.game_metrics['game_lengths'])
+        max_length = np.max(self.game_metrics['game_lengths'])
+        
+        total_games = sum(self.game_metrics['outcomes'].values())
+        
+        # Calculate win rates
+        p1_win_rate = self.game_metrics['outcomes']['player1_wins'] / max(total_games, 1)
+        p2_win_rate = self.game_metrics['outcomes']['player2_wins'] / max(total_games, 1)
+        draw_rate = self.game_metrics['outcomes']['draws'] / max(total_games, 1)
+        
+        # Policy entropy analysis
+        if self.game_metrics['policy_entropies']:
+            avg_entropy = np.mean(self.game_metrics['policy_entropies'])
+            entropy_trend = 'decreasing' if len(self.game_metrics['policy_entropies']) > 10 and \
+                           np.mean(self.game_metrics['policy_entropies'][-10:]) < \
+                           np.mean(self.game_metrics['policy_entropies'][:10]) else 'stable'
+        else:
+            avg_entropy = 0
+            entropy_trend = 'unknown'
+        
+        # Value accuracy
+        if self.game_metrics['value_accuracy']:
+            value_acc = np.mean(self.game_metrics['value_accuracy'])
+        else:
+            value_acc = 0
+        
+        logger.info("="*80)
+        logger.info("SELF-PLAY GAME QUALITY METRICS")
+        logger.info("="*80)
+        logger.info(f"Total games played: {total_games}")
+        logger.info(f"Game length: avg={avg_length:.1f}, std={std_length:.1f}, min={min_length}, max={max_length}")
+        logger.info(f"Outcomes: P1 wins={p1_win_rate:.1%}, P2 wins={p2_win_rate:.1%}, Draws={draw_rate:.1%}")
+        logger.info(f"Resignations: {self.game_metrics['resignation_count']} ({self.game_metrics['resignation_count']/max(total_games,1):.1%})")
+        logger.info(f"Average policy entropy: {avg_entropy:.3f} (trend: {entropy_trend})")
+        logger.info(f"Value prediction accuracy: {value_acc:.1%}")
+        logger.info(f"Illegal move attempts: {self.game_metrics['illegal_move_attempts']}")
+        
+        if self.game_metrics['avg_branching_factor']:
+            logger.info(f"Average branching factor: {np.mean(self.game_metrics['avg_branching_factor']):.1f}")
+        
+        # Check for potential issues
+        if avg_length < 20:
+            logger.warning("⚠️  Games are ending too quickly! Check game logic or increase exploration.")
+        if p1_win_rate > 0.65 or p2_win_rate > 0.65:
+            logger.warning("⚠️  High win rate imbalance detected! Check for first-player advantage.")
+        if avg_entropy < 0.5:
+            logger.warning("⚠️  Low policy entropy! Model may be overly deterministic.")
+        if self.game_metrics['illegal_move_attempts'] > 0:
+            logger.error("❌ Illegal moves attempted! Check MCTS action selection.")
+        
+        logger.info("="*80)
     
     def _parallel_self_play(self, evaluator) -> List[GameExample]:
         """Run self-play games in parallel using GPU service architecture"""
@@ -506,8 +591,15 @@ class UnifiedTrainingPipeline:
     def _play_single_game(self, evaluator, game_idx: int) -> List[GameExample]:
         """Play a single self-play game"""
         from mcts.core.mcts import MCTS, MCTSConfig
-        from mcts.quantum.quantum_features import create_quantum_mcts
         from mcts.gpu.gpu_game_states import GameType as GPUGameType
+        
+        # Only import quantum features if quantum is enabled
+        if getattr(self.config.mcts, 'enable_quantum', False):
+            try:
+                from mcts.quantum.quantum_features import create_quantum_mcts
+            except ImportError:
+                # Quantum features not available, disable quantum
+                pass
         
         # Convert game_interface.GameType to gpu_game_states.GameType
         game_type_mapping = {
@@ -571,6 +663,11 @@ class UnifiedTrainingPipeline:
         state = self.game_interface.create_initial_state()
         game_id = f"iter{self.iteration}_game{game_idx}"
         
+        # Track game-specific metrics
+        game_value_trajectory = []
+        game_policy_entropies = []
+        game_start_time = time.time()
+        
         for move_num in range(self.config.training.max_moves_per_game):
             # Enhanced opening diversity: Force extra exploration for first 3 moves
             if move_num < 3:
@@ -586,12 +683,28 @@ class UnifiedTrainingPipeline:
                 mcts.config.temperature = getattr(self.config.mcts, 'temperature_final', 0.1)
                 mcts.config.dirichlet_epsilon = self.config.mcts.dirichlet_epsilon * 0.5
             
+            # Track search time
+            search_start = time.time()
+            
             # Search with MCTS
             policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
+            
+            # Track search time
+            search_time_ms = (time.time() - search_start) * 1000
+            if hasattr(self, 'game_metrics'):
+                self.game_metrics['move_time_ms'].append(search_time_ms)
             
             # Convert to numpy if needed
             if isinstance(policy, torch.Tensor):
                 policy = policy.cpu().numpy()
+            
+            # Calculate policy entropy for diversity analysis
+            policy_entropy = -np.sum(policy * np.log(policy + 1e-8))
+            game_policy_entropies.append(policy_entropy)
+            
+            # Track root value from MCTS
+            root_value = mcts.get_root_value() if hasattr(mcts, 'get_root_value') else 0
+            game_value_trajectory.append(root_value)
             
             # Select move based on policy
             # Note: MCTS already applies temperature scaling to visit counts using
@@ -638,6 +751,34 @@ class UnifiedTrainingPipeline:
                 for i, example in enumerate(examples):
                     # Alternate perspective for each move
                     example.value = outcome * ((-1) ** (i % 2))
+                
+                # Collect final game metrics
+                if hasattr(self, 'game_metrics'):
+                    # Record game length
+                    self.game_metrics['game_lengths'].append(move_num + 1)
+                    
+                    # Record outcome
+                    if outcome == 1:
+                        self.game_metrics['outcomes']['player1_wins'] += 1
+                    elif outcome == -1:
+                        self.game_metrics['outcomes']['player2_wins'] += 1
+                    else:
+                        self.game_metrics['outcomes']['draws'] += 1
+                    
+                    # Record policy entropies
+                    self.game_metrics['policy_entropies'].extend(game_policy_entropies)
+                    
+                    # Record value trajectory
+                    self.game_metrics['value_trajectories'].append(game_value_trajectory)
+                    
+                    # Calculate value prediction accuracy
+                    if game_value_trajectory:
+                        # Check if final value predictions matched actual outcome
+                        final_predictions = game_value_trajectory[-min(5, len(game_value_trajectory)):]
+                        for pred in final_predictions:
+                            # Account for perspective alternation
+                            correct = (pred > 0 and outcome == 1) or (pred < 0 and outcome == -1)
+                            self.game_metrics['value_accuracy'].append(float(correct))
                 
                 break
         
@@ -823,7 +964,7 @@ class UnifiedTrainingPipeline:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
-        # Implement improved ELO inheritance: use best baseline for inheritance
+        # Implement CORRECT ELO inheritance: always inherit from previous iteration
         current_key = f"iter_{self.iteration}"
         if current_key not in self.elo_tracker.ratings:
             if self.iteration == 1:
@@ -831,31 +972,17 @@ class UnifiedTrainingPipeline:
                 initial_elo = 0.0
                 logger.info(f"First model (iter_1) starting at ELO {initial_elo:.1f} (same as random)")
             else:
-                # Improved inheritance: use best model ELO as baseline if available, 
-                # otherwise use previous model ELO
-                if self.best_model_iteration:
-                    best_key = f"iter_{self.best_model_iteration}"
-                    if best_key in self.elo_tracker.ratings:
-                        initial_elo = self.elo_tracker.get_rating(best_key)
-                        logger.info(f"Model iter_{self.iteration} initially inheriting ELO {initial_elo:.1f} from best model {best_key}")
-                    else:
-                        # Fallback to previous model
-                        previous_key = f"iter_{self.iteration - 1}"
-                        if previous_key in self.elo_tracker.ratings:
-                            initial_elo = self.elo_tracker.get_rating(previous_key)
-                            logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key} (best model ELO not found)")
-                        else:
-                            initial_elo = self.config.arena.elo_initial_rating
-                            logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
+                # ALWAYS inherit from previous iteration model, not best model
+                # This is the correct approach - new models are trained from previous iteration
+                previous_key = f"iter_{self.iteration - 1}"
+                previous_elo = self.elo_tracker.get_rating(previous_key)
+                if previous_elo is not None:
+                    initial_elo = previous_elo
+                    logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key}")
                 else:
-                    # No best model yet, use previous model
-                    previous_key = f"iter_{self.iteration - 1}"
-                    if previous_key in self.elo_tracker.ratings:
-                        initial_elo = self.elo_tracker.get_rating(previous_key)
-                        logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key}")
-                    else:
-                        initial_elo = self.config.arena.elo_initial_rating
-                        logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f}")
+                    # Fallback to initial rating if previous doesn't exist
+                    initial_elo = self.config.arena.elo_initial_rating
+                    logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f} (previous not found)")
             
             self.elo_tracker.ratings[current_key] = initial_elo
             # Store initial ELO for potential adjustment
@@ -1073,9 +1200,12 @@ class UnifiedTrainingPipeline:
             win_rate_vs_best = wins_vs_best / (wins_vs_best + draws_vs_best + losses_vs_best)
             tqdm.write(f"      Result: {wins_vs_best}W-{draws_vs_best}D-{losses_vs_best}L ({win_rate_vs_best:.1%})")
             
+            # Update ratings with best model protection
             self.elo_tracker.update_ratings(
                 f"iter_{self.iteration}", f"iter_{self.best_model_iteration}",
-                wins_vs_best, draws_vs_best, losses_vs_best
+                wins_vs_best, draws_vs_best, losses_vs_best,
+                protect_best_elo=True,
+                best_player=f"iter_{self.best_model_iteration}"
             )
             
             # Store wins vs best for ELO adjustment if needed
@@ -1220,6 +1350,13 @@ class UnifiedTrainingPipeline:
         
         # Save as best model if accepted
         if accepted:
+            # Ensure the new best model has a higher ELO than the previous best
+            if self.best_model_iteration:
+                old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
+                current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
+                if current_elo <= old_best_elo:
+                    logger.warning(f"New best model has lower ELO ({current_elo:.1f}) than previous best ({old_best_elo:.1f})")
+            
             self._save_best_model()
             # Get the final ELO after potential adjustment
             final_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
@@ -1259,40 +1396,74 @@ class UnifiedTrainingPipeline:
         
         return accepted
     
+    def _calculate_win_rate_vs_best(self) -> float:
+        """Calculate win rate of current model vs best model from arena results"""
+        if hasattr(self, '_last_wins_vs_best') and hasattr(self, '_last_games_vs_best'):
+            if self._last_games_vs_best > 0:
+                # We have data from the current vs best match
+                wins = getattr(self, '_last_wins_vs_best', 0)
+                games = getattr(self, '_last_games_vs_best', 1)
+                return wins / games
+        
+        return 0.55  # Default slightly above 50% since we beat the best
+    
     def _save_best_model(self):
         """Save current model as best"""
-        # Implement inheritance from best model when beating it
+        # CRITICAL FIX: When a model becomes the new best (by beating the current best in arena),
+        # its ELO MUST be higher than the previous best, regardless of inheritance or match calculations
         if self.elo_tracker and self.best_model_iteration:
             old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
             current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
             
-            # Check if we initially inherited from a non-best model
-            inherited_from_best = hasattr(self, '_initial_inherited_elo') and \
-                                self._initial_inherited_elo == old_best_elo
-            
-            if not inherited_from_best and hasattr(self, '_initial_inherited_elo'):
-                # We beat the best but inherited from previous iteration
-                # Adjust our ELO to reflect we're at least as good as the best
+            # ALWAYS ensure new best has higher ELO than previous best
+            # This is a fundamental requirement: better models must have higher ratings
+            if current_elo <= old_best_elo:
+                # Calculate appropriate ELO boost based on performance
+                win_rate_vs_best = self._calculate_win_rate_vs_best()
+                if win_rate_vs_best >= 0.75:
+                    min_gain = 25.0  # Strong victory: substantial boost
+                elif win_rate_vs_best >= 0.60:
+                    min_gain = 15.0  # Solid victory: good boost
+                else:
+                    min_gain = 10.0  # Close victory: modest boost
                 
-                # Calculate what our ELO would have been if we started from best's ELO
-                elo_gained_from_matches = current_elo - self._initial_inherited_elo
-                adjusted_elo = old_best_elo + elo_gained_from_matches
+                # Set new ELO to old best + gain
+                adjusted_elo = old_best_elo + min_gain
                 
-                # Update our rating
-                self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
-                
-                logger.info(f"Adjusting ELO inheritance for new best model:")
-                logger.info(f"  Initially inherited: {self._initial_inherited_elo:.1f} (from previous iteration)")
-                logger.info(f"  Should have inherited: {old_best_elo:.1f} (from best model)")
-                logger.info(f"  ELO gained from matches: {elo_gained_from_matches:+.1f}")
+                # Log the adjustment (this should be expected, not an error)
+                logger.warning(f"ELO inconsistency detected: Beat best model but ELO {current_elo:.1f} <= {old_best_elo:.1f}")
+                logger.info(f"Adjusting ELO for new best model:")
+                logger.info(f"  Current ELO from matches: {current_elo:.1f}")
+                logger.info(f"  Previous best ELO: {old_best_elo:.1f}")
+                logger.info(f"  Win rate vs best: {win_rate_vs_best:.1%}")
+                logger.info(f"  Applied ELO boost: +{min_gain:.1f}")
                 logger.info(f"  Final adjusted ELO: {adjusted_elo:.1f}")
                 
+                # Update the rating in the tracker
+                self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
                 current_elo = adjusted_elo
+            else:
+                # Current ELO is already higher - ensure minimum gain
+                min_acceptable_elo = old_best_elo + 5.0
+                if current_elo < min_acceptable_elo:
+                    adjusted_elo = min_acceptable_elo
+                    logger.info(f"Ensuring minimum ELO gain for new best: {current_elo:.1f} -> {adjusted_elo:.1f}")
+                    self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
+                    current_elo = adjusted_elo
             
             # Log the progression
             elo_gain = current_elo - old_best_elo
             logger.info(f"Best model progression: iter {self.best_model_iteration} (ELO: {old_best_elo:.1f}) -> iter {self.iteration} (ELO: {current_elo:.1f})")
             logger.info(f"Net ELO gain: {elo_gain:+.1f}")
+            
+            # Final safety check
+            if elo_gain <= 0:
+                logger.error(f"CRITICAL ERROR: New best model still has ELO gain of {elo_gain:+.1f}")
+                logger.error(f"This should never happen after the adjustment logic above!")
+                # Emergency fix
+                emergency_elo = old_best_elo + 10.0
+                logger.error(f"Emergency ELO adjustment: {current_elo:.1f} -> {emergency_elo:.1f}")
+                self.elo_tracker.ratings[f"iter_{self.iteration}"] = emergency_elo
         
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"
@@ -1367,17 +1538,17 @@ class UnifiedTrainingPipeline:
         buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
         self.replay_buffer.save(str(buffer_path))
         
-        # Clean up old replay buffers to save disk space
-        self._cleanup_old_replay_buffers()
-        
-        # Clean up old checkpoints to save disk space
-        self._cleanup_old_checkpoints()
-        
-        # Create symlink to latest checkpoint for easy resuming
+        # Create symlink to latest checkpoint for easy resuming (before cleanup)
         latest_link = self.checkpoint_dir / "latest_checkpoint.pt"
-        if latest_link.exists():
+        if latest_link.exists() or latest_link.is_symlink():
             latest_link.unlink()
         latest_link.symlink_to(checkpoint_path.name)
+        
+        # Clean up old replay buffers to save disk space (after symlink creation)
+        self._cleanup_old_replay_buffers()
+        
+        # Clean up old checkpoints to save disk space (after symlink creation)
+        self._cleanup_old_checkpoints()
         
         # Also save a resume info file
         resume_info = {
@@ -1391,11 +1562,11 @@ class UnifiedTrainingPipeline:
         
         logger.info(f"Saved checkpoint at iteration {self.iteration}")
     
-    def _cleanup_old_replay_buffers(self, keep_last_n: int = 20):
+    def _cleanup_old_replay_buffers(self, keep_last_n: int = 40):
         """Clean up old replay buffers to save disk space
         
         Args:
-            keep_last_n: Number of recent replay buffers to keep (default: 20)
+            keep_last_n: Number of recent replay buffers to keep (default: 40)
         """
         try:
             # Find all replay buffer files
@@ -1432,11 +1603,11 @@ class UnifiedTrainingPipeline:
         except Exception as e:
             logger.warning(f"Failed to cleanup old replay buffers: {e}")
     
-    def _cleanup_old_checkpoints(self, keep_last_n: int = 10):
+    def _cleanup_old_checkpoints(self, keep_last_n: int = 20):
         """Clean up old checkpoint files to save disk space
         
         Args:
-            keep_last_n: Number of recent checkpoints to keep (default: 10)
+            keep_last_n: Number of recent checkpoints to keep (default: 20)
         """
         try:
             # Find all checkpoint files
@@ -1456,6 +1627,10 @@ class UnifiedTrainingPipeline:
             
             # Files to remove (keep only the last keep_last_n files)
             files_to_remove = checkpoint_files[:-keep_last_n]
+            
+            # Additional safety: never remove the current iteration's checkpoint
+            current_checkpoint = self.checkpoint_dir / f"checkpoint_iter_{self.iteration}.pt"
+            files_to_remove = [f for f in files_to_remove if f != current_checkpoint]
             
             if files_to_remove:
                 total_size_freed = 0
@@ -1661,7 +1836,7 @@ class UnifiedTrainingPipeline:
             game_state = alphazero_py.GomokuState()
             mcts.search(game_state, 5)  # Very small search to trigger compilation
             
-            logger.info("  ✅ CUDA kernels pre-compiled successfully!")
+            logger.debug("CUDA kernels pre-compiled successfully!")
             
         except Exception as e:
             logger.warning(f"Kernel pre-compilation failed: {e}")

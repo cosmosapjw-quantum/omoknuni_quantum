@@ -36,10 +36,19 @@ def verify_cuda_disabled():
     try:
         import torch
         if torch.cuda.is_available():
-            # Force disable if still available
-            torch.cuda.set_device = lambda x: None
+            # Force disable CUDA functions comprehensively
             torch.cuda.is_available = lambda: False
-            logger.debug("Forced PyTorch CUDA disable in worker")
+            torch.cuda.device_count = lambda: 0
+            torch.cuda.get_device_name = lambda x=None: "CUDA_DISABLED"
+            torch.cuda.current_device = lambda: None
+            torch.cuda.set_device = lambda x: None
+            torch.cuda.synchronize = lambda device=None: None
+            torch.cuda.empty_cache = lambda: None
+            torch.cuda.memory_allocated = lambda device=None: 0
+            torch.cuda.memory_reserved = lambda device=None: 0
+            torch.cuda.max_memory_allocated = lambda device=None: 0
+            torch.cuda.max_memory_reserved = lambda device=None: 0
+            logger.debug("Comprehensive PyTorch CUDA disable applied in worker")
             return False
         return True
     except ImportError:

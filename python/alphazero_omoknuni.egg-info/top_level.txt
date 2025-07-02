@@ -1,4 +1,0 @@
-alphazero_py
-gui
-mcts
-tests

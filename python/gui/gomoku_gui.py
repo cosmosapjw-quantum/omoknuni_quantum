@@ -74,6 +74,11 @@ class GomokuGUI:
         }
         self.current_difficulty = "Medium"
         
+        # Resignation settings
+        self.resign_threshold = -0.9  # AI resigns if evaluation drops below this
+        self.resign_check_moves = 5   # Number of consecutive moves to check
+        self.ai_evaluation_history = []  # Track AI's position evaluations
+        
         self.setup_ui()
         self.new_game()
         
@@ -126,6 +131,8 @@ class GomokuGUI:
         
         ttk.Button(button_frame, text="New Game", command=self.new_game).grid(row=0, column=0, padx=2)
         ttk.Button(button_frame, text="Undo Move", command=self.undo_move).grid(row=0, column=1, padx=2)
+        self.resign_button = ttk.Button(button_frame, text="Resign", command=self.resign_game)
+        self.resign_button.grid(row=0, column=2, padx=2)
         
         # Board canvas
         canvas_size = 2 * self.margin + (self.board_size - 1) * self.cell_size
@@ -437,6 +444,7 @@ class GomokuGUI:
         self.current_player = 0
         self.game_over = False
         self.last_move = None
+        self.ai_evaluation_history = []  # Reset AI evaluation history
         
         if self.mcts:
             self.mcts.reset_tree()
@@ -618,6 +626,29 @@ class GomokuGUI:
                 policy = self.mcts.search(self.game_state)
                 best_action = self.mcts.get_best_action(self.game_state)
                 
+                # Get root value for resignation check
+                root_value = self.mcts.get_root_value() if hasattr(self.mcts, 'get_root_value') else 0.0
+                
+                # Track AI's evaluation from its perspective
+                # AI color is opposite to human color
+                ai_color = 1 - self.human_color
+                # If current player matches AI color, value is already from AI's perspective
+                ai_perspective_value = root_value if self.current_player == ai_color else -root_value
+                self.ai_evaluation_history.append(ai_perspective_value)
+                
+                # Keep only recent evaluations
+                if len(self.ai_evaluation_history) > self.resign_check_moves:
+                    self.ai_evaluation_history = self.ai_evaluation_history[-self.resign_check_moves:]
+                
+                # Check if AI should resign
+                if (len(self.ai_evaluation_history) >= self.resign_check_moves and 
+                    len(self.move_history) >= 10):  # Don't resign too early
+                    recent_values = self.ai_evaluation_history[-self.resign_check_moves:]
+                    if all(v < self.resign_threshold for v in recent_values):
+                        # AI resigns
+                        self.ai_queue.put("resign")
+                        return
+                
                 # Convert to coordinates
                 row = best_action // self.board_size
                 col = best_action % self.board_size
@@ -627,7 +658,7 @@ class GomokuGUI:
                 self.mcts.reset_tree()
                 
                 # Put result in queue
-                self.ai_queue.put((row, col, confidence))
+                self.ai_queue.put((row, col, confidence, root_value))
             else:
                 # Fallback: random valid move
                 valid_moves = [(r, c) for r in range(self.board_size) 
@@ -636,7 +667,7 @@ class GomokuGUI:
                 if valid_moves:
                     import random
                     row, col = random.choice(valid_moves)
-                    self.ai_queue.put((row, col, 0.0))
+                    self.ai_queue.put((row, col, 0.0, 0.0))
                     
         except Exception as e:
             print(f"AI error: {e}")
@@ -652,14 +683,21 @@ class GomokuGUI:
             self.progress.grid_remove()
             self.ai_thinking = False
             
-            if result:
-                row, col, confidence = result
+            if result == "resign":
+                # AI resigns
+                self.ai_resign()
+            elif result and len(result) >= 3:
+                # Normal move result
+                row, col, confidence = result[0], result[1], result[2]
+                root_value = result[3] if len(result) > 3 else 0.0
+                
                 self.make_move(row, col)
                 
-                # Show AI confidence
+                # Show AI confidence and evaluation
                 if confidence > 0:
                     self.update_info(f"AI played at {chr(ord('A') + col)}{self.board_size - row}\n"
-                                   f"Confidence: {confidence:.1%}")
+                                   f"Confidence: {confidence:.1%}\n"
+                                   f"Position evaluation: {root_value:.3f}")
             else:
                 self.status_var.set("AI error occurred")
                 
@@ -731,6 +769,9 @@ class GomokuGUI:
         # Update last move
         self.last_move = self.move_history[-1][:2] if self.move_history else None
         
+        # Reset AI evaluation history
+        self.ai_evaluation_history = []
+        
         # Reset MCTS tree
         if self.mcts:
             self.mcts.reset_tree()
@@ -745,6 +786,73 @@ class GomokuGUI:
             self.status_var.set("Move undone.")
             self.root.after(100, self.make_ai_move)
             
+    def resign_game(self):
+        """Handle human player resignation"""
+        if self.game_over or not self.ai_evaluator:
+            return
+            
+        # Confirm resignation
+        if not messagebox.askyesno("Resign Game", "Are you sure you want to resign?"):
+            return
+            
+        # Set game over
+        self.game_over = True
+        
+        # Determine winner (opponent of current player if it's human's turn, 
+        # or opponent of human if it's AI's turn)
+        if self.current_player == self.human_color:
+            # Human's turn - human resigns
+            winner = "White" if self.human_color == 0 else "Black"
+            self.status_var.set(f"You resigned. {winner} (AI) wins!")
+            messagebox.showinfo("Game Over", f"You resigned. {winner} (AI) wins!")
+        else:
+            # AI's turn - but human clicked resign, so human still resigns
+            winner = "White" if self.human_color == 0 else "Black"  
+            self.status_var.set(f"You resigned. {winner} (AI) wins!")
+            messagebox.showinfo("Game Over", f"You resigned. {winner} (AI) wins!")
+            
+        # Stop AI if it's thinking
+        if self.ai_thinking:
+            self.ai_thinking = False
+            self.progress.stop()
+            self.progress.grid_remove()
+            
+        # Update info
+        human_color_name = "Black" if self.human_color == 0 else "White"
+        ai_color_name = "White" if self.human_color == 0 else "Black"
+        self.update_info(f"Game ended by resignation\n"
+                        f"{human_color_name} (You) resigned\n"
+                        f"{ai_color_name} (AI) wins\n"
+                        f"Moves played: {len(self.move_history)}")
+                        
+    def ai_resign(self):
+        """Handle AI resignation"""
+        if self.game_over:
+            return
+            
+        # Set game over
+        self.game_over = True
+        
+        # Human wins
+        winner = "Black" if self.human_color == 0 else "White"
+        self.status_var.set(f"AI resigned. {winner} (You) win!")
+        messagebox.showinfo("Game Over", f"AI resigned. {winner} (You) win!")
+        
+        # Stop AI thinking
+        if self.ai_thinking:
+            self.ai_thinking = False
+            self.progress.stop()
+            self.progress.grid_remove()
+            
+        # Update info
+        human_color_name = "Black" if self.human_color == 0 else "White"
+        ai_color_name = "White" if self.human_color == 0 else "Black"
+        self.update_info(f"Game ended by AI resignation\n"
+                        f"{ai_color_name} (AI) resigned\n"
+                        f"{human_color_name} (You) win\n"
+                        f"Moves played: {len(self.move_history)}\n"
+                        f"AI evaluation was too poor")
+
     def update_info(self, text):
         """Update the info panel"""
         self.info_text.config(state=tk.NORMAL)
