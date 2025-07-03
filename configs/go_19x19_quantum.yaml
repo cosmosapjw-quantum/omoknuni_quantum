@@ -26,44 +26,40 @@ mcts:
   # Performance optimization - RTX 3060 Ti for large board
   min_wave_size: 1024  # Lower for 19x19 memory requirements
   max_wave_size: 2048  # Reduced to fit Go's larger state
-  adaptive_wave_sizing: false
   batch_size: 256  # Smaller batches for 19x19
   
   # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
   virtual_loss: 0.0
+  enable_virtual_loss: false
   
   # Larger memory for Go - 64GB RAM advantage
   memory_pool_size_mb: 8192  # Double for Go
   max_tree_nodes: 2000000  # Much larger tree
   tree_reuse: true
-  tree_reuse_fraction: 0.5
   
   # GPU optimization
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # One-loop quantum for complex strategic game
   quantum_level: one_loop
   enable_quantum: true
-  
-  # Quantum parameters tuned for Go
-  quantum_coupling: 0.15
-  quantum_temperature: 2.0
-  decoherence_rate: 0.02
-  measurement_noise: 0.002
-  
-  # Path integral for long-range planning
-  path_integral_steps: 30
-  path_integral_beta: 1.5
-  use_wick_rotation: true
-  
-  # Interference for joseki diversity
-  interference_alpha: 0.1
-  interference_method: minhash
-  minhash_size: 256
-  phase_kick_strength: 0.2
+  quantum_version: 'v2'
+  quantum_config:
+    quantum_coupling: 0.15
+    quantum_temperature: 2.0
+    decoherence_rate: 0.02
+    measurement_noise: 0.002
+    # Path integral for long-range planning
+    path_integral_steps: 30
+    path_integral_beta: 1.5
+    use_wick_rotation: true
+    # Interference for joseki diversity
+    interference_alpha: 0.1
+    interference_method: minhash
+    minhash_size: 256
+    phase_kick_strength: 0.2
   
   # Device - Ryzen 9 5900X
   device: cuda

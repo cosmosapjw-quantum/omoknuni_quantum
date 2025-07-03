@@ -26,44 +26,40 @@ mcts:
   # Performance optimization - adjusted for one-loop overhead
   min_wave_size: 1536  # Lower for one-loop overhead
   max_wave_size: 2560  # Slightly reduced
-  adaptive_wave_sizing: false
   batch_size: 320  # Balanced for quantum overhead
   
   # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
   virtual_loss: 0.0
+  enable_virtual_loss: false
   
   # Memory settings - 8GB VRAM + 64GB RAM
   memory_pool_size_mb: 4096
   max_tree_nodes: 1000000
   tree_reuse: true
-  tree_reuse_fraction: 0.5
   
   # GPU optimization
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # One-loop quantum features
   quantum_level: one_loop
   enable_quantum: true
-  
-  # Quantum physics parameters
-  quantum_coupling: 0.15  # Stronger coupling for one-loop
-  quantum_temperature: 1.5
-  decoherence_rate: 0.01
-  measurement_noise: 0.001
-  
-  # Path integral configuration
-  path_integral_steps: 20
-  path_integral_beta: 1.0
-  use_wick_rotation: true
-  
-  # Interference settings
-  interference_alpha: 0.08
-  interference_method: minhash
-  minhash_size: 128  # Larger for one-loop
-  phase_kick_strength: 0.15
+  quantum_version: 'v2'
+  quantum_config:
+    quantum_coupling: 0.15  # Stronger coupling for one-loop
+    quantum_temperature: 1.5
+    decoherence_rate: 0.01
+    measurement_noise: 0.001
+    # Path integral configuration
+    path_integral_steps: 20
+    path_integral_beta: 1.0
+    use_wick_rotation: true
+    # Interference settings
+    interference_alpha: 0.08
+    interference_method: minhash
+    minhash_size: 128  # Larger for one-loop
+    phase_kick_strength: 0.15
   
   # Device - Ryzen 9 5900X
   device: cuda

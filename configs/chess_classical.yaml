@@ -24,11 +24,11 @@ mcts:
   # Performance optimization - RTX 3060 Ti
   min_wave_size: 2048
   max_wave_size: 3072
-  adaptive_wave_sizing: false
   batch_size: 384
   
   # Virtual loss for leaf parallelization
   virtual_loss: 3.0
+  enable_virtual_loss: true
   
   # Memory settings - 8GB VRAM + 64GB RAM
   memory_pool_size_mb: 4096

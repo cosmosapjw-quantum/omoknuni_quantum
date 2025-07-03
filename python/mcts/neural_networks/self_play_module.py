@@ -14,6 +14,16 @@ from tqdm import tqdm
 
 import torch
 
+# Core MCTS components
+from mcts.core.game_interface import GameInterface, GameType
+from mcts.core.evaluator import AlphaZeroEvaluator
+from mcts.core.mcts import MCTS, MCTSConfig
+from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
+from mcts.utils.cuda_multiprocessing_fix import cuda_multiprocessing_context
+from mcts.utils.config_system import QuantumLevel
+from mcts.quantum import OptimizedConfig as QuantumConfig, create_quantum_mcts
+from .unified_training_pipeline import GameExample
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,8 +42,6 @@ class SelfPlayManager:
     """Manages self-play data generation"""
     
     def __init__(self, config):
-        from mcts.core.game_interface import GameInterface, GameType
-        
         self.config = config
         self.game_type = GameType[config.game.game_type.upper()]
         input_representation = getattr(config.network, 'input_representation', 'basic')
@@ -68,9 +76,6 @@ class SelfPlayManager:
     def _sequential_self_play(self, model: torch.nn.Module, iteration: int,
                              num_games: int) -> List[Any]:
         """Generate games sequentially with progress bar"""
-        from .unified_training_pipeline import GameExample
-        from mcts.core.evaluator import AlphaZeroEvaluator
-        
         examples = []
         
         # Create evaluator
@@ -96,8 +101,6 @@ class SelfPlayManager:
     def _parallel_self_play(self, model: torch.nn.Module, iteration: int,
                            num_games: int, num_workers: int) -> List[Any]:
         """Generate games in parallel with GPU evaluation service"""
-        from .unified_training_pipeline import GameExample
-        from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
         import multiprocessing as mp
         
         # Get resource allocation from config (already adjusted for hardware)
@@ -111,8 +114,6 @@ class SelfPlayManager:
         logger.debug(f"Starting parallel self-play with {num_workers} workers")
         
         # Phase 2.1: Setup CUDA multiprocessing context for safe GPU/CPU separation
-        from mcts.utils.cuda_multiprocessing_fix import cuda_multiprocessing_context
-        
         with cuda_multiprocessing_context() as cuda_manager:
             # Set up multiprocessing start method
             try:
@@ -461,8 +462,6 @@ class SelfPlayManager:
     
     def _create_quantum_config(self):
         """Create quantum configuration from MCTS config"""
-        from mcts.quantum import OptimizedConfig as QuantumConfig
-        
         return QuantumConfig(
             quantum_level=self.config.mcts.quantum_level.value,
             enable_quantum=self.config.mcts.enable_quantum,
@@ -481,11 +480,6 @@ class SelfPlayManager:
 
     def _create_mcts(self, evaluator: Any):
         """Create MCTS instance with quantum features if enabled"""
-        # Use unified MCTS module
-        from mcts.core.mcts import MCTS, MCTSConfig
-        from mcts.quantum import create_quantum_mcts
-        from mcts.utils.config_system import QuantumLevel
-        
         # Create MCTS configuration using unified config system
         mcts_config = MCTSConfig(
             # Core MCTS parameters

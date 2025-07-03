@@ -26,37 +26,34 @@ mcts:
   # Performance optimization - RTX 3060 Ti
   min_wave_size: 2048
   max_wave_size: 3072
-  adaptive_wave_sizing: false
   batch_size: 384
   virtual_loss: 3.0
+  enable_virtual_loss: true
   
   # Memory settings - 8GB VRAM + 64GB RAM
   memory_pool_size_mb: 4096
   max_tree_nodes: 1000000
   tree_reuse: true
-  tree_reuse_fraction: 0.5
   
   # GPU optimization
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # Tree-level quantum features
   quantum_level: tree_level
   enable_quantum: true
-  
-  # Quantum physics parameters
-  quantum_coupling: 0.1
-  quantum_temperature: 1.0
-  decoherence_rate: 0.0  # No decoherence at tree level
-  measurement_noise: 0.0
-  
-  # Interference settings
-  interference_alpha: 0.05
-  interference_method: minhash
-  minhash_size: 64
-  phase_kick_strength: 0.1
+  quantum_version: 'v2'
+  quantum_config:
+    quantum_coupling: 0.1
+    quantum_temperature: 1.0
+    decoherence_rate: 0.0  # No decoherence at tree level
+    measurement_noise: 0.0
+    # Interference settings
+    interference_alpha: 0.05
+    interference_method: minhash
+    minhash_size: 64
+    phase_kick_strength: 0.1
   
   # Device - Ryzen 9 5900X
   device: cuda

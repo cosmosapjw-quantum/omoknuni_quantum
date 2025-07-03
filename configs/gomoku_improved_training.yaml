@@ -27,13 +27,12 @@ mcts:
   # RTX 3060 Ti optimized performance (8GB VRAM with multi-worker constraints)
   min_wave_size: 2048        # Reduced to leave memory for multiple workers
   max_wave_size: 2048        # Conservative to avoid OOM with 8 workers
-  adaptive_wave_sizing: false
   batch_size: 512            # Optimal for TensorRT + 8GB VRAM
   virtual_loss: 0.5          # Parallel exploration
+  enable_virtual_loss: true
   
   # Enhanced tree reuse for efficiency
   tree_reuse: true           # Critical for training speed
-  tree_reuse_fraction: 0.6   # Increased reuse for faster iterations
   
   # Memory optimization for 64GB RAM + 8GB VRAM (multi-worker constrained)
   memory_pool_size_mb: 4096  # Reduced to fit 8 workers in GPU memory
@@ -43,11 +42,12 @@ mcts:
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true     # Leverage Ampere architecture
-  compile_mode: max-autotune # More aggressive optimization
   
   # Performance mode
   quantum_level: classical
   enable_quantum: false
+  classical_only_mode: true     # Optimize for performance
+  enable_fast_ucb: true
   
   # Ryzen 9 5900X optimization (24 threads available)
   device: cuda

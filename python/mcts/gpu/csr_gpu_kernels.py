@@ -97,9 +97,7 @@ class CSRBatchOperations:
         self.kernels.reset_stats()
 
 
-# For backward compatibility
-OptimizedCSRKernels = CSRBatchOperations
-CSRGPUKernels = CSRBatchOperations
+# Note: Legacy aliases removed in streamlined build
 
 
 # Global instance management
@@ -115,10 +113,7 @@ def get_csr_batch_operations(device: torch.device) -> CSRBatchOperations:
     return _csr_batch_ops
 
 
-def get_csr_kernels() -> CSRBatchOperations:
-    """Legacy function for backward compatibility"""
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    return get_csr_batch_operations(device)
+# Legacy get_csr_kernels() function removed - use get_csr_batch_operations() directly
 
 
 def csr_coalesced_children_gather(

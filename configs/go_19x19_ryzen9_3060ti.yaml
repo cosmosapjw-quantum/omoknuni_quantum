@@ -25,27 +25,27 @@ mcts:
   # Performance optimization - RTX 3060 Ti
   min_wave_size: 2048      # Reduced for Go's memory needs
   max_wave_size: 2048      # Fixed smaller size
-  adaptive_wave_sizing: false
   batch_size: 256         # Smaller batch for 19x19 features
   
   # Virtual loss
   virtual_loss: 3.0
+  enable_virtual_loss: true
   
   # Memory settings - Very conservative for 19x19 Go
   memory_pool_size_mb: 1536   # 1.5GB only
   max_tree_nodes: 300000      # Limited for Go's branching
   tree_reuse: true
-  tree_reuse_fraction: 0.3  # Less reuse for Go
   
   # GPU optimization
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # Quantum features - disabled
   quantum_level: classical
   enable_quantum: false
+  classical_only_mode: true
+  enable_fast_ucb: true
   
   # Device settings
   device: cuda

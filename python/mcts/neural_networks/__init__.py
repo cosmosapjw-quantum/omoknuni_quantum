@@ -3,7 +3,9 @@
 from .nn_framework import (
     ModelRegistry, ModelLoader, BaseGameModel, ModelMetadata,
     ModelEnsemble, AdapterWrapper, MixedPrecisionWrapper,
-    create_model_from_config, load_model_for_game
+    create_model_from_config, load_model_for_game,
+    # Autocast utilities (moved from utils for better organization)
+    safe_autocast, get_device_type
 )
 # Removed old nn_model imports - use resnet_model instead
 from .resnet_model import ResNetModel, ResNetConfig, create_resnet_for_game
@@ -27,6 +29,9 @@ __all__ = [
     "MixedPrecisionWrapper",
     "create_model_from_config",
     "load_model_for_game",
+    # Autocast utilities
+    "safe_autocast",
+    "get_device_type",
     # ResNet
     "ResNetModel",
     "ResNetConfig",

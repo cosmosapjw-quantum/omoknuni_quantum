@@ -36,8 +36,8 @@ from .neural_networks import (
 # GPU acceleration components
 from .gpu import (
     CSRTree, CSRTreeConfig,
-    get_csr_kernels, CSRGPUKernels, CSRBatchOperations,
-    CUDAKernels, OptimizedCUDAKernels, GPUTreeKernels
+    CSRBatchOperations,
+    GPUTreeKernels
 )
 
 # Quantum-inspired components (optional)
@@ -92,8 +92,8 @@ __all__ = [
     
     # GPU
     "CSRTree", "CSRTreeConfig",
-    "get_csr_kernels", "CSRGPUKernels", "CSRBatchOperations",
-    "CUDAKernels", "OptimizedCUDAKernels", "GPUTreeKernels",
+    "CSRBatchOperations",
+    "GPUTreeKernels",
     
     # Utils
     "AlphaZeroConfig",

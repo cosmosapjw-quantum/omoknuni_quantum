@@ -20,11 +20,11 @@ mcts:
   # Small batches for testing
   min_wave_size: 64
   max_wave_size: 128
-  adaptive_wave_sizing: false
   batch_size: 64
   
   # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
   virtual_loss: 0.0
+  enable_virtual_loss: false
   
   # Minimal memory
   memory_pool_size_mb: 512
@@ -34,7 +34,9 @@ mcts:
   # Test quantum features
   quantum_level: tree_level
   enable_quantum: true
-  quantum_coupling: 0.1
+  quantum_version: 'v2'
+  quantum_config:
+    quantum_coupling: 0.1
   
   # Device - still use all threads for testing
   device: cuda

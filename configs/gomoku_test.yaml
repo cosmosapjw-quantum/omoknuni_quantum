@@ -25,21 +25,21 @@ mcts:
   # Performance optimization
   min_wave_size: 512      # Reduced for testing
   max_wave_size: 512      # Reduced for testing
-  adaptive_wave_sizing: false
   batch_size: 256        # Reduced
   virtual_loss: 3.0
+  enable_virtual_loss: true
+  classical_only_mode: true  # For test performance
+  enable_fast_ucb: true
   
   # Memory and optimization
   memory_pool_size_mb: 512    # Reduced
   max_tree_nodes: 50000       # Reduced
   tree_reuse: false           # Disabled for simplicity
-  tree_reuse_fraction: 0.5
   
   # GPU optimization
   use_cuda_graphs: false      # Disabled for debugging
   use_mixed_precision: false  # Disabled for debugging
   use_tensor_cores: false     # Disabled for debugging
-  compile_mode: none
   
   # Quantum features - disabled
   quantum_level: classical

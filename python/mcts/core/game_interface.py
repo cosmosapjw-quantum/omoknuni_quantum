@@ -11,12 +11,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Import GPU attack/defense if available
-try:
-    from .gpu_attack_defense import create_gpu_attack_defense_computer
-    GPU_AD_COMPUTER = create_gpu_attack_defense_computer()
-except ImportError:
-    GPU_AD_COMPUTER = None
+# GPU attack/defense functionality removed in streamlined build
+GPU_AD_COMPUTER = None
 
 # Import the compiled C++ game module
 import sys
@@ -564,17 +560,7 @@ class GameInterface:
         # Channel 18: Attack score plane
         # Channel 19: Defense score plane
         
-        # Try GPU acceleration first
-        if GPU_AD_COMPUTER is not None and hasattr(self, '_batch_mode') and self._batch_mode:
-            try:
-                # Use GPU batch computation (assumes we're in batch context)
-                # This would be set by a batch processor
-                attack_plane, defense_plane = self._gpu_ad_planes
-                features.append(attack_plane)
-                features.append(defense_plane)
-            except AttributeError:
-                # Not in batch mode, fall through to other methods
-                pass
+        # GPU attack/defense acceleration removed in streamlined build
         
         if len(features) < 20:  # Attack/defense not added yet
             if HAS_CPP_GAMES and hasattr(alphazero_py, 'compute_attack_defense_planes'):

@@ -14,9 +14,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 import logging
 
-# Import adaptive parameter tuner for dynamic optimization
-# Removed adaptive_parameter_tuner - was research parameter tuning
-HAS_ADAPTIVE_TUNER = False
+# Note: Adaptive parameter tuning was removed from production code
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +90,8 @@ class RequestBatchingCoordinator:
         self.timeout_history = []
         self.last_timeout_adjustment = time.time()
         
-        # Phase 3: Adaptive parameter tuning integration
-        self.adaptive_tuning_enabled = HAS_ADAPTIVE_TUNER
+        # Adaptive parameter tuning disabled in production build
+        self.adaptive_tuning_enabled = False
         self.last_metrics_report = time.time()
         self.simulation_count = 100  # Default simulation count
         

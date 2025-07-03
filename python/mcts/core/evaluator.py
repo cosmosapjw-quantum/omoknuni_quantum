@@ -11,12 +11,8 @@ import numpy as np
 import time
 from collections import OrderedDict
 
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    torch = None
-    HAS_TORCH = False
+import torch
+HAS_TORCH = True  # torch is a core dependency
 
 
 @dataclass
@@ -31,7 +27,7 @@ class EvaluatorConfig:
         cache_size: Maximum cache entries
     """
     batch_size: int = 64
-    device: str = 'cuda' if HAS_TORCH and torch.cuda.is_available() else 'cpu'
+    device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
     timeout: float = 1.0
     enable_caching: bool = False
     cache_size: int = 10000

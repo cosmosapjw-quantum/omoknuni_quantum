@@ -221,7 +221,7 @@ class ResNetEvaluator(Evaluator):
             states_tensor = states_tensor.unsqueeze(0)
         
         # Forward pass
-        from mcts.utils.autocast_utils import safe_autocast
+        from .nn_framework import safe_autocast
         with safe_autocast(device=self.device, enabled=self.use_amp):
             log_policies, values = self.model(states_tensor)
         
@@ -293,7 +293,7 @@ class ResNetEvaluator(Evaluator):
         self.eval_count += batch_size
         
         # Forward pass with autocast
-        from mcts.utils.autocast_utils import safe_autocast
+        from .nn_framework import safe_autocast
         with safe_autocast(device=self.device, enabled=self.use_amp):
             log_policies, values = self.model(states_tensor)
         

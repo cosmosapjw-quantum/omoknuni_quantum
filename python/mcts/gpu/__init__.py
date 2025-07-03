@@ -1,11 +1,21 @@
 """GPU acceleration module for MCTS
 
 This module provides GPU-accelerated operations for the vectorized MCTS implementation.
-It uses a unified kernel architecture for consistency and performance.
+The main component is the MCTSGPUAccelerator which provides hardware-accelerated 
+implementations of computationally intensive MCTS operations including UCB selection, 
+tree traversal, and value backup.
+
+Key Components:
+- MCTSGPUAccelerator: Main acceleration interface with CUDA/PyTorch fallbacks
+- CSRTree: Compressed sparse row tree structure for efficient memory usage
+- CSRGPUKernels: Specialized kernels for CSR tree operations
 """
 
-# Import unified kernels first
-from .unified_kernels import UnifiedGPUKernels, get_unified_kernels
+# Import MCTS GPU accelerator
+from .mcts_gpu_accelerator import (
+    MCTSGPUAccelerator, 
+    get_mcts_gpu_accelerator
+)
 
 # Import CSR tree components
 from .csr_tree import CSRTree, CSRTreeConfig
@@ -14,22 +24,14 @@ from .csr_tree import CSRTree, CSRTreeConfig
 from .csr_gpu_kernels import (
     CSRBatchOperations,
     get_csr_batch_operations,
-    get_csr_kernels,
     check_cuda_available,
     csr_batch_ucb_torch,
-    csr_coalesced_children_gather,
-    # Legacy aliases
-    CSRGPUKernels,
-    OptimizedCSRKernels
+    csr_coalesced_children_gather
 )
 
 # Note: GPU optimizers removed as they were not used in the codebase
 
-# Legacy aliases for backward compatibility
-OptimizedCUDAKernels = UnifiedGPUKernels
-CUDAKernels = UnifiedGPUKernels
-OptimizedQuantumKernels = UnifiedGPUKernels
-create_optimized_quantum_kernels = lambda: UnifiedGPUKernels()
+# Note: Legacy aliases removed in streamlined build
 
 # GPU tree kernels (if available)
 try:
@@ -51,17 +53,12 @@ except ImportError:
 import torch
 CUDA_AVAILABLE = torch.cuda.is_available()
 
-# Check Triton availability
-try:
-    import triton
-    HAS_TRITON = True
-except ImportError:
-    HAS_TRITON = False
+# Note: Triton support removed in streamlined build
 
 __all__ = [
-    # Unified kernel interface
-    "UnifiedGPUKernels",
-    "get_unified_kernels",
+    # MCTS GPU accelerator
+    "MCTSGPUAccelerator",
+    "get_mcts_gpu_accelerator",
     
     # CSR Tree
     "CSRTree",
@@ -70,28 +67,19 @@ __all__ = [
     # CSR GPU operations
     "CSRBatchOperations",
     "get_csr_batch_operations",
-    "get_csr_kernels",
     "check_cuda_available",
     "csr_batch_ucb_torch",
     "csr_coalesced_children_gather",
     
-    # Legacy compatibility
-    "CSRGPUKernels",
-    "OptimizedCSRKernels",
-    "OptimizedCUDAKernels",
-    "CUDAKernels",
-    
     
     # Status flags
     "CUDA_AVAILABLE",
-    "HAS_TRITON",
 ]
 
 if GPUTreeKernels is not None:
     __all__.append("GPUTreeKernels")
 
-if HAS_QUANTUM_CUDA:
-    __all__.extend(["create_optimized_quantum_kernels", "OptimizedQuantumKernels"])
+# Note: Legacy quantum aliases removed in streamlined build
 
 if HAS_GPU_ATTACK_DEFENSE:
     __all__.append("gpu_compute_attack_defense_scores")

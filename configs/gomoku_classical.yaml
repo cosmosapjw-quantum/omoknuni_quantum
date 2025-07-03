@@ -24,42 +24,25 @@ mcts:
   # Performance optimizatio
   min_wave_size: 3072      # Optimal for 80k+ sims/sec
   max_wave_size: 3072      # Fixed size for best performance
-  adaptive_wave_sizing: false  # CRITICAL: Must be false
   batch_size: 1024 
   virtual_loss: 0.5
+  enable_virtual_loss: true
   
   # Memory and optimization - Optimized for training speed
   memory_pool_size_mb: 2048   # Reduced for faster training
   max_tree_nodes: 200000      # Reduced for faster training
   tree_reuse: false
-  tree_reuse_fraction: 0.5
   
   # GPU optimization - RTX 3060 Ti
   use_cuda_graphs: true
   use_mixed_precision: true   # FP16 for tensor cores
   use_tensor_cores: true      # Utilize 4864 CUDA cores
-  compile_mode: reduce-overhead
   
   # Quantum features - disabled for classical
   quantum_level: classical
   enable_quantum: false
-  
-  # Quantum physics parameters (unused when classical)
-  quantum_coupling: 0.1
-  quantum_temperature: 1.0
-  decoherence_rate: 0.01
-  measurement_noise: 0.0
-  
-  # Path integral parameters (unused when classical)
-  path_integral_steps: 10
-  path_integral_beta: 1.0
-  use_wick_rotation: true
-  
-  # Interference parameters (unused when classical)
-  interference_alpha: 0.05
-  interference_method: minhash
-  minhash_size: 64
-  phase_kick_strength: 0.1
+  classical_only_mode: true
+  enable_fast_ucb: true
   
   
   # CSR Tree parameters

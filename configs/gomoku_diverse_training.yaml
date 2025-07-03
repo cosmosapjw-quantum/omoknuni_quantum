@@ -29,25 +29,25 @@ mcts:
   # Performance optimization
   min_wave_size: 3072
   max_wave_size: 3072
-  adaptive_wave_sizing: false
   batch_size: 1024 
   virtual_loss: 0.5              # CRITICAL: Reduced from 3.0 to prevent convergence issues
+  enable_virtual_loss: true
   
   # Memory and optimization
   memory_pool_size_mb: 3072
   max_tree_nodes: 750000
   tree_reuse: false              # DISABLED for better exploration
-  tree_reuse_fraction: 0.0       # No tree reuse during training
   
   # GPU optimization
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # Quantum features - disabled for classical
   quantum_level: classical
   enable_quantum: false
+  classical_only_mode: true
+  enable_fast_ucb: true
   
   # Device configuration
   device: cuda

@@ -27,25 +27,25 @@ mcts:
   # Performance optimization for 12-hour training
   min_wave_size: 2048        # Optimized for RTX 3060 Ti + TensorRT
   max_wave_size: 2048        # Fixed size for consistent performance
-  adaptive_wave_sizing: false
   batch_size: 512            # Smaller batches for faster iteration
   virtual_loss: 0.3          # Lower virtual loss for amateur training
+  enable_virtual_loss: true
   
   # Memory optimization for faster training
   memory_pool_size_mb: 1024  # Reduced memory for speed
   max_tree_nodes: 150000     # Adequate for amateur level
   tree_reuse: false          # Disabled for faster self-play
-  tree_reuse_fraction: 0.0
   
   # GPU optimization - maximized for RTX 3060 Ti
   use_cuda_graphs: true
   use_mixed_precision: true
   use_tensor_cores: true
-  compile_mode: reduce-overhead
   
   # Classical mode (no quantum overhead)
   quantum_level: classical
   enable_quantum: false
+  classical_only_mode: true
+  enable_fast_ucb: true
   
   # Device configuration
   device: cuda
