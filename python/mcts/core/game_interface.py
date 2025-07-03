@@ -18,38 +18,37 @@ try:
 except ImportError:
     GPU_AD_COMPUTER = None
 
+# Import the compiled C++ game module
+import sys
+import os
+
+# Add build directory to path to find the module
+build_paths = [
+    os.path.join(os.path.dirname(__file__), '../../../build/lib/Release'),
+    os.path.join(os.path.dirname(__file__), '../../../build/lib/Debug'),
+    os.path.join(os.path.dirname(__file__), '../../../build/lib'),
+    os.path.join(os.path.dirname(__file__), '../../../build'),
+]
+
+# Also need to set LD_LIBRARY_PATH for the shared library dependencies
+lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../build/lib/Release'))
+if os.path.exists(lib_path):
+    current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+    if lib_path not in current_ld_path:
+        os.environ['LD_LIBRARY_PATH'] = lib_path + ':' + current_ld_path
+
+for path in build_paths:
+    abs_path = os.path.abspath(path)
+    if os.path.exists(abs_path) and abs_path not in sys.path:
+        sys.path.insert(0, abs_path)
+
 try:
-    # Import the compiled C++ game module
-    import sys
-    import os
-    # Add build directory to path to find the module
-    build_paths = [
-        os.path.join(os.path.dirname(__file__), '../../../build/lib/Release'),
-        os.path.join(os.path.dirname(__file__), '../../../build/lib/Debug'),
-        os.path.join(os.path.dirname(__file__), '../../../build/lib'),
-        os.path.join(os.path.dirname(__file__), '../../../build'),
-    ]
-    
-    # Also need to set LD_LIBRARY_PATH for the shared library dependencies
-    lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../build/lib/Release'))
-    if os.path.exists(lib_path):
-        current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
-        if lib_path not in current_ld_path:
-            os.environ['LD_LIBRARY_PATH'] = lib_path + ':' + current_ld_path
-    
-    for path in build_paths:
-        abs_path = os.path.abspath(path)
-        if os.path.exists(abs_path) and abs_path not in sys.path:
-            sys.path.insert(0, abs_path)
-    
     import alphazero_py
-    HAS_CPP_GAMES = True
-    # Successfully loaded C++ game implementations
 except ImportError as e:
-    # Fallback for testing without C++ module
-    alphazero_py = None
-    HAS_CPP_GAMES = False
-    # C++ game implementations not available
+    raise RuntimeError(
+        f"C++ game modules required but not found: {e}. "
+        "Please build C++ components using the build scripts."
+    ) from e
     
 
 class GameType(Enum):
@@ -97,24 +96,22 @@ class GameInterface:
         self.game_options = kwargs
         
         # Map our GameType enum to C++ GameType enum
-        if HAS_CPP_GAMES:
-            cpp_game_type_map = {
-                GameType.CHESS: alphazero_py.GameType.CHESS,
-                GameType.GO: alphazero_py.GameType.GO,
-                GameType.GOMOKU: alphazero_py.GameType.GOMOKU
-            }
-            self._cpp_game_type = cpp_game_type_map.get(game_type)
-            if self._cpp_game_type is None:
-                raise ValueError(f"Unknown game type: {game_type}")
+        cpp_game_type_map = {
+            GameType.CHESS: alphazero_py.GameType.CHESS,
+            GameType.GO: alphazero_py.GameType.GO,
+            GameType.GOMOKU: alphazero_py.GameType.GOMOKU
+        }
+        self._cpp_game_type = cpp_game_type_map.get(game_type)
+        if self._cpp_game_type is None:
+            raise ValueError(f"Unknown game type: {game_type}")
         
         if game_type == GameType.CHESS:
             self.board_shape = (8, 8)
             self.max_moves = 4096  # Upper bound for chess moves
             self.piece_planes = 12  # 6 piece types * 2 colors
-            if HAS_CPP_GAMES:
-                self._game_class = alphazero_py.ChessState
-            else:
-                self._game_class = MockChessState
+            if not HAS_CPP_GAMES:
+                raise RuntimeError("C++ game modules required. Please build C++ components.")
+            self._game_class = alphazero_py.ChessState
                 
         elif game_type == GameType.GO:
             if board_size is None:
@@ -122,10 +119,9 @@ class GameInterface:
             self.board_shape = (board_size, board_size)
             self.max_moves = board_size * board_size + 1  # All points + pass
             self.piece_planes = 2  # Black and white stones
-            if HAS_CPP_GAMES:
-                self._game_class = alphazero_py.GoState
-            else:
-                self._game_class = MockGoState
+            if not HAS_CPP_GAMES:
+                raise RuntimeError("C++ game modules required. Please build C++ components.")
+            self._game_class = alphazero_py.GoState
                 
         elif game_type == GameType.GOMOKU:
             if board_size is None:
@@ -133,10 +129,9 @@ class GameInterface:
             self.board_shape = (board_size, board_size)
             self.max_moves = board_size * board_size
             self.piece_planes = 2  # Black and white stones
-            if HAS_CPP_GAMES:
-                self._game_class = alphazero_py.GomokuState
-            else:
-                self._game_class = MockGomokuState
+            if not HAS_CPP_GAMES:
+                raise RuntimeError("C++ game modules required. Please build C++ components.")
+            self._game_class = alphazero_py.GomokuState
                 
         else:
             raise ValueError(f"Unknown game type: {game_type}")
@@ -149,84 +144,75 @@ class GameInterface:
         Returns:
             Initial game state object
         """
-        if HAS_CPP_GAMES:
-            try:
-                # Create with game-specific options if bindings support them
-                if self.game_type == GameType.CHESS:
-                    chess960 = self.game_options.get('chess960', False)
-                    fen = self.game_options.get('fen', '')
-                    # Try to create with options if supported
-                    try:
-                        if fen:
-                            return alphazero_py.ChessState(chess960, fen)
-                        elif chess960:
-                            return alphazero_py.ChessState(chess960)
-                        else:
-                            return alphazero_py.ChessState()
-                    except TypeError:
-                        # Fallback if bindings don't support options yet
+        try:
+            # Create with game-specific options if bindings support them
+            if self.game_type == GameType.CHESS:
+                chess960 = self.game_options.get('chess960', False)
+                fen = self.game_options.get('fen', '')
+                # Try to create with options if supported
+                try:
+                    if fen:
+                        return alphazero_py.ChessState(chess960, fen)
+                    elif chess960:
+                        return alphazero_py.ChessState(chess960)
+                    else:
                         return alphazero_py.ChessState()
-                        
-                elif self.game_type == GameType.GO:
-                    # Try to use rule_set if supported
-                    rule_set = self.game_options.get('rule_set', 'chinese')
-                    komi = self.game_options.get('komi', -1.0)
-                    chinese_rules = self.game_options.get('chinese_rules', True)
-                    enforce_superko = self.game_options.get('enforce_superko', True)
-                    
-                    try:
-                        # Try new bindings with rule set
-                        if hasattr(alphazero_py, 'GoRuleSet'):
-                            rule_set_map = {
-                                'chinese': alphazero_py.GoRuleSet.CHINESE,
-                                'japanese': alphazero_py.GoRuleSet.JAPANESE,
-                                'korean': alphazero_py.GoRuleSet.KOREAN
-                            }
-                            if rule_set in rule_set_map:
-                                return alphazero_py.GoState(self.board_size, rule_set_map[rule_set], komi)
-                        
-                        # Try legacy constructor
-                        if komi != -1.0:
-                            state = alphazero_py.GoState(self.board_size, komi, chinese_rules, enforce_superko)
-                        else:
-                            state = alphazero_py.GoState(self.board_size)
-                            
-                        # Debug: verify board size was set correctly
-                        if hasattr(state, 'get_board_size'):
-                            actual_size = state.get_board_size()
-                            if actual_size != self.board_size:
-                                logger.warning(f"GoState created with size {self.board_size} but reports size {actual_size}")
-                                # Try to create with default constructor and hope it respects the size
-                                state = alphazero_py.GoState(self.board_size)
-                        
-                        return state
-                    except TypeError:
-                        # Fallback if bindings don't support options yet
-                        return alphazero_py.GoState(self.board_size)
-                        
-                elif self.game_type == GameType.GOMOKU:
-                    use_renju = self.game_options.get('use_renju', False)
-                    use_omok = self.game_options.get('use_omok', False)
-                    use_pro_long = self.game_options.get('use_pro_long_opening', False)
-                    seed = self.game_options.get('seed', 0)
-                    
-                    try:
-                        # Try to create with options if supported
-                        return alphazero_py.GomokuState(self.board_size, use_renju, use_omok, seed, use_pro_long)
-                    except TypeError:
-                        # Fallback if bindings don't support options yet
-                        return alphazero_py.GomokuState(self.board_size)
-                else:
-                    raise ValueError(f"Unknown game type: {self.game_type}")
-            except Exception as e:
-                print(f"Warning: C++ game creation failed ({e}), falling back to mock")
-                # Fall through to mock implementation
+                except TypeError:
+                    # Fallback if bindings don't support options yet
+                    return alphazero_py.ChessState()
+            elif self.game_type == GameType.GO:
+                # Try to use rule_set if supported
+                rule_set = self.game_options.get('rule_set', 'chinese')
+                komi = self.game_options.get('komi', -1.0)
+                chinese_rules = self.game_options.get('chinese_rules', True)
+                enforce_superko = self.game_options.get('enforce_superko', True)
                 
-        # Use mock implementation
-        if self.game_type == GameType.CHESS:
-            return self._game_class()
-        else:
-            return self._game_class(self.board_size)
+                try:
+                    # Try new bindings with rule set
+                    if hasattr(alphazero_py, 'GoRuleSet'):
+                        rule_set_map = {
+                            'chinese': alphazero_py.GoRuleSet.CHINESE,
+                            'japanese': alphazero_py.GoRuleSet.JAPANESE,
+                            'korean': alphazero_py.GoRuleSet.KOREAN
+                        }
+                        if rule_set in rule_set_map:
+                            return alphazero_py.GoState(self.board_size, rule_set_map[rule_set], komi)
+                    
+                    # Try legacy constructor
+                    if komi != -1.0:
+                        state = alphazero_py.GoState(self.board_size, komi, chinese_rules, enforce_superko)
+                    else:
+                        state = alphazero_py.GoState(self.board_size)
+                        
+                    # Debug: verify board size was set correctly
+                    if hasattr(state, 'get_board_size'):
+                        actual_size = state.get_board_size()
+                        if actual_size != self.board_size:
+                            logger.warning(f"GoState created with size {self.board_size} but reports size {actual_size}")
+                            # Try to create with default constructor and hope it respects the size
+                            state = alphazero_py.GoState(self.board_size)
+                    
+                    return state
+                except TypeError:
+                    # Fallback if bindings don't support options yet
+                    return alphazero_py.GoState(self.board_size)
+                        
+            elif self.game_type == GameType.GOMOKU:
+                use_renju = self.game_options.get('use_renju', False)
+                use_omok = self.game_options.get('use_omok', False)
+                use_pro_long = self.game_options.get('use_pro_long_opening', False)
+                seed = self.game_options.get('seed', 0)
+                
+                try:
+                    # Try to create with options if supported
+                    return alphazero_py.GomokuState(self.board_size, use_renju, use_omok, seed, use_pro_long)
+                except TypeError:
+                    # Fallback if bindings don't support options yet
+                    return alphazero_py.GomokuState(self.board_size)
+            else:
+                raise ValueError(f"Unknown game type: {self.game_type}")
+        except Exception as e:
+            raise RuntimeError(f"C++ game creation failed: {e}. Please check C++ module installation and build.") from e
             
     def state_to_numpy(self, state: Any, representation_type: str = None) -> np.ndarray:
         """Convert game state to numpy array
@@ -241,28 +227,24 @@ class GameInterface:
         Returns:
             Numpy array of shape (channels, height, width) for NN input
         """
-        if HAS_CPP_GAMES:
-            # Use configured representation if not specified
-            if representation_type is None:
-                representation_type = self.input_representation
-                
-            if representation_type == 'enhanced':
-                tensor = state.get_enhanced_tensor_representation()
-            elif representation_type == 'basic':
-                tensor = state.get_basic_tensor_representation()
-            elif representation_type == 'standard':
-                tensor = state.get_tensor_representation()
-            else:
-                # Legacy support: use_enhanced parameter
-                if representation_type is True:
-                    tensor = state.get_enhanced_tensor_representation()
-                else:
-                    tensor = state.get_tensor_representation()
-            # Keep in CHW format for neural network
-            return tensor
+        # Use configured representation if not specified
+        if representation_type is None:
+            representation_type = self.input_representation
+            
+        if representation_type == 'enhanced':
+            tensor = state.get_enhanced_tensor_representation()
+        elif representation_type == 'basic':
+            tensor = state.get_basic_tensor_representation()
+        elif representation_type == 'standard':
+            tensor = state.get_tensor_representation()
         else:
-            # Mock implementation
-            return state.get_board()
+            # Legacy support: use_enhanced parameter
+            if representation_type is True:
+                tensor = state.get_enhanced_tensor_representation()
+            else:
+                tensor = state.get_tensor_representation()
+        # Keep in CHW format for neural network
+        return tensor
             
     def state_to_tensor(self, state: Any, representation_type: str = None) -> 'torch.Tensor':
         """Convert game state to PyTorch tensor
@@ -279,29 +261,24 @@ class GameInterface:
         """
         import torch
         
-        if HAS_CPP_GAMES:
-            # Use configured representation if not specified
-            if representation_type is None:
-                representation_type = self.input_representation
-                
-            # Get tensor representation directly
-            if representation_type == 'enhanced':
-                tensor_data = state.get_enhanced_tensor_representation()
-            elif representation_type == 'basic':
-                tensor_data = state.get_basic_tensor_representation()
-            elif representation_type == 'standard':
-                tensor_data = state.get_tensor_representation()
-            else:
-                # Legacy support: use_enhanced parameter
-                if representation_type is True:
-                    tensor_data = state.get_enhanced_tensor_representation()
-                else:
-                    tensor_data = state.get_tensor_representation()
-            return torch.from_numpy(tensor_data).float()
+        # Use configured representation if not specified
+        if representation_type is None:
+            representation_type = self.input_representation
+            
+        # Get tensor representation directly
+        if representation_type == 'enhanced':
+            tensor_data = state.get_enhanced_tensor_representation()
+        elif representation_type == 'basic':
+            tensor_data = state.get_basic_tensor_representation()
+        elif representation_type == 'standard':
+            tensor_data = state.get_tensor_representation()
         else:
-            # Mock implementation - convert board to tensor
-            board_data = state.get_board()
-            return torch.from_numpy(board_data).float()
+            # Legacy support: use_enhanced parameter
+            if representation_type is True:
+                tensor_data = state.get_enhanced_tensor_representation()
+            else:
+                tensor_data = state.get_tensor_representation()
+        return torch.from_numpy(tensor_data).float()
             
     def tensor_to_state(self, tensor: 'torch.Tensor') -> Any:
         """Convert PyTorch tensor back to game state
@@ -400,17 +377,12 @@ class GameInterface:
         elif move < 0 or move >= self.max_moves:
             raise ValueError(f"Invalid move: {move}")
             
-        if HAS_CPP_GAMES:
-            # Check if move is legal
-            if not state.is_legal_move(move):
-                raise ValueError(f"Illegal move: {move}")
-            new_state = state.clone()
-            new_state.make_move(move)
-            return new_state
-        else:
-            new_state = state.clone()
-            new_state.apply_move(move)
-            return new_state
+        # Check if move is legal
+        if not state.is_legal_move(move):
+            raise ValueError(f"Illegal move: {move}")
+        new_state = state.clone()
+        new_state.make_move(move)
+        return new_state
         
     def is_terminal(self, state: Any) -> bool:
         """Check if state is terminal
@@ -432,18 +404,15 @@ class GameInterface:
         Returns:
             1 for player 1 win, -1 for player 2 win, 0 for draw
         """
-        if HAS_CPP_GAMES:
-            result = state.get_game_result()
-            if result == alphazero_py.GameResult.WIN_PLAYER1:
-                return 1
-            elif result == alphazero_py.GameResult.WIN_PLAYER2:
-                return -1
-            elif result == alphazero_py.GameResult.DRAW:
-                return 0
-            else:  # ONGOING
-                return 0
-        else:
-            return state.get_winner()
+        result = state.get_game_result()
+        if result == alphazero_py.GameResult.WIN_PLAYER1:
+            return 1
+        elif result == alphazero_py.GameResult.WIN_PLAYER2:
+            return -1
+        elif result == alphazero_py.GameResult.DRAW:
+            return 0
+        else:  # ONGOING
+            return 0
         
     def get_current_player(self, state: Any) -> int:
         """Get current player to move
@@ -670,12 +639,8 @@ class GameInterface:
         
     def get_nn_input(self) -> np.ndarray:
         """Get neural network input representation (20 channels)"""
-        if HAS_CPP_GAMES:
-            # Use the C++ enhanced representation which includes all 20 channels
-            return self._current_state.get_enhanced_tensor_representation()
-        else:
-            # Fallback to manual encoding
-            return self.encode_for_nn(self._current_state, self._move_history)
+        # Use the C++ enhanced representation which includes all 20 channels
+        return self._current_state.get_enhanced_tensor_representation()
         
     def get_state(self) -> Any:
         """Get current game state for MCTS"""
@@ -712,119 +677,52 @@ class GameInterface:
     # Additional methods exposing full C++ functionality
     def is_legal_move(self, state: Any, move: int) -> bool:
         """Check if a move is legal in the given state"""
-        if HAS_CPP_GAMES:
-            return state.is_legal_move(move)
-        else:
-            return move in self.get_legal_moves(state)
+        return state.is_legal_move(move)
     
     def undo_move(self, state: Any) -> None:
         """Undo the last move (modifies state in-place)"""
-        if HAS_CPP_GAMES:
-            state.undo_move()
-        else:
-            raise NotImplementedError("Undo not implemented for mock states")
+        state.undo_move()
     
     def get_game_result(self, state: Any) -> str:
         """Get game result (ONGOING, WIN_PLAYER1, WIN_PLAYER2, DRAW)"""
-        if HAS_CPP_GAMES:
-            result = state.get_game_result()
-            return str(result).split('.')[-1]  # Extract enum name
-        else:
-            if not self.is_terminal(state):
-                return "ONGOING"
-            winner = self.get_winner(state)
-            if winner == 0:
-                return "DRAW"
-            elif winner == 1:
-                return "WIN_PLAYER1"
-            else:
-                return "WIN_PLAYER2"
+        result = state.get_game_result()
+        return str(result).split('.')[-1]  # Extract enum name
     
     def get_board_size(self, state: Any) -> int:
         """Get board size from state"""
-        if HAS_CPP_GAMES:
-            return state.get_board_size()
-        else:
-            return self.board_size
+        return state.get_board_size()
     
     def get_action_space_size(self, state: Any) -> int:
         """Get total action space size"""
-        if HAS_CPP_GAMES:
-            return state.get_action_space_size()
-        else:
-            return self.max_moves
+        return state.get_action_space_size()
     
     def get_tensor_representation(self, state: Any) -> np.ndarray:
         """Get basic tensor representation from C++"""
-        if HAS_CPP_GAMES:
-            return state.get_tensor_representation()
-        else:
-            return self.state_to_numpy(state)
+        return state.get_tensor_representation()
     
     def get_enhanced_tensor_representation(self, state: Any) -> np.ndarray:
         """Get enhanced tensor representation with additional features"""
-        if HAS_CPP_GAMES:
-            return state.get_enhanced_tensor_representation()
-        else:
-            # For mock, just return the same as basic representation
-            return self.state_to_numpy(state)
+        return state.get_enhanced_tensor_representation()
     
     def action_to_string(self, state: Any, action: int) -> str:
         """Convert action to human-readable string"""
-        if HAS_CPP_GAMES:
-            return state.action_to_string(action)
-        else:
-            if self.game_type == GameType.CHESS:
-                # Simple algebraic notation for mock
-                return f"move_{action}"
-            else:
-                # Board coordinates
-                row = action // self.board_size
-                col = action % self.board_size
-                return f"{chr(ord('A') + col)}{row + 1}"
+        return state.action_to_string(action)
     
     def string_to_action(self, state: Any, move_str: str) -> int:
         """Convert string to action index"""
-        if HAS_CPP_GAMES:
-            return state.string_to_action(move_str)
-        else:
-            # Simple parsing for mock
-            if self.game_type == GameType.CHESS:
-                if move_str.startswith("move_"):
-                    return int(move_str[5:])
-            else:
-                # Parse board coordinates
-                if len(move_str) >= 2:
-                    col = ord(move_str[0].upper()) - ord('A')
-                    row = int(move_str[1:]) - 1
-                    return row * self.board_size + col
-            raise ValueError(f"Invalid move string: {move_str}")
+        return state.string_to_action(move_str)
     
     def to_string(self, state: Any) -> str:
         """Get string representation of the state"""
-        if HAS_CPP_GAMES:
-            return state.to_string()
-        else:
-            # Simple board representation for mock
-            board = self.state_to_numpy(state)
-            return f"GameState(shape={board.shape}, player={self.get_current_player(state)})"
+        return state.to_string()
     
     def get_move_history(self, state: Any) -> List[int]:
         """Get history of moves played"""
-        if HAS_CPP_GAMES:
-            return state.get_move_history()
-        else:
-            # Mock states don't track history by default
-            return getattr(state, '_move_history', [])
+        return state.get_move_history()
     
     def clone_state(self, state: Any) -> Any:
         """Create a deep copy of the state"""
-        if HAS_CPP_GAMES:
-            return state.clone()
-        else:
-            # For mock states, create a simple copy
-            import copy
-            return copy.deepcopy(state)
+        return state.clone()
     
     def get_canonical_form(self, state: Any) -> np.ndarray:
         """Get canonical form of the state from current player's perspective

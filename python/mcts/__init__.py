@@ -63,11 +63,10 @@ except ImportError:
 
 # Utility components
 from .utils import (
-    ConfigManager,
-    OptimizedConfig,
     AlphaZeroConfig,
     MCTSFullConfig,
     QuantumLevel,
+    HardwareInfo,
     create_default_config,
     merge_configs
 )
@@ -79,8 +78,6 @@ __all__ = [
     "GameInterface", "GameType",
     "Evaluator", "EvaluatorConfig", "AlphaZeroEvaluator",
     "MCTS", "MCTSConfig",
-    # Add MockEvaluator from neural_networks
-    "MockEvaluator",
     
     # Neural Networks
     "ModelRegistry", "ModelLoader", "BaseGameModel", "ModelMetadata",
@@ -99,11 +96,10 @@ __all__ = [
     "CUDAKernels", "OptimizedCUDAKernels", "GPUTreeKernels",
     
     # Utils
-    "ConfigManager",
-    "OptimizedConfig",
     "AlphaZeroConfig",
     "MCTSFullConfig",
     "QuantumLevel",
+    "HardwareInfo",
     "create_default_config",
     "merge_configs",
 ] + __all_quantum

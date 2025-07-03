@@ -79,7 +79,7 @@ try:
     from mcts.core.game_interface import GameInterface, GameType
     from mcts.gpu.gpu_game_states import GameType as GPUGameType  
     from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
-    from mcts.neural_networks.mock_evaluator import MockEvaluator
+    from tests.mock_evaluator import MockEvaluator
     import alphazero_py
     
     MCTS_AVAILABLE = True
@@ -1045,7 +1045,7 @@ def _play_game_worker_data_collection(mcts_config, request_queue, response_queue
         sys.path.insert(0, str(mcts_root))
         
         from mcts.core.mcts import MCTS
-        from mcts.neural_networks.mock_evaluator import MockEvaluator
+        from tests.mock_evaluator import MockEvaluator
         from mcts.utils.gpu_evaluator_service import RemoteEvaluator
         import alphazero_py
         import numpy as np

@@ -1,8 +1,7 @@
 """Utility components"""
 
-# Import non-torch modules first
-from .config_manager import ConfigManager, OptimizedConfig
-from .config_system import AlphaZeroConfig, MCTSFullConfig, QuantumLevel, create_default_config, merge_configs
+# Import unified config system  
+from .config_system import AlphaZeroConfig, MCTSFullConfig, QuantumLevel, HardwareInfo, create_default_config, merge_configs
 
 # Worker init must be importable without torch
 from .worker_init import init_worker_process, verify_cuda_disabled, get_cpu_device, ensure_cpu_tensor, create_cpu_only_config

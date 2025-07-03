@@ -38,7 +38,7 @@ try:
     
     from mcts.core.mcts import MCTS, MCTSConfig
     from mcts.core.game_interface import GameInterface, GameType
-    from mcts.neural_networks.mock_evaluator import MockEvaluator
+    from tests.mock_evaluator import MockEvaluator
     from selfplay_mcts_integrator import SelfPlayMCTSExtractor, create_selfplay_mcts_datasets
     MCTS_AVAILABLE = True
 except ImportError as e:

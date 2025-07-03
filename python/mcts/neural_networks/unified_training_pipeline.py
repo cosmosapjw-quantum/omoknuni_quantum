@@ -1949,7 +1949,7 @@ class UnifiedTrainingPipeline:
         try:
             from mcts.gpu.unified_kernels import get_unified_kernels
             from mcts.core.mcts import MCTS, MCTSConfig
-            from mcts.neural_networks.mock_evaluator import MockEvaluator
+            from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
             import torch
             
             # Detect and load pre-compiled kernels
@@ -1965,13 +1965,13 @@ class UnifiedTrainingPipeline:
                 enable_quantum=False  # Keep it simple
             )
             
-            evaluator = MockEvaluator()
+            # Use actual model for warmup instead of mock
+            evaluator = ResNetEvaluator(self.model, self.game_interface, self.config.mcts.device)
             mcts = MCTS(mcts_config, evaluator)
             
             # Run a minimal search for kernel warmup (not compilation)
             logger.info("  🔥 Warming up kernels...")
-            import alphazero_py
-            game_state = alphazero_py.GomokuState()
+            game_state = self.game_interface.create_initial_state()
             mcts.search(game_state, 5)  # Very small search for warmup
             
             logger.debug("CUDA kernels warmed up successfully!")

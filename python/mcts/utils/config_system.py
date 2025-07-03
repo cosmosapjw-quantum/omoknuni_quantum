@@ -9,11 +9,20 @@ import yaml
 import logging
 import psutil
 import platform
+import multiprocessing
 from dataclasses import dataclass, field, asdict, fields
 from typing import Dict, Any, Optional, List, Union, get_origin, get_args
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# Try to import torch for GPU detection
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    torch = None
+    HAS_TORCH = False
 
 
 def convert_field_value(value: Any, field_type: type) -> Any:
@@ -61,6 +70,26 @@ class QuantumLevel(Enum):
     CLASSICAL = "classical"      # No quantum features
     TREE_LEVEL = "tree_level"    # Tree-level quantum corrections
     ONE_LOOP = "one_loop"        # One-loop quantum corrections
+
+
+@dataclass
+class HardwareInfo:
+    """Hardware information for auto-detection and optimization"""
+    cpu_count: int
+    cpu_freq_mhz: float
+    total_memory_gb: float
+    available_memory_gb: float
+    
+    # GPU info
+    has_gpu: bool = False
+    gpu_name: str = ""
+    gpu_memory_gb: float = 0.0
+    gpu_compute_capability: tuple = (0, 0)
+    cuda_version: str = ""
+    
+    # System info
+    os_name: str = ""
+    python_version: str = ""
 
 
 @dataclass

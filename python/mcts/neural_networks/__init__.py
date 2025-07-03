@@ -11,7 +11,7 @@ from .resnet_evaluator import (
     ResNetEvaluator, create_evaluator_for_game,
     create_chess_evaluator, create_go_evaluator, create_gomoku_evaluator
 )
-from .mock_evaluator import MockEvaluator
+# MockEvaluator moved to tests directory - import from tests.mock_evaluator if needed
 
 # Import unified modules last to avoid circular imports
 # These are imported after the basic modules to prevent circular dependencies
@@ -46,8 +46,7 @@ __all__ = [
     "ELOTracker",
     # AlphaZero evaluator
     "AlphaZeroEvaluator",
-    # Mock evaluator
-    "MockEvaluator",
+    # MockEvaluator removed from production - available in tests if needed
 ]
 
 # Import unified modules after __all__ to avoid circular imports
