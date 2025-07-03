@@ -15,11 +15,8 @@ from collections import defaultdict
 import logging
 
 # Import adaptive parameter tuner for dynamic optimization
-try:
-    from .adaptive_parameter_tuner import get_global_parameter_tuner, AdaptiveParameters
-    HAS_ADAPTIVE_TUNER = True
-except ImportError:
-    HAS_ADAPTIVE_TUNER = False
+# Removed adaptive_parameter_tuner - was research parameter tuning
+HAS_ADAPTIVE_TUNER = False
 
 logger = logging.getLogger(__name__)
 

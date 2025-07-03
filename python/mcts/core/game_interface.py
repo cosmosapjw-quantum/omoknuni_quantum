@@ -5,9 +5,8 @@ handling conversions between C++ game states and numpy arrays for neural network
 """
 
 from enum import Enum
-from typing import List, Tuple, Optional, Any, Dict
+from typing import Tuple, Optional, Any, List
 import numpy as np
-from abc import ABC, abstractmethod
 import logging
 
 logger = logging.getLogger(__name__)
@@ -858,6 +857,9 @@ class GameInterface:
     def get_value(self, state: Any) -> float:
         """Get value of terminal state from perspective of last player who moved
         
+        Note: This method has been retained for backward compatibility but
+        get_winner() is preferred for clearer perspective handling.
+        
         Args:
             state: Terminal game state
             
@@ -868,7 +870,7 @@ class GameInterface:
             return 0.0
             
         winner = self.get_winner(state)
-        # Note: After a terminal move, current_player has switched
+        # After a terminal move, current_player has switched
         # So we need to check from the previous player's perspective
         last_player = 1 - self.get_current_player(state)
         
@@ -880,181 +882,3 @@ class GameInterface:
             return -1.0 if last_player == 0 else 1.0
 
 
-# Mock implementations for testing without C++ module
-class MockGameState:
-    """Base mock game state for testing"""
-    
-    def __init__(self):
-        self._is_terminal = False
-        self._winner = 0
-        self._current_player = 0
-        
-    def clone(self):
-        """Create a copy of the state"""
-        import copy
-        return copy.deepcopy(self)
-        
-    def is_terminal(self) -> bool:
-        return self._is_terminal
-        
-    def get_winner(self) -> int:
-        return self._winner
-        
-    def get_current_player(self) -> int:
-        return self._current_player
-        
-    def apply_move(self, move: int) -> None:
-        self._current_player = 1 - self._current_player
-        self._move_count = getattr(self, '_move_count', 0) + 1
-        
-
-class MockChessState(MockGameState):
-    """Mock chess state for testing"""
-    
-    def __init__(self):
-        super().__init__()
-        self.board = self._initial_chess_board()
-        
-    def _initial_chess_board(self) -> np.ndarray:
-        """Create initial chess position"""
-        board = np.zeros((8, 8, 12), dtype=np.float32)
-        
-        # White pieces (planes 0-5)
-        # Pawns
-        board[1, :, 0] = 1
-        # Rooks
-        board[0, [0, 7], 1] = 1
-        # Knights
-        board[0, [1, 6], 2] = 1
-        # Bishops
-        board[0, [2, 5], 3] = 1
-        # Queen
-        board[0, 3, 4] = 1
-        # King
-        board[0, 4, 5] = 1
-        
-        # Black pieces (planes 6-11)
-        # Pawns
-        board[6, :, 6] = 1
-        # Rooks
-        board[7, [0, 7], 7] = 1
-        # Knights
-        board[7, [1, 6], 8] = 1
-        # Bishops
-        board[7, [2, 5], 9] = 1
-        # Queen
-        board[7, 3, 10] = 1
-        # King
-        board[7, 4, 11] = 1
-        
-        return board
-        
-    def get_board(self) -> np.ndarray:
-        return self.board
-        
-    def get_board_size(self) -> int:
-        return 8
-        
-    def get_tensor_representation(self) -> np.ndarray:
-        """Get basic tensor representation"""
-        # Return the 12-channel board representation
-        return self.board.transpose(2, 0, 1)  # Convert HWC to CHW
-        
-    def get_enhanced_tensor_representation(self) -> np.ndarray:
-        """Get enhanced tensor representation with 20 channels"""
-        # Create 20-channel representation
-        tensor = np.zeros((20, 8, 8), dtype=np.float32)
-        # First 12 channels: piece positions
-        tensor[:12] = self.board.transpose(2, 0, 1)
-        # Channel 12: Current player (0 for white, 1 for black)
-        tensor[12] = self._current_player
-        # Remaining channels: zeros for now (would be castling rights, etc.)
-        return tensor
-        
-    def get_legal_moves(self) -> List[int]:
-        # In initial position, white has 20 moves (16 pawn + 4 knight)
-        return list(range(20))
-        
-
-class MockGoState(MockGameState):
-    """Mock Go state for testing"""
-    
-    def __init__(self, size: int = 19):
-        super().__init__()
-        self.size = size
-        self.board = np.zeros((size, size, 2), dtype=np.float32)
-        
-    def get_board(self) -> np.ndarray:
-        return self.board
-        
-    def get_board_size(self) -> int:
-        return self.size
-        
-    def get_tensor_representation(self) -> np.ndarray:
-        """Get basic tensor representation"""
-        # Return a 3-channel representation: black stones, white stones, empty
-        tensor = np.zeros((3, self.size, self.size), dtype=np.float32)
-        # Mock some basic board state
-        tensor[0] = self.board[:, :, 0]  # Black stones
-        tensor[1] = self.board[:, :, 1]  # White stones
-        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
-        return tensor
-        
-    def get_enhanced_tensor_representation(self) -> np.ndarray:
-        """Get enhanced tensor representation with 20 channels"""
-        # Create 20-channel representation
-        tensor = np.zeros((20, self.size, self.size), dtype=np.float32)
-        # First 3 channels: basic board state
-        tensor[0] = self.board[:, :, 0]  # Black stones
-        tensor[1] = self.board[:, :, 1]  # White stones
-        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
-        # Channel 3: Current player (0 for black, 1 for white)
-        tensor[3] = self._current_player
-        # Remaining channels: zeros for now (would be move history, etc.)
-        return tensor
-        
-    def get_legal_moves(self) -> List[int]:
-        # All empty intersections + pass
-        return list(range(self.size * self.size + 1))
-        
-
-class MockGomokuState(MockGameState):
-    """Mock Gomoku state for testing"""
-    
-    def __init__(self, size: int = 15):
-        super().__init__()
-        self.size = size
-        self.board = np.zeros((size, size, 2), dtype=np.float32)
-        
-    def get_board(self) -> np.ndarray:
-        return self.board
-        
-    def get_board_size(self) -> int:
-        return self.size
-        
-    def get_tensor_representation(self) -> np.ndarray:
-        """Get basic tensor representation"""
-        # Return a 3-channel representation: black stones, white stones, empty
-        tensor = np.zeros((3, self.size, self.size), dtype=np.float32)
-        # Mock some basic board state
-        tensor[0] = self.board[:, :, 0]  # Black stones
-        tensor[1] = self.board[:, :, 1]  # White stones
-        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
-        return tensor
-        
-    def get_enhanced_tensor_representation(self) -> np.ndarray:
-        """Get enhanced tensor representation with 20 channels"""
-        # Create 20-channel representation
-        tensor = np.zeros((20, self.size, self.size), dtype=np.float32)
-        # First 3 channels: basic board state
-        tensor[0] = self.board[:, :, 0]  # Black stones
-        tensor[1] = self.board[:, :, 1]  # White stones
-        tensor[2] = 1 - (tensor[0] + tensor[1])  # Empty spaces
-        # Channel 3: Current player (0 for black, 1 for white)
-        tensor[3] = self._current_player
-        # Remaining channels: zeros for now (would be move history, etc.)
-        return tensor
-        
-    def get_legal_moves(self) -> List[int]:
-        # All empty intersections
-        return list(range(self.size * self.size))

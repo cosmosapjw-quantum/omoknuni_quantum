@@ -29,8 +29,6 @@ from ..quantum import (
     create_pragmatic_quantum_mcts
 )
 from .game_interface import GameInterface, GameType as LegacyGameType
-from ..neural_networks.evaluator_pool import EvaluatorPool
-from ..neural_networks.simple_evaluator_wrapper import SimpleEvaluatorWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +36,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MCTSConfig:
     """Configuration for optimized MCTS"""
+    
+    # Pre-computed mappings for optimization
+    _LEGACY_GAME_TYPE_MAP = {
+        LegacyGameType.CHESS: GameType.CHESS,
+        LegacyGameType.GO: GameType.GO,
+        LegacyGameType.GOMOKU: GameType.GOMOKU
+    }
+    
+    _DEFAULT_BOARD_SIZES = {
+        GameType.CHESS: 8,
+        GameType.GO: 19,
+        GameType.GOMOKU: 15
+    }
+    
     # Core parameters
     num_simulations: int = 10000
     c_puct: float = 1.414
@@ -53,7 +65,6 @@ class MCTSConfig:
     wave_size: Optional[int] = None  # Auto-determine if None
     min_wave_size: int = 3072
     max_wave_size: int = 3072  # Fixed size for best performance
-    adaptive_wave_sizing: bool = False  # MUST be False for 80k+ sims/s
     
     # Device configuration
     device: str = 'cuda'
@@ -149,28 +160,17 @@ class MCTSConfig:
     
     # Debug options
     enable_debug_logging: bool = False
+    enable_state_pool_debug: bool = False  # Specific logging for state pool management
     profile_gpu_kernels: bool = False
     
     def __post_init__(self):
-        if self.adaptive_wave_sizing:
-            logger.warning("adaptive_wave_sizing=True will reduce performance! Set to False for 80k+ sims/s")
         # Convert legacy GameType if needed
         if isinstance(self.game_type, LegacyGameType):
-            game_type_map = {
-                LegacyGameType.CHESS: GameType.CHESS,
-                LegacyGameType.GO: GameType.GO,
-                LegacyGameType.GOMOKU: GameType.GOMOKU
-            }
-            self.game_type = game_type_map[self.game_type]
+            self.game_type = self._LEGACY_GAME_TYPE_MAP[self.game_type]
             
         # Set board size defaults based on game
         if self.board_size is None:
-            if self.game_type == GameType.CHESS:
-                self.board_size = 8
-            elif self.game_type == GameType.GO:
-                self.board_size = 19
-            else:  # GOMOKU
-                self.board_size = 15
+            self.board_size = self._DEFAULT_BOARD_SIZES.get(self.game_type, 15)
 
 
 class MCTS:
@@ -185,7 +185,7 @@ class MCTS:
     def __init__(
         self,
         config: MCTSConfig,
-        evaluator: Union[EvaluatorPool, Any],
+        evaluator: Any,
         game_interface: Optional[GameInterface] = None
     ):
         """Initialize optimized MCTS
@@ -198,11 +198,8 @@ class MCTS:
         self.config = config
         self.device = torch.device(config.device)
         
-        # Wrap evaluator if needed
-        if isinstance(evaluator, EvaluatorPool):
-            self.evaluator = SimpleEvaluatorWrapper(evaluator)
-        else:
-            self.evaluator = evaluator
+        # Use evaluator directly
+        self.evaluator = evaluator
             
         # Configure evaluator to return torch tensors for GPU operations
         if hasattr(self.evaluator, '_return_torch_tensors'):
@@ -234,32 +231,9 @@ class MCTS:
             'last_search_sims_per_second': 0.0
         }
         
-        # DIAGNOSTIC FRAMEWORK: Comprehensive efficiency analysis
-        self.diagnostics = {
-            'enabled': True,
-            'current_search': {
-                'wave_count': 0,
-                'total_sims': 0,
-                'total_evals': 0,
-                'root_action_counts': defaultdict(int),
-                'path_depths': [],
-                'unique_leaf_nodes': set(),
-                'ucb_components': [],
-                'diversified_selections': []
-            },
-            'historical': {
-                'efficiency_per_search': [],
-                'path_divergence_metrics': [],
-                'ucb_balance_analysis': [],
-                'prior_impact_measurements': []
-            },
-            'detailed_tracking': {
-                'kernel_usage': {'cuda_calls': 0, 'fallback_calls': 0},
-                'wave_independence': [],
-                'tree_growth_patterns': [],
-                'convergence_analysis': []
-            }
-        }
+        # DIAGNOSTIC FRAMEWORK: Streamlined for production use
+        # Diagnostics disabled by default for performance - enable only for debugging
+        self.diagnostics = {'enabled': False}
         
     def _init_optimized_mcts(self):
         """Initialize optimized MCTS implementation"""
@@ -327,11 +301,8 @@ class MCTS:
         self._allocate_buffers()
         
         # Initialize unified optimization manager - only if CUDA kernels are enabled
-        if use_cuda_kernels:
-            from ..utils.optimization_manager import create_optimization_manager
-            self.optimization_manager = create_optimization_manager(self.config)
-        else:
-            self.optimization_manager = None
+        # Removed optimization_manager - was unused complexity
+        self.optimization_manager = None
         
         # Keep legacy attributes for backward compatibility
         self.classical_optimization_tables = None
@@ -410,6 +381,11 @@ class MCTS:
         self.state_pool_free = torch.ones(self.config.max_tree_nodes, dtype=torch.bool, device=self.device)
         self.state_pool_next = 0
         
+        # Debug state pool initialization
+        if self.config.enable_debug_logging:
+            logger.info(f"MCTS initialized with max_tree_nodes={self.config.max_tree_nodes}, device={self.device}")
+            logger.info(f"State pool size: {self.state_pool_free.sum().item()} free states")
+        
         # Subtree reuse tracking
         self.last_search_state = None
         self.last_selected_action = None
@@ -437,6 +413,10 @@ class MCTS:
         # Reset node mappings
         self.node_to_state.fill_(-1)
         self.state_to_node.fill_(-1)
+        
+        # Reset state pool - CRITICAL: free all states
+        self.state_pool_free.fill_(True)
+        self.state_pool_next = 0
         
         # Reset statistics
         self.stats['tree_reuse_count'] = 0
@@ -478,12 +458,8 @@ class MCTS:
         
         # Handle subtree reuse
         if self.config.enable_subtree_reuse and self.last_search_state is not None and self.last_selected_action is not None:
-            # Check if we can reuse the subtree
-            if self._can_reuse_subtree(state):
-                self._apply_subtree_reuse()
-            else:
-                # Different game or position - reset tree
-                self.clear()
+            # Apply subtree reuse (assuming valid state transition)
+            self._apply_subtree_reuse()
         
         # Update last search state for next time
         self.last_search_state = state
@@ -546,19 +522,6 @@ class MCTS:
         
         return policy
     
-    def _can_reuse_subtree(self, new_state: Any) -> bool:
-        """Check if we can reuse the subtree from the previous search
-        
-        Args:
-            new_state: The new game state
-            
-        Returns:
-            True if subtree can be reused
-        """
-        # This is a simple check - in practice, you'd verify that new_state
-        # is the result of applying last_selected_action to last_search_state
-        # For now, we assume the caller manages state transitions properly
-        return True
     
     def _apply_subtree_reuse(self):
         """Apply subtree reuse by shifting root to the selected child"""
@@ -595,6 +558,9 @@ class MCTS:
         Args:
             mapping: Dictionary mapping old node indices to new indices
         """
+        # Track which states will remain in use
+        states_in_use = set()
+        
         # Create new mappings
         new_node_to_state = torch.full_like(self.node_to_state, -1)
         new_state_to_node = torch.full_like(self.state_to_node, -1)
@@ -605,10 +571,67 @@ class MCTS:
             if state_idx >= 0:
                 new_node_to_state[new_idx] = state_idx
                 new_state_to_node[state_idx] = new_idx
+                states_in_use.add(state_idx)
+        
+        # Free states that are no longer referenced
+        for state_idx in range(self.config.max_tree_nodes):
+            if self.state_to_node[state_idx].item() >= 0 and state_idx not in states_in_use:
+                self.state_pool_free[state_idx] = True
         
         # Replace old mappings
         self.node_to_state = new_node_to_state
         self.state_to_node = new_state_to_node
+    
+    def _emergency_state_cleanup(self):
+        """Emergency cleanup to free unused states when pool is exhausted"""
+        logger.warning("Running emergency state cleanup...")
+        
+        # Find all states that are actually in use by valid nodes
+        states_in_use = set()
+        valid_nodes = torch.where(self.tree.visit_counts > 0)[0]
+        
+        for node_idx in valid_nodes:
+            state_idx = self.node_to_state[node_idx].item()
+            if state_idx >= 0:
+                states_in_use.add(state_idx)
+        
+        # Free states that are marked as used but not actually referenced
+        freed_count = 0
+        for state_idx in range(self.config.max_tree_nodes):
+            if not self.state_pool_free[state_idx] and state_idx not in states_in_use:
+                self.state_pool_free[state_idx] = True
+                # Clear the mappings
+                if self.state_to_node[state_idx].item() >= 0:
+                    old_node = self.state_to_node[state_idx].item()
+                    if old_node < len(self.node_to_state):
+                        self.node_to_state[old_node] = -1
+                    self.state_to_node[state_idx] = -1
+                freed_count += 1
+        
+        logger.warning(f"Emergency cleanup freed {freed_count} unused states")
+        
+        # Also try to free states from nodes with very low visit counts (likely stale)
+        if freed_count < 1000:  # If we still need more states
+            low_visit_threshold = 1
+            for node_idx in range(len(self.tree.visit_counts)):
+                if 0 < self.tree.visit_counts[node_idx] <= low_visit_threshold:
+                    state_idx = self.node_to_state[node_idx].item()
+                    if state_idx >= 0 and not self.state_pool_free[state_idx]:
+                        self.state_pool_free[state_idx] = True
+                        self.node_to_state[node_idx] = -1
+                        self.state_to_node[state_idx] = -1
+                        freed_count += 1
+            
+            logger.warning(f"Emergency cleanup freed additional {freed_count} states from low-visit nodes")
+        
+        # Last resort: reset tree completely if still critically low
+        if freed_count < 5000:  # Still critically low
+            logger.error(f"Emergency tree reset - only freed {freed_count} states, resetting entire tree")
+            self._reset_tree()
+            freed_count = self.state_pool_free.sum().item()
+            logger.warning(f"Tree reset freed {freed_count} states")
+        
+        return freed_count
     
     def select_action(self, state: Any, temperature: float = 1.0) -> int:
         """Select an action based on MCTS search
@@ -1284,41 +1307,93 @@ class MCTS:
             logger.debug(f"Expansion complete: {len(nodes)} nodes expanded, {total_new_children} new children created")
     
     def _assign_states_to_children(self, child_indices: List[int], parent_nodes: List[int], parent_actions: List[int]):
-        """Assign states to newly created child nodes"""
+        """Assign states to newly created child nodes with chunked allocation"""
         if not child_indices:
             return
         
-        # Allocate states for all children
         num_children = len(child_indices)
-        new_state_indices = self._allocate_states(num_children)
         
-        # Convert to tensors for batch operations
-        child_tensor = torch.tensor(child_indices, device=self.device)
-        parent_tensor = torch.tensor(parent_nodes, device=self.device)
-        action_tensor = torch.tensor(parent_actions, device=self.device)
+        # Use chunked allocation to prevent state pool exhaustion
+        # Calculate chunk size based on available states and safety margin
+        free_states = self.state_pool_free.sum().item()
+        chunk_size = min(1000, max(100, free_states // 4))  # Use at most 25% of free states per chunk
         
-        # Get parent states
-        parent_states = self.node_to_state[parent_tensor]
+        # Debug logging for state pool usage
+        if self.config.enable_state_pool_debug:
+            logger.info(f"[STATE_POOL] Allocating states for {num_children} children, {free_states} free states, chunk_size={chunk_size}")
         
-        # Clone parent states to new states
-        self._clone_states_batch(parent_states, new_state_indices)
-        
-        # Apply actions to create child states
-        self.game_states.apply_moves(new_state_indices, action_tensor)
-        
-        # Update node to state mapping
-        self.node_to_state[child_tensor] = new_state_indices.int()
+        # Process in chunks to avoid exhausting the state pool
+        for i in range(0, num_children, chunk_size):
+            end_idx = min(i + chunk_size, num_children)
+            chunk_child_indices = child_indices[i:end_idx]
+            chunk_parent_nodes = parent_nodes[i:end_idx]
+            chunk_parent_actions = parent_actions[i:end_idx]
+            
+            # Allocate states for this chunk
+            chunk_size_actual = len(chunk_child_indices)
+            new_state_indices = self._allocate_states(chunk_size_actual)
+            
+            # Convert to tensors for batch operations
+            child_tensor = torch.tensor(chunk_child_indices, device=self.device)
+            parent_tensor = torch.tensor(chunk_parent_nodes, device=self.device)
+            action_tensor = torch.tensor(chunk_parent_actions, device=self.device)
+            
+            # Get parent states
+            parent_states = self.node_to_state[parent_tensor]
+            
+            # Clone parent states to new states
+            self._clone_states_batch(parent_states, new_state_indices)
+            
+            # Apply actions to create child states
+            self.game_states.apply_moves(new_state_indices, action_tensor)
+            
+            # Update node to state mapping
+            self.node_to_state[child_tensor] = new_state_indices.int()
+            
+            # Debug logging for chunk progress
+            if self.config.enable_state_pool_debug:
+                remaining_free = self.state_pool_free.sum().item()
+                logger.debug(f"[STATE_POOL] Processed chunk {i//chunk_size + 1}, allocated {chunk_size_actual} states, {remaining_free} free states remaining")
     
     def _allocate_states(self, count: int) -> torch.Tensor:
-        """Allocate states from pool"""
+        """Allocate states from pool with improved error handling"""
         # Find free indices
         free_indices = torch.where(self.state_pool_free)[0]
-        if len(free_indices) < count:
-            raise RuntimeError(f"State pool exhausted: need {count}, have {len(free_indices)}")
+        total_pool_size = len(self.state_pool_free)
+        free_count = len(free_indices)
+        used_count = total_pool_size - free_count
+        
+        if free_count < count:
+            # Provide detailed error information
+            usage_percent = (used_count / total_pool_size) * 100
+            error_msg = (
+                f"State pool exhausted: need {count}, have {free_count} free out of {total_pool_size} total "
+                f"({usage_percent:.1f}% used). Consider increasing max_tree_nodes or reducing batch size."
+            )
+            logger.error(error_msg)
+            
+            # Try to free some states if possible
+            if hasattr(self, '_emergency_state_cleanup'):
+                logger.warning("Attempting emergency state cleanup...")
+                self._emergency_state_cleanup()
+                # Re-check after cleanup
+                free_indices = torch.where(self.state_pool_free)[0]
+                if len(free_indices) >= count:
+                    logger.warning(f"Emergency cleanup succeeded, now have {len(free_indices)} free states")
+                else:
+                    raise RuntimeError(error_msg)
+            else:
+                raise RuntimeError(error_msg)
         
         # Allocate
         allocated = free_indices[:count]
         self.state_pool_free[allocated] = False
+        
+        # Debug logging for state pool usage
+        if self.config.enable_state_pool_debug and count > 100:
+            remaining_free = self.state_pool_free.sum().item()
+            usage_percent = ((total_pool_size - remaining_free) / total_pool_size) * 100
+            logger.debug(f"[STATE_POOL] Allocated {count} states, {remaining_free} free remaining ({usage_percent:.1f}% pool used)")
         
         return allocated.int()
     
@@ -2368,34 +2443,7 @@ class MCTS:
                 logger.info(f"TensorCores: {self.config.use_tensor_cores}")
                 logger.info(f"Mixed precision: {self.config.use_mixed_precision}")
         
-        # Auto-adjust wave sizes if adaptive
-        if torch.cuda.is_available() and self.config.adaptive_wave_sizing:
-            # Get GPU properties
-            props = torch.cuda.get_device_properties(0)
-            
-            # Adjust wave size based on GPU memory
-            if props.total_memory > 10 * 1024**3:  # >10GB
-                self.config.max_wave_size = 2048
-                self.config.min_wave_size = 1024
-            elif props.total_memory > 6 * 1024**3:  # >6GB
-                self.config.max_wave_size = 1024
-                self.config.min_wave_size = 512
-            else:
-                self.config.max_wave_size = 512
-                self.config.min_wave_size = 256
-            
-            # Enable features based on compute capability
-            if props.major >= 7:  # Volta or newer
-                self.config.use_mixed_precision = True
-                self.config.use_tensor_cores = True
-            else:
-                self.config.use_mixed_precision = False
-                self.config.use_tensor_cores = False
-            
-            logger.debug(f"Optimized for {props.name}:")
-            logger.debug(f"  Wave size: {self.config.min_wave_size}-{self.config.max_wave_size}")
-            logger.debug(f"  Mixed precision: {self.config.use_mixed_precision}")
-            logger.debug(f"  Tensor cores: {self.config.use_tensor_cores}")
+        # Note: adaptive_wave_sizing removed for performance (was always False)
     
     def clear_caches(self):
         """Clear all caches"""

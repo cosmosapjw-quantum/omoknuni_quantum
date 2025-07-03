@@ -78,25 +78,40 @@ class TensorRTConverter:
         # Create example input
         dummy_input = torch.randn(1, *input_shape).to(device)
         
-        logger.info(f"Converting model to TensorRT with input shape: {input_shape}")
-        logger.info(f"FP16 mode: {self.fp16_mode}, INT8 mode: {self.int8_mode}")
+        logger.debug(f"Converting model to TensorRT with input shape: {input_shape}")
+        logger.debug(f"FP16 mode: {self.fp16_mode}, INT8 mode: {self.int8_mode}")
         
         # Convert using torch2trt with suppressed warnings
         with torch.no_grad():
-            # Create a custom logger to suppress TensorRT warnings
-            warning_logger = trt.Logger(trt.Logger.ERROR)
+            # Temporarily redirect TensorRT logs to suppress warnings
+            import os
+            import sys
+            from contextlib import redirect_stderr
+            from io import StringIO
             
-            trt_model = convert_to_trt(
-                pytorch_model,
-                [dummy_input],
-                fp16_mode=self.fp16_mode,
-                int8_mode=self.int8_mode,
-                max_batch_size=self.max_batch_size,
-                max_workspace_size=self.workspace_size,
-                log_level=trt.Logger.WARNING  # Keep at WARNING level for important messages
-            )
+            # Capture TensorRT warnings
+            captured_output = StringIO()
+            
+            with redirect_stderr(captured_output):
+                # Also suppress stdout warnings
+                old_stdout = sys.stdout
+                sys.stdout = StringIO()
+                
+                try:
+                    trt_model = convert_to_trt(
+                        pytorch_model,
+                        [dummy_input],
+                        fp16_mode=self.fp16_mode,
+                        int8_mode=self.int8_mode,
+                        max_batch_size=self.max_batch_size,
+                        max_workspace_size=self.workspace_size,
+                        log_level=trt.Logger.ERROR  # Suppress all but errors
+                    )
+                finally:
+                    # Restore stdout
+                    sys.stdout = old_stdout
         
-        logger.info("TensorRT conversion completed successfully")
+        logger.debug("TensorRT conversion completed successfully")
         
         # Save engine if path provided
         if output_path:
@@ -205,8 +220,10 @@ class TensorRTModel:
             Tuple of (policy_logits, value)
         """
         if self.trt_model is not None:
-            # Use torch2trt model (handles everything)
-            return self.trt_model(x)
+            # Use torch2trt model with custom stream
+            with torch.cuda.stream(self.cuda_stream):
+                result = self.trt_model(x)
+            return result
         else:
             # Manual TensorRT inference
             return self._manual_inference(x)
@@ -314,10 +331,10 @@ def optimize_for_hardware(pytorch_model: nn.Module,
         gpu_name = torch.cuda.get_device_name(0).lower()
         if 'rtx' in gpu_name or 'a100' in gpu_name or 'v100' in gpu_name:
             fp16_mode = True
-            logger.info(f"Detected {gpu_name}, enabling FP16 mode")
+            logger.debug(f"Detected {gpu_name}, enabling FP16 mode")
         else:
             fp16_mode = False
-            logger.info(f"Detected {gpu_name}, using FP32 mode")
+            logger.debug(f"Detected {gpu_name}, using FP32 mode")
     else:
         fp16_mode = 'rtx' in target_gpu.lower() or 'a100' in target_gpu.lower()
     

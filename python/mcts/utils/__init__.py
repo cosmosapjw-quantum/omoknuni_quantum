@@ -8,7 +8,7 @@ from .config_system import AlphaZeroConfig, MCTSFullConfig, QuantumLevel, create
 from .worker_init import init_worker_process, verify_cuda_disabled, get_cpu_device, ensure_cpu_tensor, create_cpu_only_config
 
 # Hardware optimization (uses psutil but not torch)
-from .hardware_optimizer import HardwareOptimizer, HardwareProfile, OptimalResourceAllocation, optimize_for_hardware
+# Removed hardware_optimizer - was research-only optimization
 
 # Lazy imports for torch-dependent modules to avoid importing torch in workers
 def _lazy_import_torch_modules():
@@ -55,8 +55,5 @@ __all__ = [
     "get_cpu_device",
     "ensure_cpu_tensor",
     "create_cpu_only_config",
-    "HardwareOptimizer",
-    "HardwareProfile",
-    "OptimalResourceAllocation",
-    "optimize_for_hardware",
+    # Removed hardware optimization exports - was research-only
 ]

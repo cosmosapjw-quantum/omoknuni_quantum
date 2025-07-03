@@ -24,8 +24,8 @@ def _lazy_import_mcts():
 # Define lazy attribute access
 def __getattr__(name):
     # List of attributes from evaluator module
-    evaluator_attrs = ['Evaluator', 'MockEvaluator', 'EvaluatorConfig', 
-                       'AlphaZeroEvaluator', 'RandomEvaluator']
+    evaluator_attrs = ['Evaluator', 'EvaluatorConfig', 
+                       'AlphaZeroEvaluator']
     
     # List of attributes from mcts module
     mcts_attrs = ['MCTS', 'MCTSConfig']
@@ -43,8 +43,6 @@ __all__ = [
     "GameInterface",
     "GameType",
     "Evaluator",
-    "MockEvaluator",
-    "RandomEvaluator",
     "EvaluatorConfig",
     "AlphaZeroEvaluator",
     "MCTS",

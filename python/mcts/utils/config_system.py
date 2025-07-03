@@ -78,7 +78,6 @@ class MCTSFullConfig:
     # Performance parameters
     min_wave_size: int = 256
     max_wave_size: int = 3072
-    adaptive_wave_sizing: bool = False
     batch_size: int = 256
     virtual_loss: float = 1.0
     
@@ -86,7 +85,6 @@ class MCTSFullConfig:
     memory_pool_size_mb: int = 2048
     max_tree_nodes: int = 500000
     tree_reuse: bool = True
-    tree_reuse_fraction: float = 0.5
     
     # GPU optimization
     use_cuda_graphs: bool = True
@@ -245,13 +243,14 @@ class TrainingFullConfig:
     num_workers: int = 4
     games_per_worker: int = 25
     max_moves_per_game: int = 500
-    resign_threshold: float = -0.95
+    resign_threshold: float = -0.98  # FIXED: More conservative threshold (was -0.95)
     resign_check_moves: int = 10
-    resign_start_iteration: int = 10  # Start using resignation after this many iterations
+    resign_start_iteration: int = 20  # FIXED: Start resignation later (was 10)
+    resign_threshold_decay: float = 0.995  # Gradually make resignation more aggressive
+    resign_randomness: float = 0.1  # Add randomness to prevent uniform behavior
     
     # Data handling
     window_size: int = 500000
-    sample_weight_by_game_length: bool = True
     augment_data: bool = True
     shuffle_buffer_size: int = 10000
     dataloader_workers: int = 4
@@ -455,9 +454,30 @@ class AlphaZeroConfig:
         config = cls.from_dict(data)
         logger.info(f"Configuration loaded from {path}")
         
-        # Auto-detect and adjust for hardware if enabled
+        # Store explicitly set YAML values to preserve them during hardware adjustment
         if auto_adjust_hardware and config.auto_detect_hardware:
-            config.adjust_for_hardware()
+            # Store original YAML values that should not be overridden
+            yaml_overrides = {}
+            if 'mcts' in data:
+                mcts_data = data['mcts']
+                if 'max_tree_nodes' in mcts_data:
+                    yaml_overrides['max_tree_nodes'] = mcts_data['max_tree_nodes']
+                if 'memory_pool_size_mb' in mcts_data:
+                    yaml_overrides['memory_pool_size_mb'] = mcts_data['memory_pool_size_mb']
+                if 'wave_size' in mcts_data:
+                    yaml_overrides['wave_size'] = mcts_data['wave_size']
+                if 'min_wave_size' in mcts_data:
+                    yaml_overrides['min_wave_size'] = mcts_data['min_wave_size']
+                if 'max_wave_size' in mcts_data:
+                    yaml_overrides['max_wave_size'] = mcts_data['max_wave_size']
+            
+            # Also preserve training batch size if explicitly set
+            if 'training' in data:
+                training_data = data['training']
+                if 'batch_size' in training_data:
+                    yaml_overrides['batch_size'] = training_data['batch_size']
+            
+            config.adjust_for_hardware(yaml_overrides)
         
         return config
     
@@ -468,9 +488,6 @@ class AlphaZeroConfig:
         # MCTS validation
         if self.mcts.max_wave_size < self.mcts.min_wave_size:
             warnings.append("MCTS max_wave_size < min_wave_size")
-        
-        if self.mcts.adaptive_wave_sizing and self.mcts.max_wave_size > 1024:
-            warnings.append("Large wave sizes with adaptive sizing may cause OOM")
         
         if self.mcts.quantum_level != QuantumLevel.CLASSICAL and not self.mcts.enable_quantum:
             warnings.append("Quantum level set but quantum not enabled")
@@ -596,8 +613,11 @@ class AlphaZeroConfig:
             'use_gpu_for_workers': use_gpu_for_workers
         }
     
-    def adjust_for_hardware(self, target_workers: Optional[int] = None):
-        """Adjust configuration based on detected hardware"""
+    def adjust_for_hardware(self, yaml_overrides: Optional[Dict[str, Any]] = None, target_workers: Optional[int] = None):
+        """Adjust configuration based on detected hardware, respecting YAML overrides"""
+        if yaml_overrides is None:
+            yaml_overrides = {}
+            
         hardware = self.detect_hardware()
         allocation = self.calculate_resource_allocation(hardware, target_workers or self.training.num_workers)
         
@@ -611,21 +631,40 @@ class AlphaZeroConfig:
         self.training.dataloader_workers = min(hardware['cpu_threads'] // 4, 8)
         self.training.pin_memory = hardware['gpu_available'] and hardware['total_ram_gb'] >= 16
         
-        # Adjust MCTS settings based on GPU
+        # Adjust MCTS settings based on GPU, but respect YAML overrides
         if hardware['gpu_available']:
-            if hardware['gpu_memory_mb'] >= 8192:
-                self.mcts.memory_pool_size_mb = 2048
-                self.mcts.max_tree_nodes = 500000
-                self.training.batch_size = 512
+            if hardware['gpu_memory_mb'] >= 7500:  # 8GB GPUs (accounting for system overhead)
+                # Only adjust if not explicitly set in YAML
+                if 'memory_pool_size_mb' not in yaml_overrides:
+                    self.mcts.memory_pool_size_mb = 2048
+                if 'max_tree_nodes' not in yaml_overrides:
+                    self.mcts.max_tree_nodes = 500000
+                if 'batch_size' not in yaml_overrides:
+                    self.training.batch_size = 512
             elif hardware['gpu_memory_mb'] >= 6144:
-                self.mcts.memory_pool_size_mb = 1536
-                self.mcts.max_tree_nodes = 300000
-                self.training.batch_size = 256
+                if 'memory_pool_size_mb' not in yaml_overrides:
+                    self.mcts.memory_pool_size_mb = 1536
+                if 'max_tree_nodes' not in yaml_overrides:
+                    self.mcts.max_tree_nodes = 300000
+                if 'batch_size' not in yaml_overrides:
+                    self.training.batch_size = 256
             else:
-                self.mcts.memory_pool_size_mb = 1024
-                self.mcts.max_tree_nodes = 200000
-                self.training.batch_size = 128
+                if 'memory_pool_size_mb' not in yaml_overrides:
+                    self.mcts.memory_pool_size_mb = 1024
+                if 'max_tree_nodes' not in yaml_overrides:
+                    self.mcts.max_tree_nodes = 200000
+                if 'batch_size' not in yaml_overrides:
+                    self.training.batch_size = 128
+                
+            # Log what values are being preserved from YAML
+            if yaml_overrides:
+                preserved_values = []
+                for key, value in yaml_overrides.items():
+                    preserved_values.append(f"{key}={value}")
+                logger.info(f"Preserving YAML values: {', '.join(preserved_values)}")
         else:
+            # CPU-only mode - but this should not apply to workers since they get their own MCTSConfig
+            # Workers should never hit this path since they use pre-configured MCTSConfig
             self.mcts.memory_pool_size_mb = 512
             self.mcts.max_tree_nodes = 100000
             self.training.batch_size = 64

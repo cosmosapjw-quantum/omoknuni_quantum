@@ -181,24 +181,119 @@ class UnifiedTrainingPipeline:
             dir_path.mkdir(parents=True, exist_ok=True)
     
     def _setup_logging(self):
-        """Configure logging based on config"""
+        """Configure logging with both console and file output"""
+        import logging.handlers
+        from datetime import datetime
+        
         level = getattr(logging, self.config.log_level)
         
-        # Only show INFO and above for production, DEBUG for debug mode
+        # Create logs directory
+        log_dir = self.experiment_dir / "logs"
+        log_dir.mkdir(exist_ok=True)
+        
+        # Create timestamp for this training run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = log_dir / f"training_{timestamp}.log"
+        
+        # Clear any existing handlers
+        root_logger = logging.getLogger()
+        root_logger.handlers.clear()
+        
+        # Set up formatter
         if level == logging.DEBUG:
-            logging.basicConfig(
-                level=level,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
             )
         else:
-            # Reduce verbosity for production
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s'
+            formatter = logging.Formatter(
+                '%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
             )
-            # Suppress verbose library logs
+        
+        # Console handler (for terminal output)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+        
+        # File handler with rotation (captures everything to file)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file, 
+            maxBytes=50*1024*1024,  # 50MB per file
+            backupCount=5,          # Keep 5 backup files
+            encoding='utf-8'
+        )
+        file_handler.setLevel(logging.DEBUG)  # Always capture all levels to file
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # Set root logger level
+        root_logger.setLevel(min(level, logging.DEBUG))
+        
+        # Suppress verbose library logs for console but keep in file
+        if level != logging.DEBUG:
             logging.getLogger('torch').setLevel(logging.WARNING)
             logging.getLogger('matplotlib').setLevel(logging.WARNING)
+        
+        # Log the setup
+        logger.info(f"Logging configured - Console: {logging.getLevelName(level)}, File: {log_file}")
+        logger.info(f"Experiment directory: {self.experiment_dir}")
+        
+        # Store log file path for reference
+        self.log_file = log_file
+        
+        # Set up tqdm to use logging for progress bars
+        import tqdm
+        tqdm.tqdm.write = lambda s, file=None, end="\n", nolock=False: logger.info(s)
+        
+        # Set up stdout/stderr capture for any print statements
+        self._setup_stdout_capture(log_file)
+    
+    def _setup_stdout_capture(self, log_file):
+        """Set up capturing of stdout/stderr to log file"""
+        import sys
+        
+        class TeeStream:
+            """Stream that writes to both original stream and log file"""
+            def __init__(self, original_stream, log_file):
+                self.original_stream = original_stream
+                self.log_file = log_file
+                
+            def write(self, data):
+                # Write to original stream (terminal)
+                self.original_stream.write(data)
+                self.original_stream.flush()
+                
+                # Write to log file
+                try:
+                    with open(self.log_file, 'a', encoding='utf-8') as f:
+                        f.write(data)
+                        f.flush()
+                except Exception:
+                    pass  # Don't break if log writing fails
+                    
+            def flush(self):
+                self.original_stream.flush()
+                
+            def __getattr__(self, name):
+                return getattr(self.original_stream, name)
+        
+        # Store original streams
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        
+        # Replace with tee streams
+        sys.stdout = TeeStream(sys.stdout, log_file)
+        sys.stderr = TeeStream(sys.stderr, log_file)
+        
+    def _restore_stdout_capture(self):
+        """Restore original stdout/stderr streams"""
+        import sys
+        if hasattr(self, '_original_stdout'):
+            sys.stdout = self._original_stdout
+        if hasattr(self, '_original_stderr'):
+            sys.stderr = self._original_stderr
     
     def _create_model(self):
         """Create neural network model"""
@@ -360,10 +455,10 @@ class UnifiedTrainingPipeline:
         pbar = trange(target_iteration, desc="Training iterations", 
                      initial=start_iteration, unit="iter", position=0, leave=True)
         
-        # Pre-compile CUDA kernels to avoid JIT overhead during training
+        # Warm up CUDA kernels (detection only, compilation handled by setup.py)
         if self.config.mcts.device == 'cuda' and start_iteration == 0:
-            logger.info("🔧 Pre-compiling CUDA kernels...")
-            self._precompile_cuda_kernels()
+            logger.info("🔧 Warming up CUDA kernels...")
+            self._warmup_cuda_kernels()
         
         for _ in range(remaining_iterations):
             self.iteration += 1
@@ -471,6 +566,8 @@ class UnifiedTrainingPipeline:
         # Use multiprocessing for parallel self-play
         if self.config.training.num_workers > 1:
             examples = self._parallel_self_play(evaluator)
+            # Collect metrics from examples since parallel mode doesn't track in real-time
+            self._collect_metrics_from_examples(examples)
         else:
             # Single-threaded self-play with progress bar
             for game_idx in trange(self.config.training.num_games_per_iteration,
@@ -482,6 +579,48 @@ class UnifiedTrainingPipeline:
         self._log_game_quality_metrics()
         
         return examples
+    
+    def _collect_metrics_from_examples(self, examples):
+        """Collect game metrics from generated examples (for parallel self-play)"""
+        if not examples:
+            return
+            
+        import numpy as np
+        
+        # Group examples by game_id to analyze per-game metrics
+        games = {}
+        for example in examples:
+            game_id = example.game_id
+            if game_id not in games:
+                games[game_id] = []
+            games[game_id].append(example)
+        
+        # Collect metrics per game
+        for game_id, game_examples in games.items():
+            # Game length
+            game_length = len(game_examples)
+            self.game_metrics['game_lengths'].append(game_length)
+            
+            # Policy entropies
+            for example in game_examples:
+                policy = example.policy
+                entropy = -np.sum(policy * np.log(policy + 1e-8))
+                self.game_metrics['policy_entropies'].append(entropy)
+            
+            # Game outcome (from final example value)
+            if game_examples:
+                final_value = game_examples[-1].value
+                if final_value > 0.5:
+                    self.game_metrics['outcomes']['player1_wins'] += 1
+                elif final_value < -0.5:
+                    self.game_metrics['outcomes']['player2_wins'] += 1
+                else:
+                    self.game_metrics['outcomes']['draws'] += 1
+                
+                # Value accuracy (simple approximation)
+                for example in game_examples[-5:]:  # Last 5 moves
+                    predicted_correct = (example.value > 0 and final_value > 0) or (example.value < 0 and final_value < 0)
+                    self.game_metrics['value_accuracy'].append(float(predicted_correct))
     
     def _log_game_quality_metrics(self):
         """Log comprehensive game quality metrics"""
@@ -621,7 +760,6 @@ class UnifiedTrainingPipeline:
             # Performance and wave parameters
             min_wave_size=self.config.mcts.min_wave_size,
             max_wave_size=self.config.mcts.max_wave_size,
-            adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
             
             # Memory and optimization
             memory_pool_size_mb=self.config.mcts.memory_pool_size_mb,
@@ -1806,19 +1944,19 @@ class UnifiedTrainingPipeline:
         with open(results_file, 'w') as f:
             json.dump(tournament_results, f, indent=2)
     
-    def _precompile_cuda_kernels(self):
-        """Pre-compile CUDA kernels to avoid JIT overhead during training"""
+    def _warmup_cuda_kernels(self):
+        """Warm up CUDA kernels (detection only, compilation handled by setup.py)"""
         try:
             from mcts.gpu.unified_kernels import get_unified_kernels
             from mcts.core.mcts import MCTS, MCTSConfig
             from mcts.neural_networks.mock_evaluator import MockEvaluator
             import torch
             
-            # Force kernel loading
+            # Detect and load pre-compiled kernels
             logger.info("  📦 Loading unified kernels...")
             kernels = get_unified_kernels(torch.device(self.config.mcts.device))
             
-            # Create minimal MCTS instance to trigger kernel compilation
+            # Create minimal MCTS instance for kernel warmup
             logger.info("  ⚙️  Initializing MCTS system...")
             mcts_config = MCTSConfig(
                 num_simulations=10,  # Minimal simulations
@@ -1830,16 +1968,16 @@ class UnifiedTrainingPipeline:
             evaluator = MockEvaluator()
             mcts = MCTS(mcts_config, evaluator)
             
-            # Run a minimal search to trigger any lazy compilation
+            # Run a minimal search for kernel warmup (not compilation)
             logger.info("  🔥 Warming up kernels...")
             import alphazero_py
             game_state = alphazero_py.GomokuState()
-            mcts.search(game_state, 5)  # Very small search to trigger compilation
+            mcts.search(game_state, 5)  # Very small search for warmup
             
-            logger.debug("CUDA kernels pre-compiled successfully!")
+            logger.debug("CUDA kernels warmed up successfully!")
             
         except Exception as e:
-            logger.warning(f"Kernel pre-compilation failed: {e}")
+            logger.warning(f"Kernel warmup failed: {e}")
             logger.info("  📝 Continuing with PyTorch fallback...")
 
 

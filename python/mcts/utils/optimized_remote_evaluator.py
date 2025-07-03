@@ -236,30 +236,5 @@ class OptimizedRemoteEvaluator:
         }
 
 
-class LegacyCompatibilityEvaluator(OptimizedRemoteEvaluator):
-    """Legacy compatibility wrapper that provides the same interface as RemoteEvaluator
-    
-    This class allows drop-in replacement of RemoteEvaluator with OptimizedRemoteEvaluator
-    while maintaining full backward compatibility.
-    """
-    
-    def __init__(self, request_queue, response_queue, action_size: int, worker_id: int = 0, 
-                 batch_timeout: float = 0.5):  # Legacy used 0.5s timeout
-        """Initialize with legacy-compatible parameters"""
-        
-        # Use legacy timeout but enable optimizations
-        super().__init__(
-            request_queue=request_queue,
-            response_queue=response_queue,
-            action_size=action_size,
-            worker_id=worker_id,
-            batch_timeout=min(batch_timeout, 0.01),  # Cap at 10ms for better performance
-            enable_coordination=True,  # Enable optimizations
-            max_coordination_batch_size=32  # Conservative batch size
-        )
-        
-        logger.info(f"LegacyCompatibilityEvaluator initialized with optimizations enabled")
-
-
-# Alias for easy drop-in replacement
+# Modern interface alias
 OptimizedEvaluator = OptimizedRemoteEvaluator

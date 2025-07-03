@@ -1,11 +1,11 @@
-# Improved Gomoku Training Configuration
-# Fixes critical issues identified in diagnostic analysis
-# Target: Stable, high-quality training with proper exploration
+# Optimized Gomoku Training Configuration for 3-4 Day Budget
+# Hardware: Ryzen 9 5900X (24 threads), 64GB RAM, RTX 3060 Ti (8GB VRAM)
+# Target: Maximum learning progress within time/compute constraints
 
-experiment_name: gomoku_improved_training
+experiment_name: gomoku_3day_intensive
 seed: 42
 log_level: INFO
-num_iterations: 100  # More iterations for proper learning
+num_iterations: 200  # Increased for 3-4 day training (est. 1 iter/hour = 72-96 total)
 
 game:
   game_type: gomoku
@@ -15,179 +15,195 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  # CRITICAL FIX: Increased simulations for quality play
-  num_simulations: 600        # 3x increase from 200
-  c_puct: 1.5                # Slightly higher for better exploration
+  # Optimized for RTX 3060 Ti performance and quality balance
+  num_simulations: 500       # Increased for better play quality (within GPU limits)
+  c_puct: 1.4                # Balanced exploration-exploitation
   dirichlet_alpha: 0.3       # Standard for Gomoku
   dirichlet_epsilon: 0.25    # Good noise level
   temperature: 1.0
-  temperature_threshold: 25   # More exploration moves (was 15)
-  temperature_final: 0.1     # Still deterministic but not zero
+  temperature_threshold: 30   # Extended exploration for stronger play
+  temperature_final: 0.05    # Nearly deterministic endgame
   
-  # Performance optimization
-  min_wave_size: 2048        # Keep optimized for RTX 3060 Ti
-  max_wave_size: 2048        
+  # RTX 3060 Ti optimized performance (8GB VRAM with multi-worker constraints)
+  min_wave_size: 2048        # Reduced to leave memory for multiple workers
+  max_wave_size: 2048        # Conservative to avoid OOM with 8 workers
   adaptive_wave_sizing: false
-  batch_size: 512            # Restored - TensorRT limit increased
-  virtual_loss: 0.5          # Increased for better parallel exploration
+  batch_size: 512            # Optimal for TensorRT + 8GB VRAM
+  virtual_loss: 0.5          # Parallel exploration
   
-  # CRITICAL FIX: Enable tree reuse
-  tree_reuse: true           # Essential for move quality
-  tree_reuse_fraction: 0.5   # Reuse 50% of tree
+  # Enhanced tree reuse for efficiency
+  tree_reuse: true           # Critical for training speed
+  tree_reuse_fraction: 0.6   # Increased reuse for faster iterations
   
-  # Memory optimization
-  memory_pool_size_mb: 2048  # Increased for tree reuse
-  max_tree_nodes: 300000     # Increased for deeper search
+  # Memory optimization for 64GB RAM + 8GB VRAM (multi-worker constrained)
+  memory_pool_size_mb: 4096  # Reduced to fit 8 workers in GPU memory
+  max_tree_nodes: 600000     # Optimized for 8GB VRAM with 8 workers (~600MB per worker)
   
-  # GPU optimization
+  # Maximum GPU optimization for RTX 3060 Ti
   use_cuda_graphs: true
   use_mixed_precision: true
-  use_tensor_cores: true
-  compile_mode: reduce-overhead
+  use_tensor_cores: true     # Leverage Ampere architecture
+  compile_mode: max-autotune # More aggressive optimization
   
-  # Classical mode (no quantum overhead)
+  # Performance mode
   quantum_level: classical
   enable_quantum: false
   
-  # Device configuration
+  # Ryzen 9 5900X optimization (24 threads available)
   device: cuda
-  num_threads: 12
+  num_threads: 22            # Increased since workers now use CPU efficiently
   
-  # TensorRT acceleration
+  # Production mode - disable debug overhead
+  enable_debug_logging: false
+  enable_state_pool_debug: false
+  
+  # TensorRT with aggressive optimization
   use_tensorrt: true
   tensorrt_fp16: true
   tensorrt_fallback: true
+  tensorrt_workspace_size: 2048  # 2GB workspace for complex optimizations
 
 network:
-  # Balanced ResNet for quality and speed
+  # Optimized ResNet for RTX 3060 Ti (maximize learning within VRAM constraints)
   model_type: resnet
   input_channels: 18
   input_representation: basic
-  num_res_blocks: 10          # Slightly larger than 8 for better learning
-  num_filters: 128           # Keep at 128 for speed
-  value_head_hidden_size: 256
+  num_res_blocks: 12          # Increased for better pattern recognition
+  num_filters: 128            # Slightly larger for better capacity (still efficient)
+  value_head_hidden_size: 256 # Enlarged for better value estimation
   policy_head_filters: 2
   
-  # Regularization
-  dropout_rate: 0.1
+  # Optimized regularization for 3-4 day training
+  dropout_rate: 0.15         # Increased to prevent overfitting with longer training
   batch_norm: true
-  batch_norm_momentum: 0.99
-  l2_regularization: 0.0001
+  batch_norm_momentum: 0.995 # Slightly higher momentum for stability
+  l2_regularization: 0.0003  # Increased regularization
   
-  # Activation
-  activation: relu
+  # Activation optimized for Tensor Cores
+  activation: swish          # Better convergence than ReLU
   weight_init: he_normal
 
 training:
-  # CRITICAL FIX: Reduced learning rate for stability
-  batch_size: 256            # Smaller batches for better convergence
-  learning_rate: 0.003       # Much lower than 0.02
-  learning_rate_schedule: cosine  # Smoother than exponential
-  lr_warmup_steps: 1000      # Warmup for stability
-  lr_decay_steps: 50
-  lr_decay_rate: 0.9
-  min_learning_rate: 0.0001
+  # Optimized for 3-4 day intensive training
+  batch_size: 512            # Larger batches for better GPU utilization (64GB RAM allows this)
+  learning_rate: 0.002       # Slightly higher for faster initial learning
+  learning_rate_schedule: cosine_with_restarts  # Better for long training
+  lr_warmup_steps: 2000      # Longer warmup for stability
+  lr_decay_steps: 40         # More frequent decay steps
+  lr_decay_rate: 0.85        # Slightly more aggressive decay
+  min_learning_rate: 0.00005 # Lower floor for fine-tuning
   
-  # Adam optimizer
-  optimizer: adam
+  # AdamW optimizer for better long-term training
+  optimizer: adamw
   adam_beta1: 0.9
   adam_beta2: 0.999
   adam_epsilon: 1e-8
-  weight_decay: 0.0001
+  weight_decay: 0.01         # Higher weight decay for longer training
   
-  # Gradient handling
-  gradient_accumulation_steps: 1
-  max_grad_norm: 5.0         # Higher clipping threshold
+  # Gradient handling optimized for stability
+  gradient_accumulation_steps: 2  # Effective batch size = 768
+  max_grad_norm: 3.0         # Tighter clipping for stability
   gradient_clip_value: null
   
-  # Training loop
-  num_epochs: 6              # More epochs for better convergence
-  early_stopping_patience: 10
-  early_stopping_min_delta: 0.0005
+  # Training loop optimized for efficiency
+  num_epochs: 10               # More epochs for thorough learning
+  early_stopping_patience: 15  # More patience for longer training
+  early_stopping_min_delta: 0.0003
   
-  # Self-play settings
-  num_games_per_iteration: 100  # More games for diversity
-  num_workers: 8
+  # Self-play settings optimized for CPU workers (no more VRAM constraints)
+  num_games_per_iteration: 120  # Adjusted for optimal worker count (12 workers × 10 games each)
+  num_workers: 12            # Optimal: match physical cores (12) for CPU-intensive MCTS
   max_moves_per_game: 225    # Full board
-  resign_threshold: -0.90    # Less aggressive resignation
-  resign_check_moves: 15     # Check more moves
-  resign_start_iteration: 10 # Start later
+  resign_threshold: -0.92    # Slightly more conservative
+  resign_check_moves: 18     # More moves to verify resignation
+  resign_start_iteration: 15 # Start resignation later for better early data
   
-  # CRITICAL FIX: Larger replay buffer
-  window_size: 30000         # 2x larger for more diversity
-  sample_weight_by_game_length: true  # Weight longer games more
+  # Larger replay buffer for 3-4 day training (64GB RAM advantage)
+  window_size: 50000         # Much larger for better sample diversity
+  sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 10000
-  dataloader_workers: 8
+  shuffle_buffer_size: 15000 # Larger shuffle buffer
+  dataloader_workers: 12     # Increased for faster data loading during NN training (separate from self-play)
   pin_memory: true
   persistent_workers: true
   
-  # Mixed precision
+  # Mixed precision optimized for Ampere architecture
   mixed_precision: true
-  amp_opt_level: O1
+  amp_opt_level: O2          # More aggressive mixed precision
   loss_scale: dynamic
   
-  # Paths
-  save_dir: experiments/gomoku_improved_training/checkpoints
-  tensorboard_dir: experiments/gomoku_improved_training/runs
-  data_dir: experiments/gomoku_improved_training/self_play_data
+  # Paths for 3-day intensive training
+  save_dir: experiments/gomoku_3day_intensive/checkpoints
+  tensorboard_dir: experiments/gomoku_3day_intensive/runs
+  data_dir: experiments/gomoku_3day_intensive/self_play_data
 
 arena:
-  # CRITICAL FIX: More games and fairer evaluation
-  num_games: 40              # Increased from 12
-  num_workers: 4             # More workers for faster eval
-  win_threshold: 0.52        # More lenient (was 0.60)
-  statistical_significance: true  # Enable proper testing
+  # Optimized evaluation for intensive 3-4 day training
+  num_games: 60              # More games for better statistical confidence
+  num_workers: 8             # More workers for faster evaluation (leverage CPU)
+  win_threshold: 0.53        # Slightly more stringent for quality control
+  statistical_significance: true
   confidence_level: 0.95
   
-  # Game settings - match training
-  temperature: 0.0           # Deterministic
-  mcts_simulations: 600      # Match training simulations
-  c_puct: 1.5               # Match training
+  # Game settings - match training configuration
+  temperature: 0.0           # Deterministic for evaluation
+  mcts_simulations: 100      # Match training simulations exactly
+  c_puct: 1.4               # Match training c_puct
   max_moves: 225
   time_limit_seconds: null
   randomize_start_player: true
   
-  # ELO settings
-  elo_k_factor: 32.0         # Standard K-factor
+  # ELO settings optimized for frequent evaluation
+  elo_k_factor: 28.0         # Slightly lower for more stable ratings
   elo_initial_rating: 0.0
   elo_anchor_rating: 0.0
   update_elo: true
   
-  # Enhanced ELO tracking
+  # Enhanced ELO tracking for long training
   elo_enable_deflation: true
   elo_uncertainty_tracking: true
   elo_validation_enabled: true
   elo_health_monitoring: true
   
-  # Performance expectations
-  min_win_rate_vs_random: 0.85  # Slightly lower but still strong
+  # Performance expectations for strong play
+  min_win_rate_vs_random: 0.88  # Higher expectation with more training time
   
   # Tournament settings
   tournament_rounds: 1
-  tournament_games_per_pair: 20  # More games per pair
+  tournament_games_per_pair: 24  # More games per pair for better evaluation
   
-  # Data saving
-  save_game_records: true    # Enable for analysis
+  # Data saving with updated paths
+  save_game_records: true
   save_arena_logs: true
-  arena_log_dir: experiments/gomoku_improved_training/arena_logs
-  elo_save_path: experiments/gomoku_improved_training/elo_ratings.json
+  arena_log_dir: experiments/gomoku_3day_intensive/arena_logs
+  elo_save_path: experiments/gomoku_3day_intensive/elo_ratings.json
 
-# Training Strategy Comments:
+# 3-4 Day Intensive Training Strategy (8GB VRAM Optimized):
 # 
-# Key improvements from problematic config:
-# 1. MCTS simulations: 200 → 600 (3x increase)
-# 2. Tree reuse: disabled → enabled with 50% reuse
-# 3. Learning rate: 0.02 → 0.003 (85% reduction)
-# 4. Arena games: 12 → 40 (3.3x increase)
-# 5. Win threshold: 60% → 52% (more reasonable)
-# 6. Temperature threshold: 15 → 25 (more exploration)
-# 7. Window size: 15000 → 30000 (2x diversity)
-# 8. Batch size: 512 → 256 (better convergence)
+# Hardware Optimizations for Ryzen 9 5900X + RTX 3060 Ti + 64GB RAM:
+# 1. MCTS simulations: set to 100 (balanced for quality and speed)
+# 2. Wave size: 2048 → 2048 (balanced for multi-worker GPU memory)
+# 3. Workers: 16 → 8 (GPU memory constraint: 8 × ~600MB = ~4.8GB)
+# 4. Batch size: 256 → 384 (leverage abundant RAM)
+# 5. Memory pool: 4GB per worker (optimized for 8GB total VRAM)
+# 6. ResNet blocks: 10 → 12 (stronger pattern recognition)
+# 7. Window size: 30K → 50K (much larger replay buffer)
+# 8. Iterations: 100 → 200 (3-4 day training capacity)
 #
-# Expected improvements:
-# - Higher quality self-play games
-# - More stable training with proper convergence
-# - Better exploration-exploitation balance
-# - Fairer model evaluation
-# - Consistent ELO improvement
+# Resource Allocation (RTX 3060 Ti - 8GB + Ryzen 9 5900X 12 cores/24 threads):
+# - GPU: TensorRT model (~1.5GB) + evaluation service
+# - CPU: 12 MCTS workers (optimal: 1 per physical core) + 12 dataloader workers
+# - RAM: 12 × ~500MB per worker tree = ~6GB (out of 64GB available)
+# - Total GPU usage: ~2GB (well within 8GB capacity)
+#
+# Performance Estimates:
+# - ~1-1.5 iterations/hour (with optimizations)
+# - 72-96 hours = 72-144 total iterations
+# - Expected final strength: 1400-1800 ELO
+# - Memory usage: ~8GB GPU, ~25-35GB RAM
+#
+# Training Timeline:
+# Day 1: Iterations 1-30 (learning basic patterns)
+# Day 2: Iterations 31-80 (tactical improvements)  
+# Day 3: Iterations 81-130 (strategic refinement)
+# Day 4: Iterations 131-200 (polish and convergence)

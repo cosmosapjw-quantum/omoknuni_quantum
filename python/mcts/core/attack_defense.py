@@ -5,7 +5,7 @@ functions that compute tactical bonuses for board positions.
 """
 
 import numpy as np
-from typing import Tuple, List, Optional
+from typing import Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)

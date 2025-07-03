@@ -28,7 +28,7 @@ class OneLoopConfig:
     """Configuration for one-loop quantum corrections"""
     
     # Physical parameters
-    hbar_eff: float = 1.0               # Effective Planck constant (legacy default)
+    hbar_eff: float = 1.0               # Effective Planck constant
     epsilon_N: float = 1e-8             # Visit count regularization
     
     # Integration with corrected ℏ_eff calculation

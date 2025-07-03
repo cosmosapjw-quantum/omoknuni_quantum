@@ -63,25 +63,26 @@ class GPUEvaluatorService:
     self-play workers, batching them together for efficient GPU utilization.
     """
     
+    # Class-level flag to track TensorRT initialization messages
+    _tensorrt_logged = False
+    
     def __init__(self, 
                  model: nn.Module,
                  device: str = 'cuda',
                  batch_size: Optional[int] = None,
                  batch_timeout: Optional[float] = None,
                  max_queue_size: Optional[int] = None,
-                 auto_optimize: bool = True,
                  workload_type: str = "balanced",
                  use_tensorrt: bool = True,
                  tensorrt_fp16: bool = True):
-        """Initialize GPU evaluator service with automatic hardware optimization
+        """Initialize GPU evaluator service
         
         Args:
             model: Neural network model to use for evaluation
             device: Device to run evaluations on
-            batch_size: Maximum batch size for GPU evaluation (None for auto)
-            batch_timeout: Maximum time to wait for a full batch (seconds) (None for auto)
-            max_queue_size: Maximum size of request/response queues (None for auto)
-            auto_optimize: Whether to automatically optimize based on hardware
+            batch_size: Maximum batch size for GPU evaluation (default: 256)
+            batch_timeout: Maximum time to wait for a full batch in seconds (default: 0.01)
+            max_queue_size: Maximum size of request/response queues (default: 10000)
             workload_type: Type of workload - "latency", "throughput", or "balanced"
             use_tensorrt: Enable TensorRT acceleration
             tensorrt_fp16: Use FP16 precision for TensorRT
@@ -90,35 +91,10 @@ class GPUEvaluatorService:
         self.device = torch.device(device)
         self.workload_type = workload_type
         
-        # Auto-detect hardware and optimize if requested
-        if auto_optimize and (batch_size is None or batch_timeout is None or max_queue_size is None):
-            try:
-                # Direct import from relative path
-                import sys
-                from pathlib import Path
-                gpu_service_dir = Path(__file__).parent
-                sys.path.insert(0, str(gpu_service_dir))
-                from hardware_optimizer import HardwareOptimizer
-                optimizer = HardwareOptimizer()
-                hw_profile = optimizer.detect_hardware()
-                allocation = optimizer.calculate_optimal_allocation(workload_type)
-                
-                self.batch_size = batch_size if batch_size is not None else allocation.gpu_batch_size
-                self.batch_timeout = batch_timeout if batch_timeout is not None else allocation.gpu_batch_timeout
-                self.max_queue_size = max_queue_size if max_queue_size is not None else allocation.gpu_queue_size
-                
-                logger.debug(f"Auto-optimized GPU service for {hw_profile.gpu_model}: "
-                           f"batch_size={self.batch_size}, timeout={self.batch_timeout:.3f}s, "
-                           f"queue_size={self.max_queue_size}")
-            except ImportError as e:
-                logger.warning(f"Hardware optimizer not available: {e}, using defaults")
-                self.batch_size = batch_size if batch_size is not None else 256
-                self.batch_timeout = batch_timeout if batch_timeout is not None else 0.01
-                self.max_queue_size = max_queue_size if max_queue_size is not None else 10000
-        else:
-            self.batch_size = batch_size if batch_size is not None else 256
-            self.batch_timeout = batch_timeout if batch_timeout is not None else 0.01
-            self.max_queue_size = max_queue_size if max_queue_size is not None else 10000
+        # Use optimized defaults
+        self.batch_size = batch_size if batch_size is not None else 256
+        self.batch_timeout = batch_timeout if batch_timeout is not None else 0.01
+        self.max_queue_size = max_queue_size if max_queue_size is not None else 10000
         
         # Check CUDA availability
         if device == 'cuda' and not torch.cuda.is_available():
@@ -130,12 +106,20 @@ class GPUEvaluatorService:
         
         if use_tensorrt:
             try:
+                # Suppress TensorRT warnings at environment level
+                import os
+                old_trt_log_level = os.environ.get('TRT_LOGGER_VERBOSITY', '')
+                os.environ['TRT_LOGGER_VERBOSITY'] = 'ERROR'
+                
                 from ..neural_networks.tensorrt_converter import optimize_for_hardware, HAS_TENSORRT
                 if not HAS_TENSORRT:
-                    logger.warning("TensorRT requested but not available, falling back to PyTorch")
+                    if not GPUEvaluatorService._tensorrt_logged:
+                        logger.warning("TensorRT requested but not available, falling back to PyTorch")
+                        GPUEvaluatorService._tensorrt_logged = True
                     self.use_tensorrt = False
                 else:
-                    logger.info("Converting model to TensorRT...")
+                    if not GPUEvaluatorService._tensorrt_logged:
+                        logger.info("Converting model to TensorRT...")
                     # Get input shape from model metadata or assume Gomoku defaults
                     if hasattr(model, 'metadata') and hasattr(model.metadata, 'input_channels'):
                         input_channels = model.metadata.input_channels
@@ -152,15 +136,24 @@ class GPUEvaluatorService:
                         model, input_shape
                     )
                     conversion_time = time.time() - start_time
-                    logger.info(f"TensorRT conversion completed in {conversion_time:.2f}s")
+                    if not GPUEvaluatorService._tensorrt_logged:
+                        logger.info(f"TensorRT conversion completed in {conversion_time:.2f}s")
+                        GPUEvaluatorService._tensorrt_logged = True
                     
-                    # Set CUDA stream for TensorRT model if available
-                    if hasattr(self.tensorrt_model, 'cuda_stream') and hasattr(self, 'cuda_stream') and self.cuda_stream:
-                        self.tensorrt_model.cuda_stream = self.cuda_stream
+                # Restore original TRT log level
+                if old_trt_log_level:
+                    os.environ['TRT_LOGGER_VERBOSITY'] = old_trt_log_level
+                else:
+                    os.environ.pop('TRT_LOGGER_VERBOSITY', None)
+                    
+                # Set CUDA stream for TensorRT model if available
+                if hasattr(self.tensorrt_model, 'cuda_stream') and hasattr(self, 'cuda_stream') and self.cuda_stream:
+                    self.tensorrt_model.cuda_stream = self.cuda_stream
                     
                     # Use TensorRT model for inference
                     self.model = self.tensorrt_model
-                    logger.info("GPU service using TensorRT acceleration")
+                    if not GPUEvaluatorService._tensorrt_logged:
+                        logger.info("GPU service using TensorRT acceleration")
                     
             except Exception as e:
                 logger.error(f"TensorRT conversion failed: {e}")

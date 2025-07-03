@@ -286,6 +286,14 @@ class TritonMCTSKernels:
                     value_sums[node_idx] += backup_value
         
         return visit_counts, value_sums
+    
+    def get_stats(self):
+        """Get kernel statistics"""
+        return {
+            'kernel_type': 'triton',
+            'triton_available': self.use_triton,
+            'device': str(self.device)
+        }
 
 
 # Create global instance

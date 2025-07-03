@@ -28,21 +28,25 @@ from mcts.neural_networks.unified_training_pipeline import UnifiedTrainingPipeli
 from mcts.utils.config_system import AlphaZeroConfig, create_default_config
 import argparse
 
-def _precompile_cuda_kernels(device: str):
-    """Pre-compile CUDA kernels to avoid JIT overhead during training"""
+def _detect_cuda_kernels(device: str):
+    """Detect pre-compiled CUDA kernels (no compilation)"""
+    # Skip if CUDA kernels are disabled
+    if os.environ.get('DISABLE_CUDA_KERNELS', '0') == '1':
+        print("  ⚠️  CUDA kernels disabled - using CPU fallback")
+        return
+        
     try:
-        print("  📦 Pre-compiling CUDA kernels in main process...")
+        print("  📦 Detecting pre-compiled CUDA kernels...")
         print(f"  🔧 Process ID: {os.getpid()}")
         
-        from mcts.gpu.cuda_singleton import get_cuda_module
+        from mcts.gpu.cuda_manager import detect_cuda_kernels as get_cuda_module
         
-        # Force compilation in main process
         start_time = time.time()
         module = get_cuda_module()
-        compile_time = time.time() - start_time
+        detection_time = time.time() - start_time
         
         if module:
-            print(f"  ✅ CUDA kernels compiled successfully in {compile_time:.2f}s")
+            print(f"  ✅ CUDA kernels detected successfully in {detection_time:.3f}s")
             
             # Verify critical functions are available
             critical_functions = ['batched_ucb_selection', 'parallel_backup', 'vectorized_backup']
@@ -55,17 +59,15 @@ def _precompile_cuda_kernels(device: str):
             if len(available) < len(critical_functions):
                 missing = [f for f in critical_functions if f not in available]
                 print(f"  ⚠️  Missing functions: {missing}")
+                print("  💡 Run 'python setup.py install' to compile missing functions")
         else:
-            print("  ⚠️  CUDA compilation returned None")
+            print("  ⚠️  No pre-compiled CUDA kernels found")
+            print("  💡 Run 'python setup.py install' to compile CUDA kernels")
+            print("  🔄 Falling back to CPU implementations")
             
-        # Small delay to ensure marker file is written
-        time.sleep(0.5)
-        
     except Exception as e:
-        print(f"  ⚠️  Kernel pre-compilation failed: {e}")
-        import traceback
-        traceback.print_exc()
-        print("  📝 Continuing with PyTorch fallback...")
+        print(f"  ⚠️  Error detecting CUDA kernels: {e}")
+        print("  🔄 Falling back to CPU implementations")
 
 def main():
     parser = argparse.ArgumentParser(description="Train AlphaZero with Unified Pipeline")
@@ -116,9 +118,9 @@ def main():
     print(f"Device: {config.mcts.device}")
     print("-" * 60)
     
-    # Pre-compile CUDA kernels to avoid JIT overhead during training
+    # Detect pre-compiled CUDA kernels and perform GPU warmup
     if config.mcts.device == 'cuda':
-        print("🔧 Pre-compiling CUDA kernels...")
+        print("🔧 Detecting CUDA kernels...")
         
         # Clean up any stale marker files from previous runs
         import tempfile
@@ -130,7 +132,7 @@ def main():
             except:
                 pass
         
-        _precompile_cuda_kernels(config.mcts.device)
+        _detect_cuda_kernels(config.mcts.device)
     
     # Create and run pipeline
     pipeline = UnifiedTrainingPipeline(config, resume_from=args.resume)

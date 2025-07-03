@@ -17,7 +17,7 @@ except ImportError:
 # Core components
 from .core import (
     GameInterface, GameType,
-    Evaluator, MockEvaluator, RandomEvaluator, EvaluatorConfig, AlphaZeroEvaluator,
+    Evaluator, EvaluatorConfig, AlphaZeroEvaluator,
     MCTS, MCTSConfig,
 )
 
@@ -77,8 +77,10 @@ from .utils import (
 __all__ = [
     # Core
     "GameInterface", "GameType",
-    "Evaluator", "MockEvaluator", "RandomEvaluator", "EvaluatorConfig", "AlphaZeroEvaluator",
+    "Evaluator", "EvaluatorConfig", "AlphaZeroEvaluator",
     "MCTS", "MCTSConfig",
+    # Add MockEvaluator from neural_networks
+    "MockEvaluator",
     
     # Neural Networks
     "ModelRegistry", "ModelLoader", "BaseGameModel", "ModelMetadata",

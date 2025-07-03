@@ -954,7 +954,6 @@ class ArenaManager:
             'mcts': {
                 'min_wave_size': config.mcts.min_wave_size,
                 'max_wave_size': config.mcts.max_wave_size,
-                'adaptive_wave_sizing': config.mcts.adaptive_wave_sizing,
                 'use_mixed_precision': config.mcts.use_mixed_precision,
                 'use_cuda_graphs': config.mcts.use_cuda_graphs,
                 'use_tensor_cores': config.mcts.use_tensor_cores,
@@ -1555,7 +1554,6 @@ class ArenaManager:
             # Performance and wave parameters - same as self-play
             min_wave_size=self.config.mcts.min_wave_size,
             max_wave_size=self.config.mcts.max_wave_size,
-            adaptive_wave_sizing=self.config.mcts.adaptive_wave_sizing,
             
             # Memory and optimization - optimized for arena performance
             # Arena needs balanced memory allocation for good performance
@@ -1826,7 +1824,6 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
             # Performance and wave parameters
             min_wave_size=config_dict['mcts']['min_wave_size'],
             max_wave_size=config_dict['mcts']['max_wave_size'],
-            adaptive_wave_sizing=config_dict['mcts']['adaptive_wave_sizing'],
             
             # Dynamic memory pool based on hardware allocation
             memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
