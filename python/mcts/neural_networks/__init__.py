@@ -7,6 +7,8 @@ from .nn_framework import (
     # Autocast utilities (moved from utils for better organization)
     safe_autocast, get_device_type
 )
+# Base evaluator with common functionality
+from .base_neural_evaluator import BaseNeuralEvaluator
 # Removed old nn_model imports - use resnet_model instead
 from .resnet_model import ResNetModel, ResNetConfig, create_resnet_for_game
 from .resnet_evaluator import (
@@ -32,6 +34,8 @@ __all__ = [
     # Autocast utilities
     "safe_autocast",
     "get_device_type",
+    # Base evaluator
+    "BaseNeuralEvaluator",
     # ResNet
     "ResNetModel",
     "ResNetConfig",

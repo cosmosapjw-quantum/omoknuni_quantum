@@ -8,7 +8,7 @@ import torch
 from typing import Tuple, Optional, Dict, Any
 import logging
 
-from .unified_kernels import get_unified_kernels
+from .mcts_gpu_accelerator import get_mcts_gpu_accelerator
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def csr_batch_ucb_torch(
     
     This function provides backward compatibility while using the new unified implementation.
     """
-    kernels = get_unified_kernels(node_indices.device)
+    kernels = get_mcts_gpu_accelerator(node_indices.device)
     return kernels.batch_ucb_selection(
         node_indices, row_ptr, col_indices, edge_actions, edge_priors,
         visit_counts, value_sums, c_puct, temperature
@@ -49,7 +49,7 @@ class CSRBatchOperations:
     
     def __init__(self, device: torch.device):
         self.device = device
-        self.kernels = get_unified_kernels(device)
+        self.kernels = get_mcts_gpu_accelerator(device)
         
         # Performance tracking (delegates to unified kernels)
         self.kernel_stats = self.kernels.stats

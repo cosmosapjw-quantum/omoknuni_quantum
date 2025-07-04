@@ -20,9 +20,20 @@
 #include <torch/extension.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include <tuple>
 #include <ctime>
 #include <climits>
+
+// Define M_PI if not defined
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Define M_E if not defined  
+#ifndef M_E
+#define M_E 2.71828182845904523536
+#endif
 
 // =============================================================================
 // SECTION 1: CORE MCTS OPERATIONS
@@ -359,7 +370,202 @@ __global__ void compute_quantum_phases_kernel(
 }
 
 // =============================================================================
-// SECTION 4: UTILITY FUNCTIONS
+// SECTION 4: WAVE SEARCH OPTIMIZATIONS
+// =============================================================================
+
+/**
+ * Batched Dirichlet noise generation for root exploration - Pass 1
+ * Generates gamma samples and computes row sums
+ */
+__global__ void batched_dirichlet_noise_kernel(
+    curandState* __restrict__ states,
+    float* __restrict__ noise_output,    // [num_sims * num_actions]
+    float* __restrict__ row_sums,        // [num_sims] - for normalization
+    const int num_sims,
+    const int num_actions,
+    const float alpha,
+    const float epsilon
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int sim_idx = tid / num_actions;
+    int action_idx = tid % num_actions;
+    
+    if (sim_idx >= num_sims) return;
+    
+    // Load random state
+    curandState local_state = states[tid];
+    
+    // Generate Gamma(alpha, 1) sample using Marsaglia-Tsang method
+    float gamma_sample = 0.0f;
+    if (alpha >= 1.0f) {
+        float d = alpha - 1.0f / 3.0f;
+        float c = 1.0f / sqrtf(9.0f * d);
+        
+        while (true) {
+            float x = curand_normal(&local_state);
+            float v = 1.0f + c * x;
+            if (v <= 0.0f) continue;
+            
+            v = v * v * v;
+            float u = curand_uniform(&local_state);
+            
+            if (u < 1.0f - 0.0331f * x * x * x * x ||
+                logf(u) < 0.5f * x * x + d * (1.0f - v + logf(v))) {
+                gamma_sample = d * v;
+                break;
+            }
+        }
+    } else {
+        // For small alpha, use Ahrens-Dieter method
+        float b = (M_E + alpha) / M_E;
+        while (true) {
+            float u1 = curand_uniform(&local_state);
+            float p = b * u1;
+            
+            if (p <= 1.0f) {
+                float x = powf(p, 1.0f / alpha);
+                if (curand_uniform(&local_state) <= expf(-x)) {
+                    gamma_sample = x;
+                    break;
+                }
+            } else {
+                float x = -logf((b - p) / alpha);
+                if (curand_uniform(&local_state) <= powf(x, alpha - 1.0f)) {
+                    gamma_sample = x;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Store gamma sample temporarily
+    noise_output[tid] = gamma_sample;
+    
+    // Use atomic add to accumulate sum for this simulation
+    atomicAdd(&row_sums[sim_idx], gamma_sample);
+    
+    // Save state
+    states[tid] = local_state;
+}
+
+/**
+ * Normalize Dirichlet samples - Pass 2
+ * Divides each row by its sum to create valid Dirichlet samples
+ */
+__global__ void normalize_dirichlet_kernel(
+    float* __restrict__ noise_output,    // [num_sims * num_actions]
+    const float* __restrict__ row_sums,  // [num_sims]
+    const int num_sims,
+    const int num_actions
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int sim_idx = tid / num_actions;
+    int action_idx = tid % num_actions;
+    
+    if (sim_idx >= num_sims) return;
+    
+    // Normalize by the row sum
+    float sum = row_sums[sim_idx];
+    if (sum > 0.0f) {
+        noise_output[tid] /= sum;
+    }
+}
+
+/**
+ * Initialize cuRAND states for Dirichlet sampling
+ */
+__global__ void init_dirichlet_states_kernel(
+    curandState* __restrict__ states,
+    const int num_states,
+    const unsigned long long seed
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_states) return;
+    curand_init(seed + idx, idx, 0, &states[idx]);
+}
+
+/**
+ * Fused UCB computation with per-simulation Dirichlet noise
+ * Highly optimized for root node selection
+ */
+__global__ void fused_ucb_with_noise_kernel(
+    const float* __restrict__ q_values,
+    const int* __restrict__ visit_counts,
+    const float* __restrict__ priors,
+    const float* __restrict__ dirichlet_noise,  // [num_sims * num_children]
+    int* __restrict__ selected_indices,         // [num_sims]
+    const int num_sims,
+    const int num_children,
+    const float parent_visits_sqrt,
+    const float c_puct,
+    const float epsilon
+) {
+    int sim_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (sim_idx >= num_sims) return;
+    
+    float best_ucb = -1e10f;
+    int best_idx = 0;
+    
+    // Vectorized UCB computation
+    for (int c = 0; c < num_children; c++) {
+        // Mix prior with simulation-specific noise
+        float noise = dirichlet_noise[sim_idx * num_children + c];
+        float mixed_prior = (1.0f - epsilon) * priors[c] + epsilon * noise;
+        
+        // Fused UCB calculation
+        float q_val = q_values[c];
+        float exploration = c_puct * mixed_prior * parent_visits_sqrt / (1.0f + visit_counts[c]);
+        float ucb = q_val + exploration;
+        
+        // Track best
+        if (ucb > best_ucb) {
+            best_ucb = ucb;
+            best_idx = c;
+        }
+    }
+    
+    selected_indices[sim_idx] = best_idx;
+}
+
+/**
+ * Optimized backup using efficient memory access patterns
+ * Prepares operations for coalesced scatter operations
+ */
+__global__ void prepare_backup_operations_kernel(
+    const int* __restrict__ paths,
+    const int* __restrict__ path_lengths,
+    const float* __restrict__ values,
+    int* __restrict__ node_indices_out,
+    float* __restrict__ value_updates_out,
+    int* __restrict__ count_updates_out,
+    int* __restrict__ total_ops,
+    const int batch_size,
+    const int max_depth
+) {
+    int batch_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (batch_idx >= batch_size) return;
+    
+    int length = path_lengths[batch_idx];
+    if (length == 0) return;
+    
+    float value = values[batch_idx];
+    int start_idx = atomicAdd(total_ops, length);
+    
+    // Unroll common path lengths
+    #pragma unroll 4
+    for (int d = 0; d < length && d < max_depth; d++) {
+        int node = paths[batch_idx * max_depth + d];
+        float sign = (d & 1) ? -1.0f : 1.0f;  // Faster than modulo
+        
+        int out_idx = start_idx + d;
+        node_indices_out[out_idx] = node;
+        value_updates_out[out_idx] = value * sign;
+        count_updates_out[out_idx] = 1;
+    }
+}
+
+// =============================================================================
+// SECTION 5: UTILITY FUNCTIONS
 // =============================================================================
 
 /**
@@ -421,6 +627,79 @@ __global__ void update_q_values_kernel(
     }
 }
 
+/**
+ * Batched addition of children nodes with proper parent assignment
+ * This kernel prevents parent index corruption during node expansion
+ */
+__global__ void batched_add_children_kernel(
+    const int* __restrict__ parent_indices,     // [batch_size]
+    const int* __restrict__ actions,            // [batch_size * max_children]
+    const float* __restrict__ priors,           // [batch_size * max_children]
+    const int* __restrict__ num_children,       // [batch_size]
+    int* __restrict__ node_counter,             // Global node counter
+    int* __restrict__ edge_counter,             // Global edge counter
+    int* __restrict__ children,                 // Children lookup table [num_nodes * max_children]
+    int* __restrict__ parent_indices_out,       // Parent indices array [max_nodes]
+    int* __restrict__ parent_actions_out,       // Parent actions array [max_nodes]
+    float* __restrict__ node_priors_out,        // Node priors array [max_nodes]
+    int* __restrict__ visit_counts_out,         // Visit counts array [max_nodes]
+    float* __restrict__ value_sums_out,         // Value sums array [max_nodes]
+    int* __restrict__ col_indices,              // CSR column indices [max_edges]
+    int* __restrict__ edge_actions,             // CSR edge actions [max_edges]
+    float* __restrict__ edge_priors,            // CSR edge priors [max_edges]
+    const int max_nodes,
+    const int max_children,
+    const int max_edges
+) {
+    int batch_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int batch_size = gridDim.x * blockDim.x;
+    
+    // Each thread processes one batch item
+    if (batch_idx < batch_size) {
+        int parent_idx = parent_indices[batch_idx];
+        int n_children = num_children[batch_idx];
+        
+        // Bounds checking
+        if (parent_idx < 0 || parent_idx >= max_nodes || n_children <= 0) {
+            return;
+        }
+        
+        // Allocate children nodes atomically
+        int start_child_idx = atomicAdd(node_counter, n_children);
+        int start_edge_idx = atomicAdd(edge_counter, n_children);
+        
+        // Bounds checking for allocated nodes and edges
+        if (start_child_idx + n_children > max_nodes || start_edge_idx + n_children > max_edges) {
+            return; // Skip if would exceed capacity
+        }
+        
+        // Process each child
+        for (int i = 0; i < n_children && i < max_children; i++) {
+            int child_idx = start_child_idx + i;
+            int edge_idx = start_edge_idx + i;
+            int action_idx = batch_idx * max_children + i;
+            
+            // CRITICAL: Set parent indices correctly to prevent corruption
+            parent_indices_out[child_idx] = parent_idx;
+            parent_actions_out[child_idx] = actions[action_idx];
+            node_priors_out[child_idx] = priors[action_idx];
+            visit_counts_out[child_idx] = 0;
+            value_sums_out[child_idx] = 0.0f;
+            
+            // Update parent's children lookup table
+            int parent_child_slot = parent_idx * max_children + i;
+            if (parent_child_slot < max_nodes * max_children) {
+                children[parent_child_slot] = child_idx;
+            }
+            
+            // Update CSR structure
+            col_indices[edge_idx] = child_idx;
+            edge_actions[edge_idx] = actions[action_idx];
+            edge_priors[edge_idx] = priors[action_idx];
+        }
+    }
+}
+
 // =============================================================================
 // PYTHON BINDING DECLARATIONS
 // =============================================================================
@@ -472,6 +751,54 @@ void initialize_lookup_tables_cuda(
     torch::Tensor sqrt_table,
     torch::Tensor uncertainty_table,
     float hbar_eff
+);
+
+torch::Tensor batched_add_children_cuda(
+    torch::Tensor parent_indices,
+    torch::Tensor actions,
+    torch::Tensor priors,
+    torch::Tensor num_children,
+    torch::Tensor node_counter,
+    torch::Tensor edge_counter,
+    torch::Tensor children,
+    torch::Tensor parent_indices_out,
+    torch::Tensor parent_actions_out,
+    torch::Tensor node_priors_out,
+    torch::Tensor visit_counts_out,
+    torch::Tensor value_sums_out,
+    torch::Tensor col_indices,
+    torch::Tensor edge_actions,
+    torch::Tensor edge_priors,
+    int max_nodes,
+    int max_children,
+    int max_edges
+);
+
+// Wave search optimization functions
+torch::Tensor batched_dirichlet_noise_cuda(
+    int num_sims,
+    int num_actions,
+    float alpha,
+    float epsilon,
+    torch::Device device
+);
+
+torch::Tensor fused_ucb_with_noise_cuda(
+    torch::Tensor q_values,
+    torch::Tensor visit_counts,
+    torch::Tensor priors,
+    torch::Tensor dirichlet_noise,
+    float parent_visits_sqrt,
+    float c_puct,
+    float epsilon
+);
+
+void optimized_backup_scatter_cuda(
+    torch::Tensor paths,
+    torch::Tensor path_lengths,
+    torch::Tensor values,
+    torch::Tensor visit_counts,
+    torch::Tensor value_sums
 );
 
 // =============================================================================
@@ -628,6 +955,206 @@ void initialize_lookup_tables_cuda(
     );
 }
 
+torch::Tensor batched_add_children_cuda(
+    torch::Tensor parent_indices,
+    torch::Tensor actions,
+    torch::Tensor priors,
+    torch::Tensor num_children,
+    torch::Tensor node_counter,
+    torch::Tensor edge_counter,
+    torch::Tensor children,
+    torch::Tensor parent_indices_out,
+    torch::Tensor parent_actions_out,
+    torch::Tensor node_priors_out,
+    torch::Tensor visit_counts_out,
+    torch::Tensor value_sums_out,
+    torch::Tensor col_indices,
+    torch::Tensor edge_actions,
+    torch::Tensor edge_priors,
+    int max_nodes,
+    int max_children,
+    int max_edges
+) {
+    const int batch_size = parent_indices.size(0);
+    const int threads = 256;
+    const int blocks = (batch_size + threads - 1) / threads;
+    
+    // Create output tensor for child indices
+    auto options = torch::TensorOptions().dtype(torch::kInt32).device(parent_indices.device());
+    auto child_indices_out = torch::zeros({batch_size * max_children}, options);
+    
+    batched_add_children_kernel<<<blocks, threads>>>(
+        parent_indices.data_ptr<int>(),
+        actions.data_ptr<int>(),
+        priors.data_ptr<float>(),
+        num_children.data_ptr<int>(),
+        node_counter.data_ptr<int>(),
+        edge_counter.data_ptr<int>(),
+        children.data_ptr<int>(),
+        parent_indices_out.data_ptr<int>(),
+        parent_actions_out.data_ptr<int>(),
+        node_priors_out.data_ptr<float>(),
+        visit_counts_out.data_ptr<int>(),
+        value_sums_out.data_ptr<float>(),
+        col_indices.data_ptr<int>(),
+        edge_actions.data_ptr<int>(),
+        edge_priors.data_ptr<float>(),
+        max_nodes,
+        max_children,
+        max_edges
+    );
+    
+    return child_indices_out;
+}
+
+// Global cuRAND states for Dirichlet sampling
+curandState* d_dirichlet_states = nullptr;
+int allocated_dirichlet_states = 0;
+
+torch::Tensor batched_dirichlet_noise_cuda(
+    int num_sims,
+    int num_actions,
+    float alpha,
+    float epsilon,
+    torch::Device device
+) {
+    auto options = torch::TensorOptions().dtype(torch::kFloat32).device(device);
+    auto noise = torch::zeros({num_sims, num_actions}, options);
+    auto row_sums = torch::zeros({num_sims}, options);
+    
+    int total_threads = num_sims * num_actions;
+    
+    // Allocate/reallocate random states if needed
+    if (d_dirichlet_states == nullptr || allocated_dirichlet_states < total_threads) {
+        if (d_dirichlet_states != nullptr) {
+            cudaFree(d_dirichlet_states);
+        }
+        cudaMalloc(&d_dirichlet_states, total_threads * sizeof(curandState));
+        allocated_dirichlet_states = total_threads;
+        
+        // Initialize random states
+        int threads = 256;
+        int blocks = (total_threads + threads - 1) / threads;
+        // Use time-based seed for randomness
+        unsigned long long seed = static_cast<unsigned long long>(time(nullptr));
+        init_dirichlet_states_kernel<<<blocks, threads>>>(
+            d_dirichlet_states, total_threads, seed
+        );
+    }
+    
+    // Pass 1: Generate gamma samples and compute row sums
+    int threads = 256;
+    int blocks = (total_threads + threads - 1) / threads;
+    
+    batched_dirichlet_noise_kernel<<<blocks, threads>>>(
+        d_dirichlet_states,
+        noise.data_ptr<float>(),
+        row_sums.data_ptr<float>(),
+        num_sims,
+        num_actions,
+        alpha,
+        epsilon
+    );
+    
+    // Pass 2: Normalize samples by row sums
+    normalize_dirichlet_kernel<<<blocks, threads>>>(
+        noise.data_ptr<float>(),
+        row_sums.data_ptr<float>(),
+        num_sims,
+        num_actions
+    );
+    
+    return noise;
+}
+
+torch::Tensor fused_ucb_with_noise_cuda(
+    torch::Tensor q_values,
+    torch::Tensor visit_counts,
+    torch::Tensor priors,
+    torch::Tensor dirichlet_noise,
+    float parent_visits_sqrt,
+    float c_puct,
+    float epsilon
+) {
+    int num_sims = dirichlet_noise.size(0);
+    int num_children = q_values.size(0);
+    
+    auto options = torch::TensorOptions().dtype(torch::kInt32).device(q_values.device());
+    auto selected = torch::zeros({num_sims}, options);
+    
+    int threads = 256;
+    int blocks = (num_sims + threads - 1) / threads;
+    
+    fused_ucb_with_noise_kernel<<<blocks, threads>>>(
+        q_values.data_ptr<float>(),
+        visit_counts.data_ptr<int>(),
+        priors.data_ptr<float>(),
+        dirichlet_noise.data_ptr<float>(),
+        selected.data_ptr<int>(),
+        num_sims,
+        num_children,
+        parent_visits_sqrt,
+        c_puct,
+        epsilon
+    );
+    
+    return selected;
+}
+
+void optimized_backup_scatter_cuda(
+    torch::Tensor paths,
+    torch::Tensor path_lengths,
+    torch::Tensor values,
+    torch::Tensor visit_counts,
+    torch::Tensor value_sums
+) {
+    int batch_size = paths.size(0);
+    int max_depth = paths.size(1);
+    
+    // Estimate maximum operations
+    int max_operations = batch_size * max_depth;
+    
+    auto options_int = torch::TensorOptions().dtype(torch::kInt32).device(paths.device());
+    auto options_float = torch::TensorOptions().dtype(torch::kFloat32).device(paths.device());
+    
+    auto node_indices = torch::zeros({max_operations}, options_int);
+    auto value_updates = torch::zeros({max_operations}, options_float);
+    auto count_updates = torch::zeros({max_operations}, options_int);
+    auto operation_count = torch::zeros({1}, options_int);
+    
+    // Prepare backup operations
+    int threads = 256;
+    int blocks = (batch_size + threads - 1) / threads;
+    
+    prepare_backup_operations_kernel<<<blocks, threads>>>(
+        paths.data_ptr<int>(),
+        path_lengths.data_ptr<int>(),
+        values.data_ptr<float>(),
+        node_indices.data_ptr<int>(),
+        value_updates.data_ptr<float>(),
+        count_updates.data_ptr<int>(),
+        operation_count.data_ptr<int>(),
+        batch_size,
+        max_depth
+    );
+    
+    // Perform scatter operations efficiently
+    int num_ops = operation_count.cpu().item<int>();
+    if (num_ops > 0) {
+        // Use existing vectorized_backup_kernel which already does this efficiently
+        vectorized_backup_kernel<<<blocks, threads>>>(
+            paths.data_ptr<int>(),
+            path_lengths.data_ptr<int>(),
+            values.data_ptr<float>(),
+            visit_counts.data_ptr<int>(),
+            value_sums.data_ptr<float>(),
+            batch_size,
+            max_depth,
+            visit_counts.size(0)
+        );
+    }
+}
+
 // =============================================================================
 // PYBIND11 MODULE DEFINITION
 // =============================================================================
@@ -638,12 +1165,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     // Core MCTS operations
     m.def("find_expansion_nodes", &find_expansion_nodes_cuda, "Find nodes needing expansion");
     m.def("vectorized_backup", &vectorized_backup_cuda, "Vectorized backup operation");
+    m.def("batched_add_children", &batched_add_children_cuda, "Batched node addition with parent assignment");
     
     // UCB selection operations
     m.def("batched_ucb_selection", &batched_ucb_selection_cuda, "Batched UCB selection");
     
     // Quantum-enhanced operations
     m.def("quantum_ucb_selection", &quantum_ucb_selection_cuda, "Quantum-enhanced UCB selection");
+    
+    // Wave search optimizations
+    m.def("batched_dirichlet_noise", &batched_dirichlet_noise_cuda, "Batched Dirichlet noise generation");
+    m.def("fused_ucb_with_noise", &fused_ucb_with_noise_cuda, "Fused UCB computation with Dirichlet noise");
+    m.def("optimized_backup_scatter", &optimized_backup_scatter_cuda, "Optimized backup with scatter operations");
     
     // Utility functions
     m.def("initialize_lookup_tables", &initialize_lookup_tables_cuda, "Initialize lookup tables");

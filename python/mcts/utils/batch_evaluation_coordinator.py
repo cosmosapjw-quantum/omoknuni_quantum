@@ -2,6 +2,12 @@
 
 This module implements request batching coordination to eliminate the 14.7x slowdown
 from individual request overhead in the RemoteEvaluator architecture.
+
+Key features:
+1. Proper condition variable synchronization instead of polling
+2. Adaptive timeout handling for different load conditions
+3. Cross-worker batch coordination for maximum efficiency
+4. Graceful fallback under heavy load
 """
 
 import torch
@@ -13,8 +19,6 @@ from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from collections import defaultdict
 import logging
-
-# Note: Adaptive parameter tuning was removed from production code
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +51,13 @@ class RequestBatchingCoordinator:
     This coordinator sits between workers and the GPU service, collecting individual
     evaluation requests and bundling them into efficient batches before sending
     to the GPU service.
+    
+    Automatically detects threading vs multiprocessing context and adapts accordingly.
     """
     
     def __init__(self, 
                  max_batch_size: int = 64,
-                 batch_timeout_ms: float = 100.0,  # 100ms timeout to prevent warnings
+                 batch_timeout_ms: float = 100.0,
                  enable_cross_worker_batching: bool = True):
         """Initialize the batching coordinator
         
@@ -62,16 +68,26 @@ class RequestBatchingCoordinator:
         """
         self.max_batch_size = max_batch_size
         self.batch_timeout = batch_timeout_ms / 1000.0  # Convert to seconds
-        self.enable_cross_worker_batching = enable_cross_worker_batching
         
-        # Request coordination
-        self.pending_requests: List[Tuple[Any, threading.Event, int]] = []  # (request, response_event, timestamp)
+        # CRITICAL: Detect multiprocessing context and disable coordination if needed
+        self._is_multiprocessing_context = self._detect_multiprocessing_context()
+        
+        if self._is_multiprocessing_context and enable_cross_worker_batching:
+            logger.debug("Multiprocessing context detected - disabling cross-worker batching for stability")
+            self.enable_cross_worker_batching = False
+        else:
+            self.enable_cross_worker_batching = enable_cross_worker_batching
+        
+        # Request coordination with proper synchronization
+        self.pending_requests = []  # List of (request, response_event, response_data, queues)
         self.pending_lock = threading.Lock()
+        self.pending_condition = threading.Condition(self.pending_lock)  # FIX: Use condition variable
         
-        # Batch processing
+        # Batch processing thread
         self.batch_thread = None
         self.stop_event = threading.Event()
         self.request_counter = 0
+        self.request_counter_lock = threading.Lock()
         
         # Performance tracking
         self.stats = {
@@ -81,36 +97,48 @@ class RequestBatchingCoordinator:
             'total_latency_saved': 0.0,
             'cross_worker_batches': 0,
             'coordination_timeouts': 0,
-            'avg_processing_time': 0.0
+            'coordination_successes': 0,
+            'fallback_to_direct': 0
         }
+        self.stats_lock = threading.Lock()
         
-        # Phase 2.2: Adaptive timeout management
-        self.adaptive_timeout = True
-        self.base_timeout = self.batch_timeout
-        self.timeout_history = []
-        self.last_timeout_adjustment = time.time()
+    
+    def _detect_multiprocessing_context(self) -> bool:
+        """Detect if we're running in a multiprocessing context
         
-        # Adaptive parameter tuning disabled in production build
-        self.adaptive_tuning_enabled = False
-        self.last_metrics_report = time.time()
-        self.simulation_count = 100  # Default simulation count
+        Returns True if this appears to be a child process created by multiprocessing.
+        This is a heuristic check that looks for common indicators.
+        """
+        import os
+        import sys
         
-        if self.adaptive_tuning_enabled:
+        # Check for multiprocessing-specific environment variables
+        if any(var in os.environ for var in ['MULTIPROCESSING_FORKED', 'MP_MAIN_FILE']):
+            return True
+        
+        # Check if we're in a spawned process (common indicator)
+        if hasattr(sys, '_getframe'):
             try:
-                self.parameter_tuner = get_global_parameter_tuner()
-                # Register callback to receive parameter updates
-                self.parameter_tuner.register_parameter_callback(
-                    'batch_coordinator', 
-                    self._update_adaptive_parameters
-                )
-                logger.debug("Adaptive parameter tuning enabled for batch coordinator")
-            except Exception as e:
-                logger.warning(f"Failed to enable adaptive tuning: {e}")
-                self.adaptive_tuning_enabled = False
+                frame = sys._getframe()
+                while frame:
+                    # Look for multiprocessing in the call stack
+                    if 'multiprocessing' in frame.f_code.co_filename:
+                        return True
+                    frame = frame.f_back
+            except:
+                pass
         
-        logger.debug(f"Initialized BatchingCoordinator: max_batch={max_batch_size}, "
-                    f"timeout={batch_timeout_ms}ms, cross_worker={enable_cross_worker_batching}, "
-                    f"adaptive_tuning={self.adaptive_tuning_enabled}")
+        # Check for process name patterns (heuristic)
+        try:
+            import multiprocessing as mp
+            current_process = mp.current_process()
+            # Main process is usually named 'MainProcess'
+            if current_process.name != 'MainProcess' and 'Process-' in current_process.name:
+                return True
+        except:
+            pass
+        
+        return False
     
     def start(self):
         """Start the batch coordination thread"""
@@ -120,17 +148,25 @@ class RequestBatchingCoordinator:
         self.stop_event.clear()
         self.batch_thread = threading.Thread(target=self._batch_coordination_loop, daemon=True)
         self.batch_thread.start()
-        logger.debug("BatchingCoordinator started")
     
     def stop(self):
         """Stop the batch coordination thread"""
         if self.batch_thread is None:
             return
         
+        logger.info("Stopping RequestBatchingCoordinator...")
         self.stop_event.set()
+        
+        # Wake up the coordination thread
+        with self.pending_condition:
+            self.pending_condition.notify_all()
+        
         self.batch_thread.join(timeout=2.0)
+        if self.batch_thread.is_alive():
+            logger.warning("RequestBatchingCoordinator thread did not stop cleanly")
+        
         self.batch_thread = None
-        logger.debug("BatchingCoordinator stopped")
+        logger.info("RequestBatchingCoordinator stopped")
     
     def coordinate_evaluation_batch(self, 
                                    states: np.ndarray,
@@ -139,35 +175,26 @@ class RequestBatchingCoordinator:
                                    worker_id: int = 0,
                                    gpu_service_request_queue = None,
                                    response_queue = None) -> Tuple[np.ndarray, np.ndarray]:
-        """Coordinate a batch evaluation with optimized batching
+        """Coordinate a batch evaluation with optimized batching"""
         
-        This method takes a batch from a worker and potentially combines it with
-        other pending requests to create larger, more efficient batches.
-        
-        Args:
-            states: Batch of game states (batch_size, channels, height, width)
-            legal_masks: Legal action masks (batch_size, action_space)
-            temperatures: Temperature values (batch_size,)
-            worker_id: ID of requesting worker
-            gpu_service_request_queue: Queue to send requests to GPU service
-            response_queue: Queue to receive responses from GPU service
-        
-        Returns:
-            Tuple of (policies, values)
-        """
         batch_size = states.shape[0]
         
         if temperatures is None:
             temperatures = np.ones(batch_size, dtype=np.float32)
+        elif isinstance(temperatures, (int, float)):
+            temperatures = np.full(batch_size, float(temperatures), dtype=np.float32)
         
         # Create coordination event for response synchronization
         response_event = threading.Event()
-        response_data = {'policies': None, 'values': None}
+        response_data = {'policies': None, 'values': None, 'error': None}
         
-        # Create batch request
-        self.request_counter += 1
+        # Create batch request with unique ID
+        with self.request_counter_lock:
+            self.request_counter += 1
+            request_id = self.request_counter
+            
         batch_request = BatchEvaluationRequest(
-            request_id=self.request_counter,
+            request_id=request_id,
             states=states,
             legal_masks=legal_masks,
             temperatures=temperatures,
@@ -176,20 +203,76 @@ class RequestBatchingCoordinator:
             individual_request_ids=list(range(batch_size))
         )
         
-        # Check if we can immediately process or need to batch with others
+        # Decision: immediate processing or coordination
         if batch_size >= self.max_batch_size or not self.enable_cross_worker_batching:
-            # Large enough batch or cross-worker batching disabled - process immediately
+            # Large batch or coordination disabled - process immediately
+            with self.stats_lock:
+                self.stats['fallback_to_direct'] += 1
             return self._process_immediate_batch(batch_request, gpu_service_request_queue, response_queue)
+        
+        # Add to pending requests for coordination
+        request_entry = (batch_request, response_event, response_data, gpu_service_request_queue, response_queue)
+        
+        with self.pending_condition:
+            self.pending_requests.append(request_entry)
+            self.pending_condition.notify()  # Wake up coordination thread
+        
+        # Wait for response with adaptive timeout based on load
+        # Under heavy load, increase timeout to reduce contention
+        pending_count = len(self.pending_requests)
+        if pending_count > 10:
+            # Heavy load - increase timeout
+            wait_timeout = self.batch_timeout * 2 + 0.1
+        elif pending_count > 5:
+            # Medium load - moderate increase
+            wait_timeout = self.batch_timeout * 1.5 + 0.05
         else:
-            # Add to pending requests for potential cross-worker batching
-            return self._process_coordinated_batch(batch_request, response_event, response_data,
-                                                  gpu_service_request_queue, response_queue)
+            # Light load - normal timeout
+            wait_timeout = self.batch_timeout + 0.05
+        
+        if not response_event.wait(timeout=wait_timeout):
+            # Timeout - try to remove from pending
+            with self.pending_condition:
+                try:
+                    self.pending_requests.remove(request_entry)
+                    removed = True
+                except ValueError:
+                    removed = False  # Already being processed
+            
+            with self.stats_lock:
+                self.stats['coordination_timeouts'] += 1
+            
+            if removed:
+                # Successfully removed - process directly
+                logger.debug(f"Coordination timeout for worker {worker_id} (load={pending_count}), falling back to direct")
+                return self._process_immediate_batch(batch_request, gpu_service_request_queue, response_queue)
+            else:
+                # Already being processed - wait reasonable time for completion
+                # FIX: Reduce critical timeout to avoid 1+ second delays
+                if not response_event.wait(timeout=0.5):
+                    logger.warning(f"Extended timeout for worker {worker_id}, falling back to direct processing")
+                    # Don't raise error - just fallback to direct processing
+                    return self._process_immediate_batch(batch_request, gpu_service_request_queue, response_queue)
+        
+        # Check for errors
+        if response_data.get('error'):
+            logger.warning(f"Coordination error for worker {worker_id}: {response_data['error']}")
+            # Don't raise error - fallback to direct processing
+            return self._process_immediate_batch(batch_request, gpu_service_request_queue, response_queue)
+        
+        with self.stats_lock:
+            self.stats['coordination_successes'] += 1
+        
+        return response_data['policies'], response_data['values']
     
     def _process_immediate_batch(self, 
                                 batch_request: BatchEvaluationRequest,
                                 gpu_service_request_queue,
                                 response_queue) -> Tuple[np.ndarray, np.ndarray]:
-        """Process a batch immediately without additional coordination"""
+        """Process a batch immediately without coordination"""
+        
+        if gpu_service_request_queue is None or response_queue is None:
+            raise ValueError("GPU service queues not provided")
         
         # Send directly to GPU service
         gpu_service_request_queue.put(batch_request)
@@ -197,7 +280,8 @@ class RequestBatchingCoordinator:
         # Wait for response
         start_time = time.time()
         try:
-            response = response_queue.get(timeout=30.0)  # 30s timeout
+            # Use reasonable timeout
+            response = response_queue.get(timeout=5.0)
             
             if isinstance(response, BatchEvaluationResponse):
                 processing_time = time.time() - start_time
@@ -209,345 +293,224 @@ class RequestBatchingCoordinator:
                 raise RuntimeError("Invalid response type")
                 
         except queue.Empty:
-            # Count timeouts and only log periodically to avoid spam
-            if not hasattr(self, '_timeout_count'):
-                self._timeout_count = 0
-            self._timeout_count += 1
-            if self._timeout_count <= 1 or self._timeout_count % 1000 == 0:
-                logger.debug(f"Batch evaluation timeout (count: {self._timeout_count})")
-            # Return fallback responses
+            logger.error(f"Timeout waiting for immediate batch response")
+            # Return fallback
             batch_size = batch_request.states.shape[0]
             action_size = 225  # Gomoku action space
             return (np.random.rand(batch_size, action_size).astype(np.float32),
                    np.zeros(batch_size, dtype=np.float32))
     
-    def _process_coordinated_batch(self,
-                                  batch_request: BatchEvaluationRequest,
-                                  response_event: threading.Event,
-                                  response_data: Dict,
-                                  gpu_service_request_queue,
-                                  response_queue) -> Tuple[np.ndarray, np.ndarray]:
-        """Process a batch with cross-worker coordination for optimal batching"""
-        
-        # Add to pending requests
-        request_entry = (batch_request, response_event, response_data, gpu_service_request_queue, response_queue)
-        
-        with self.pending_lock:
-            self.pending_requests.append(request_entry)
-        
-        # Wait for coordination thread to process the batch
-        timeout_exceeded = not response_event.wait(timeout=self.batch_timeout * 2)
-        
-        if timeout_exceeded:
-            # Phase 2.2: Adaptive timeout handling
-            self.stats['coordination_timeouts'] += 1
-            self._adjust_adaptive_timeout()
-            
-            logger.debug(f"Batch coordination timeout for worker {batch_request.worker_id} "
-                        f"(timeout={self.batch_timeout*1000:.1f}ms)")
-            
-            # Remove from pending and process immediately as fallback
-            with self.pending_lock:
-                try:
-                    self.pending_requests.remove(request_entry)
-                except ValueError:
-                    pass  # Already processed
-            
-            return self._process_immediate_batch(batch_request, gpu_service_request_queue, response_queue)
-        
-        # Return coordinated results
-        return response_data['policies'], response_data['values']
-    
     def _batch_coordination_loop(self):
-        """Main coordination loop that creates optimized batches from pending requests"""
-        logger.debug("Batch coordination loop started")
+        """Main coordination loop with proper synchronization"""
         
         while not self.stop_event.is_set():
             try:
-                # Check for pending requests
-                current_time = time.time()
+                requests_to_process = []
                 
-                with self.pending_lock:
+                with self.pending_condition:
+                    # Wait for requests or timeout
                     if not self.pending_requests:
-                        # No pending requests - sleep briefly
-                        time.sleep(0.001)  # 1ms sleep
+                        # FIX: Use condition variable wait instead of polling
+                        self.pending_condition.wait(timeout=self.batch_timeout)
+                    
+                    if not self.pending_requests:
                         continue
                     
-                    # Check if oldest request has exceeded timeout
-                    oldest_request = self.pending_requests[0]
-                    oldest_timestamp = oldest_request[0].timestamp
+                    # Check oldest request age and adapt processing strategy
+                    current_time = time.time()
+                    oldest_timestamp = self.pending_requests[0][0].timestamp
+                    age = current_time - oldest_timestamp
+                    pending_count = len(self.pending_requests)
                     
-                    if current_time - oldest_timestamp >= self.batch_timeout:
-                        # Timeout reached - process current batch
-                        batch_requests = []
-                        response_events = []
-                        response_datas = []
-                        gpu_queues = []
-                        response_queues = []
-                        
-                        # Collect all pending requests (or up to max_batch_size)
+                    # Adaptive batching: under heavy load, be more aggressive
+                    should_process = False
+                    if pending_count >= self.max_batch_size:
+                        # Full batch - process immediately
+                        should_process = True
+                    elif pending_count >= self.max_batch_size // 2 and age >= self.batch_timeout * 0.5:
+                        # Half-full batch and moderate age - process to reduce latency
+                        should_process = True
+                    elif age >= self.batch_timeout:
+                        # Timeout reached - process whatever we have
+                        should_process = True
+                    
+                    if should_process:
+                        # Take all pending requests up to max_batch_size
                         batch_count = min(len(self.pending_requests), self.max_batch_size)
-                        
-                        for _ in range(batch_count):
-                            req, event, data, gpu_q, resp_q = self.pending_requests.pop(0)
-                            batch_requests.append(req)
-                            response_events.append(event)
-                            response_datas.append(data)
-                            gpu_queues.append(gpu_q)
-                            response_queues.append(resp_q)
-                    else:
-                        # Not ready for timeout processing
-                        batch_requests = []
+                        requests_to_process = self.pending_requests[:batch_count]
+                        self.pending_requests = self.pending_requests[batch_count:]
                 
-                if not batch_requests:
-                    continue
-                
-                # Create mega-batch from collected requests
-                self._process_mega_batch(batch_requests, response_events, response_datas, 
-                                       gpu_queues, response_queues)
-                
-                # Report metrics to adaptive tuner
-                self._report_metrics_to_tuner()
-                
+                # Process outside the lock
+                if requests_to_process:
+                    self._process_request_batch(requests_to_process)
+                    
             except Exception as e:
-                logger.error(f"Error in batch coordination loop: {e}")
-                import traceback
-                traceback.print_exc()
-                time.sleep(0.01)  # Prevent tight error loop
+                logger.error(f"Error in batch coordination loop: {e}", exc_info=True)
+                # Don't let thread die on error
+                time.sleep(0.01)
         
-        logger.debug("Batch coordination loop stopped")
+        logger.info("Batch coordination loop stopped")
     
-    def _process_mega_batch(self,
-                           batch_requests: List[BatchEvaluationRequest],
-                           response_events: List[threading.Event],
-                           response_datas: List[Dict],
-                           gpu_queues: List,
-                           response_queues: List):
-        """Process a mega-batch created from multiple worker requests"""
+    def _process_request_batch(self, requests: List[Tuple]):
+        """Process a batch of requests together"""
         
-        if not batch_requests:
+        if not requests:
             return
         
-        # Combine all requests into a single mega-batch
-        all_states = []
-        all_legal_masks = []
-        all_temperatures = []
-        request_boundaries = []  # Track where each original request starts/ends
+        batch_start_time = time.time()
         
-        current_idx = 0
-        for req in batch_requests:
-            batch_size = req.states.shape[0]
-            all_states.append(req.states)
-            all_temperatures.append(req.temperatures)
-            
-            if req.legal_masks is not None:
-                all_legal_masks.append(req.legal_masks)
-            
-            request_boundaries.append((current_idx, current_idx + batch_size, req.worker_id))
-            current_idx += batch_size
+        # Unpack request components
+        batch_requests = []
+        response_events = []
+        response_datas = []
+        gpu_queues = []
+        response_queues = []
         
-        # Create mega-batch arrays
-        mega_states = np.concatenate(all_states, axis=0)
-        mega_temperatures = np.concatenate(all_temperatures, axis=0)
-        mega_legal_masks = np.concatenate(all_legal_masks, axis=0) if all_legal_masks else None
+        for req, event, data, gpu_q, resp_q in requests:
+            batch_requests.append(req)
+            response_events.append(event)
+            response_datas.append(data)
+            gpu_queues.append(gpu_q)
+            response_queues.append(resp_q)
         
-        # Create mega-batch request
-        self.request_counter += 1
-        mega_request = BatchEvaluationRequest(
-            request_id=self.request_counter,
-            states=mega_states,
-            legal_masks=mega_legal_masks,
-            temperatures=mega_temperatures,
-            worker_id=-1,  # Special ID for mega-batch
-            timestamp=time.time(),
-            individual_request_ids=list(range(mega_states.shape[0]))
-        )
+        # Use first worker's queues (they should all be the same in practice)
+        gpu_queue = gpu_queues[0]
+        response_queue = response_queues[0]
         
-        # Process mega-batch (use first worker's queues)
-        start_time = time.time()
-        gpu_queues[0].put(mega_request)
+        if gpu_queue is None or response_queue is None:
+            # Handle error case
+            error_msg = "GPU service queues not available"
+            for i in range(len(requests)):
+                response_datas[i]['error'] = error_msg
+                response_events[i].set()
+            return
         
+        # Combine all states into mega-batch
         try:
-            mega_response = response_queues[0].get(timeout=30.0)
-            processing_time = time.time() - start_time
+            all_states = []
+            all_legal_masks = []
+            all_temperatures = []
+            request_boundaries = []
             
-            if isinstance(mega_response, BatchEvaluationResponse):
-                # Distribute results back to original requests
-                mega_policies = mega_response.policies
-                mega_values = mega_response.values
+            current_idx = 0
+            for req in batch_requests:
+                batch_size = req.states.shape[0]
+                all_states.append(req.states)
+                all_temperatures.append(req.temperatures)
                 
-                for i, (start_idx, end_idx, worker_id) in enumerate(request_boundaries):
-                    # Extract results for this original request
-                    policies_slice = mega_policies[start_idx:end_idx]
-                    values_slice = mega_values[start_idx:end_idx]
-                    
-                    # Store results and signal completion
-                    response_datas[i]['policies'] = policies_slice
-                    response_datas[i]['values'] = values_slice
-                    response_events[i].set()
+                if req.legal_masks is not None:
+                    all_legal_masks.append(req.legal_masks)
+                else:
+                    # Create dummy mask
+                    all_legal_masks.append(np.ones((batch_size, 225), dtype=bool))
                 
-                # Update statistics
+                request_boundaries.append((current_idx, current_idx + batch_size))
+                current_idx += batch_size
+            
+            # Convert to numpy arrays (handling both tensor and numpy inputs)
+            if isinstance(all_states[0], torch.Tensor):
+                mega_states = torch.cat([s if isinstance(s, torch.Tensor) else torch.from_numpy(s) 
+                                        for s in all_states], dim=0).cpu().numpy()
+            else:
+                mega_states = np.concatenate(all_states, axis=0)
+            
+            if isinstance(all_temperatures[0], torch.Tensor):
+                mega_temperatures = torch.cat([t if isinstance(t, torch.Tensor) else torch.from_numpy(t)
+                                             for t in all_temperatures], dim=0).cpu().numpy()
+            else:
+                mega_temperatures = np.concatenate(all_temperatures, axis=0)
+            
+            if isinstance(all_legal_masks[0], torch.Tensor):
+                mega_legal_masks = torch.cat([m if isinstance(m, torch.Tensor) else torch.from_numpy(m)
+                                            for m in all_legal_masks], dim=0).cpu().numpy()
+            else:
+                mega_legal_masks = np.concatenate(all_legal_masks, axis=0)
+            
+            # Create mega-batch request
+            with self.request_counter_lock:
+                self.request_counter += 1
+                mega_request_id = self.request_counter
+                
+            mega_request = BatchEvaluationRequest(
+                request_id=mega_request_id,
+                states=mega_states,
+                legal_masks=mega_legal_masks if np.any(mega_legal_masks) else None,
+                temperatures=mega_temperatures,
+                worker_id=-1,  # Special ID for coordinated batch
+                timestamp=time.time(),
+                individual_request_ids=list(range(mega_states.shape[0]))
+            )
+            
+            # Send to GPU service
+            gpu_queue.put(mega_request)
+            
+            # Wait for response with timeout
+            response = response_queue.get(timeout=5.0)
+            
+            if not isinstance(response, BatchEvaluationResponse):
+                raise RuntimeError(f"Invalid response type: {type(response)}")
+            
+            # Distribute results back
+            for i, (start_idx, end_idx) in enumerate(request_boundaries):
+                response_datas[i]['policies'] = response.policies[start_idx:end_idx]
+                response_datas[i]['values'] = response.values[start_idx:end_idx]
+                response_events[i].set()
+            
+            # Update statistics
+            batch_time = time.time() - batch_start_time
+            with self.stats_lock:
                 self.stats['batches_created'] += 1
                 self.stats['requests_processed'] += len(batch_requests)
-                self.stats['cross_worker_batches'] += 1
-                total_original_size = sum(req.states.shape[0] for req in batch_requests)
-                self.stats['avg_batch_size'] = (
-                    self.stats['avg_batch_size'] * (self.stats['batches_created'] - 1) + total_original_size
-                ) / self.stats['batches_created']
+                if len(set(req.worker_id for req in batch_requests)) > 1:
+                    self.stats['cross_worker_batches'] += 1
                 
-                logger.debug(f"Mega-batch processed: {len(batch_requests)} requests, "
-                           f"{total_original_size} evaluations, {processing_time*1000:.1f}ms")
-                
-            else:
-                logger.error(f"Unexpected mega-batch response type: {type(mega_response)}")
-                self._handle_mega_batch_error(batch_requests, response_events, response_datas)
-        
-        except queue.Empty:
-            logger.error("Timeout waiting for mega-batch response")
-            self._handle_mega_batch_error(batch_requests, response_events, response_datas)
-    
-    def _handle_mega_batch_error(self,
-                                batch_requests: List[BatchEvaluationRequest],
-                                response_events: List[threading.Event],
-                                response_datas: List[Dict]):
-        """Handle errors in mega-batch processing by providing fallback responses"""
-        
-        for i, req in enumerate(batch_requests):
-            batch_size = req.states.shape[0]
-            action_size = 225  # Gomoku action space
+                total_size = sum(req.states.shape[0] for req in batch_requests)
+                old_avg = self.stats['avg_batch_size']
+                old_count = self.stats['batches_created'] - 1
+                self.stats['avg_batch_size'] = (old_avg * old_count + total_size) / self.stats['batches_created']
             
-            # Provide fallback responses
-            response_datas[i]['policies'] = np.random.rand(batch_size, action_size).astype(np.float32)
-            response_datas[i]['values'] = np.zeros(batch_size, dtype=np.float32)
-            response_events[i].set()
-    
-    def _adjust_adaptive_timeout(self):
-        """Phase 2.2: Adjust timeout based on system performance"""
-        if not self.adaptive_timeout:
-            return
-        
-        current_time = time.time()
-        if current_time - self.last_timeout_adjustment < 5.0:  # Only adjust every 5 seconds
-            return
-        
-        # Calculate timeout rate over recent period
-        total_requests = self.stats['requests_processed']
-        timeout_rate = self.stats['coordination_timeouts'] / max(total_requests, 1)
-        
-        # Adjust timeout based on timeout rate
-        if timeout_rate > 0.1:  # More than 10% timeouts
-            # Increase timeout to reduce timeouts
-            self.batch_timeout = min(self.batch_timeout * 1.2, self.base_timeout * 3)
-            logger.debug(f"Increased coordination timeout to {self.batch_timeout*1000:.1f}ms "
-                        f"(timeout rate: {timeout_rate:.1%})")
-        elif timeout_rate < 0.02 and self.batch_timeout > self.base_timeout:  # Less than 2% timeouts
-            # Decrease timeout to improve latency
-            self.batch_timeout = max(self.batch_timeout * 0.9, self.base_timeout)
-            logger.debug(f"Decreased coordination timeout to {self.batch_timeout*1000:.1f}ms "
-                        f"(timeout rate: {timeout_rate:.1%})")
-        
-        self.last_timeout_adjustment = current_time
-    
-    def _update_adaptive_parameters(self, params: 'AdaptiveParameters'):
-        """Update coordination parameters based on adaptive tuning
-        
-        Args:
-            params: New adaptive parameters from the tuner
-        """
-        try:
-            # Update batch coordination parameters
-            old_batch_size = self.max_batch_size
-            old_timeout = self.batch_timeout * 1000
-            
-            self.max_batch_size = params.batch_size
-            self.batch_timeout = params.coordination_timeout_ms / 1000.0
-            
-            # Log significant changes
-            if abs(params.batch_size - old_batch_size) > 16 or abs(params.coordination_timeout_ms - old_timeout) > 20:
-                logger.debug(f"Adaptive coordinator: batch_size {old_batch_size}->{params.batch_size}, "
-                            f"timeout {old_timeout:.1f}->{params.coordination_timeout_ms:.1f}ms")
-                
-        except Exception as e:
-            logger.error(f"Failed to update adaptive parameters: {e}")
-    
-    def update_simulation_count(self, simulation_count: int):
-        """Update the current simulation count for adaptive tuning
-        
-        Args:
-            simulation_count: Current simulation count per move
-        """
-        self.simulation_count = simulation_count
-        
-        # Force parameter update if simulation count changed significantly
-        if self.adaptive_tuning_enabled and hasattr(self, 'parameter_tuner'):
-            try:
-                self.parameter_tuner.force_parameter_update(simulation_count)
-            except Exception as e:
-                logger.error(f"Failed to force parameter update: {e}")
-    
-    def _report_metrics_to_tuner(self):
-        """Report current performance metrics to the adaptive tuner"""
-        if not self.adaptive_tuning_enabled or not hasattr(self, 'parameter_tuner'):
-            return
-        
-        current_time = time.time()
-        
-        # Report metrics every 2 seconds
-        if current_time - self.last_metrics_report < 2.0:
-            return
-        
-        try:
-            # Calculate recent performance metrics
-            total_requests = self.stats['requests_processed']
-            total_time = current_time - self.last_metrics_report
-            
-            if total_time > 0 and total_requests > 0:
-                sims_per_second = total_requests / total_time
-                avg_batch_size = self.stats['avg_batch_size']
-                
-                # Report to adaptive tuner
-                self.parameter_tuner.record_metrics(
-                    simulations_per_second=sims_per_second,
-                    simulation_count=self.simulation_count,
-                    avg_batch_size=avg_batch_size,
-                    avg_latency_ms=self.batch_timeout * 1000,
-                    queue_depth=len(self.pending_requests),
-                    active_workers=len(set(req[0].worker_id for req in self.pending_requests))
-                )
-                
-            self.last_metrics_report = current_time
             
         except Exception as e:
-            logger.error(f"Failed to report metrics to tuner: {e}")
+            logger.error(f"Error processing coordinated batch: {e}", exc_info=True)
+            # Set error for all requests
+            for i in range(len(requests)):
+                response_datas[i]['error'] = str(e)
+                response_events[i].set()
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get performance statistics"""
-        stats = self.stats.copy()
-        stats['current_timeout_ms'] = self.batch_timeout * 1000
-        stats['timeout_rate'] = self.stats['coordination_timeouts'] / max(self.stats['requests_processed'], 1)
+        with self.stats_lock:
+            stats = self.stats.copy()
+        
+        total = stats['coordination_successes'] + stats['coordination_timeouts'] + stats['fallback_to_direct']
+        if total > 0:
+            stats['coordination_success_rate'] = stats['coordination_successes'] / total
+            stats['timeout_rate'] = stats['coordination_timeouts'] / total
+        else:
+            stats['coordination_success_rate'] = 0.0
+            stats['timeout_rate'] = 0.0
+        
         return stats
 
 
-# Global coordinator instance for shared use across workers (process-aware)
+# Global coordinator instance
 _global_coordinator: Optional[RequestBatchingCoordinator] = None
 _coordinator_lock = threading.Lock()
 _coordinator_process_id: Optional[int] = None
 
 
 def get_global_batching_coordinator(max_batch_size: int = 64,
-                                   batch_timeout_ms: float = 5.0,
+                                   batch_timeout_ms: float = 100.0,
                                    enable_cross_worker_batching: bool = True) -> RequestBatchingCoordinator:
-    """Get or create the global batching coordinator instance (process-aware singleton)"""
+    """Get or create the global batching coordinator"""
     global _global_coordinator, _coordinator_process_id
     import os
     
     current_pid = os.getpid()
     
     with _coordinator_lock:
-        # Check if we need a new instance for this process
         if _global_coordinator is None or _coordinator_process_id != current_pid:
             if _global_coordinator is not None:
-                # Clean up old instance from different process
                 try:
                     _global_coordinator.stop()
                 except:
@@ -560,6 +523,7 @@ def get_global_batching_coordinator(max_batch_size: int = 64,
             )
             _global_coordinator.start()
             _coordinator_process_id = current_pid
+            
         
         return _global_coordinator
 

@@ -77,8 +77,6 @@ class OptimizedRemoteEvaluator:
             'coordination_time': 0.0
         }
         
-        logger.debug(f"Initialized OptimizedRemoteEvaluator for worker {worker_id}: "
-                    f"coordination={enable_coordination}, timeout={batch_timeout*1000:.1f}ms")
     
     def evaluate(self, state: np.ndarray, legal_mask: Optional[np.ndarray] = None, 
                 temperature: float = 1.0) -> Tuple[np.ndarray, float]:

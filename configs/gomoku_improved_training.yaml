@@ -31,8 +31,8 @@ mcts:
   virtual_loss: 0.5          # Parallel exploration
   enable_virtual_loss: true
   
-  # Enhanced tree reuse for efficiency
-  tree_reuse: true           # Critical for training speed
+  # Enhanced tree reuse for efficiency - RE-ENABLED after root mapping fixes
+  tree_reuse: true          # Critical for training speed
   
   # Memory optimization for 64GB RAM + 8GB VRAM (multi-worker constrained)
   memory_pool_size_mb: 4096  # Reduced to fit 8 workers in GPU memory

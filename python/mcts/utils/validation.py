@@ -144,38 +144,38 @@ class MCTSValidator:
             return issues  # Empty tree is valid
         
         # Check for NaN values
-        if torch.any(torch.isnan(tree.visit_counts[:tree.num_nodes])):
+        if torch.any(torch.isnan(tree.node_data.visit_counts[:tree.num_nodes])):
             issues.append(ValidationIssue.NAN_VALUES)
-            details['nan_visit_counts'] = torch.sum(torch.isnan(tree.visit_counts[:tree.num_nodes])).item()
+            details['nan_visit_counts'] = torch.sum(torch.isnan(tree.node_data.visit_counts[:tree.num_nodes])).item()
         
-        if torch.any(torch.isnan(tree.value_sums[:tree.num_nodes])):
+        if torch.any(torch.isnan(tree.node_data.value_sums[:tree.num_nodes])):
             issues.append(ValidationIssue.NAN_VALUES)
-            details['nan_value_sums'] = torch.sum(torch.isnan(tree.value_sums[:tree.num_nodes])).item()
+            details['nan_value_sums'] = torch.sum(torch.isnan(tree.node_data.value_sums[:tree.num_nodes])).item()
         
         # Check for infinite values
-        if torch.any(torch.isinf(tree.visit_counts[:tree.num_nodes])):
+        if torch.any(torch.isinf(tree.node_data.visit_counts[:tree.num_nodes])):
             issues.append(ValidationIssue.INFINITE_VALUES)
         
-        if torch.any(torch.isinf(tree.value_sums[:tree.num_nodes])):
+        if torch.any(torch.isinf(tree.node_data.value_sums[:tree.num_nodes])):
             issues.append(ValidationIssue.INFINITE_VALUES)
         
         # Check for negative visits
-        if torch.any(tree.visit_counts[:tree.num_nodes] < 0):
+        if torch.any(tree.node_data.visit_counts[:tree.num_nodes] < 0):
             issues.append(ValidationIssue.NEGATIVE_VISITS)
-            details['negative_visits'] = torch.sum(tree.visit_counts[:tree.num_nodes] < 0).item()
+            details['negative_visits'] = torch.sum(tree.node_data.visit_counts[:tree.num_nodes] < 0).item()
         
         # Check for degenerate pattern: all visits = 1
-        active_nodes = tree.visit_counts[:tree.num_nodes] > 0
+        active_nodes = tree.node_data.visit_counts[:tree.num_nodes] > 0
         if torch.any(active_nodes):
-            active_visits = tree.visit_counts[:tree.num_nodes][active_nodes]
+            active_visits = tree.node_data.visit_counts[:tree.num_nodes][active_nodes]
             if torch.all(active_visits == 1):
                 issues.append(ValidationIssue.ALL_VISITS_ONE)
                 details['active_nodes_with_visits'] = torch.sum(active_nodes).item()
         
         # Check for degenerate pattern: all Q-values = 0
         if torch.any(active_nodes):
-            active_values = tree.value_sums[:tree.num_nodes][active_nodes]
-            active_visits_vals = tree.visit_counts[:tree.num_nodes][active_nodes]
+            active_values = tree.node_data.value_sums[:tree.num_nodes][active_nodes]
+            active_visits_vals = tree.node_data.visit_counts[:tree.num_nodes][active_nodes]
             q_values = active_values / torch.clamp(active_visits_vals, min=1)
             
             if torch.all(torch.abs(q_values) < 1e-10):
@@ -192,7 +192,7 @@ class MCTSValidator:
             return issues
         
         # Check root visit accumulation
-        root_visits = tree.visit_counts[0].item()
+        root_visits = tree.node_data.visit_counts[0].item()
         if root_visits < self.thresholds['min_root_visits']:
             issues.append(ValidationIssue.NO_VISIT_ACCUMULATION)
             details['root_visits'] = root_visits
@@ -206,7 +206,7 @@ class MCTSValidator:
         try:
             root_children, _, _ = tree.get_children(0)
             if len(root_children) > 1:
-                child_visits = tree.visit_counts[root_children]
+                child_visits = tree.node_data.visit_counts[root_children]
                 total_child_visits = torch.sum(child_visits).item()
                 
                 if total_child_visits > 0:
@@ -231,10 +231,10 @@ class MCTSValidator:
             return issues
         
         # Check for extreme Q-values
-        active_mask = tree.visit_counts[:tree.num_nodes] > 0
+        active_mask = tree.node_data.visit_counts[:tree.num_nodes] > 0
         if torch.any(active_mask):
-            active_visits = tree.visit_counts[:tree.num_nodes][active_mask]
-            active_values = tree.value_sums[:tree.num_nodes][active_mask]
+            active_visits = tree.node_data.visit_counts[:tree.num_nodes][active_mask]
+            active_values = tree.node_data.value_sums[:tree.num_nodes][active_mask]
             q_values = active_values / torch.clamp(active_visits, min=1)
             
             max_q = torch.max(q_values).item()
@@ -302,7 +302,7 @@ class MCTSValidator:
                 
                 # Check for nodes with visits that are not reachable
                 for i in range(tree.num_nodes):
-                    if i not in reachable and tree.visit_counts[i].item() > 0:
+                    if i not in reachable and tree.node_data.visit_counts[i].item() > 0:
                         issues.append(ValidationIssue.ORPHANED_NODES)
                         details['orphaned_nodes'] = details.get('orphaned_nodes', []) + [i]
                         

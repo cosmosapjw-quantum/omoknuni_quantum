@@ -76,7 +76,9 @@
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python DISABLE_CUDA_KERNELS=1 timeout 30s python train.py --config configs/gomoku_improved_training.yaml)",
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"\nimport os\nos.environ[''DISABLE_CUDA_KERNELS''] = ''1''\nprint(''Testing imports...'')\nfrom mcts.neural_networks.unified_training_pipeline import UnifiedTrainingPipeline\nprint(''Import successful!'')\n\")",
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python timeout 20s python:*)",
-      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python:/home/cosmosapjw/venv/lib/python3.10/site-packages grep -n \"cuda_kernels\\|triton_kernels\" mcts/core/mcts.py)"
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python:/home/cosmosapjw/venv/lib/python3.10/site-packages grep -n \"cuda_kernels\\|triton_kernels\" mcts/core/mcts.py)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -m pytest tests/core/test_game_interface.py::TestGameInterface::test_game_interface_creation_gomoku -v)",
+      "Bash(~/venv/bin/pip install -e python/ --quiet)"
     ],
     "deny": []
   },

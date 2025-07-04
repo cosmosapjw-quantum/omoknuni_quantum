@@ -62,7 +62,6 @@ class MCTSGPUAccelerator:
                 kernels = detect_cuda_kernels()  # Only detection, never compilation
                 if kernels is not None:
                     self._kernel_interface = ConsolidatedKernelInterface(kernels)
-                    logger.debug("✓ Using consolidated CUDA kernels")
                     return
                 else:
                     logger.debug("⚠️ CUDA kernels not found - falling back to PyTorch")
@@ -106,6 +105,96 @@ class MCTSGPUAccelerator:
             return self._kernel_interface.quantum_ucb_selection(*args, **kwargs)
         return self.batched_ucb_selection(*args, **kwargs)  # Fallback to classical
     
+    def batched_add_children(self, *args, **kwargs):
+        """Batched addition of children with proper parent assignment
+        
+        This method adds multiple children nodes in a single batch operation,
+        properly maintaining parent-child relationships in the tree structure.
+        
+        Args:
+            parent_indices: Tensor of parent node indices (batch_size,)
+            actions: Tensor of action indices (batch_size, max_children)
+            priors: Tensor of prior probabilities (batch_size, max_children) 
+            num_children: Tensor of actual children count per parent (batch_size,)
+            node_counter: Global node counter tensor
+            edge_counter: Global edge counter tensor
+            children: Children lookup table
+            parent_indices_out: Output parent indices array
+            parent_actions_out: Output parent actions array
+            node_priors_out: Output node priors array
+            visit_counts_out: Output visit counts array
+            value_sums_out: Output value sums array
+            col_indices: CSR column indices
+            edge_actions: CSR edge actions
+            edge_priors: CSR edge priors
+            max_nodes: Maximum number of nodes
+            max_children: Maximum children per node
+            max_edges: Maximum number of edges
+            
+        Returns:
+            Tensor of child node indices if CUDA kernel available, None otherwise
+            
+        Raises:
+            ValueError: If required arguments are missing or invalid
+            RuntimeError: If CUDA kernel execution fails
+            
+        Example:
+            >>> accelerator = get_mcts_gpu_accelerator(device)
+            >>> child_indices = accelerator.batched_add_children(
+            ...     parent_indices, actions, priors, num_children,
+            ...     node_counter, edge_counter, children,
+            ...     parent_indices_out, parent_actions_out, node_priors_out,
+            ...     visit_counts_out, value_sums_out,
+            ...     col_indices, edge_actions, edge_priors,
+            ...     max_nodes, max_children, max_edges
+            ... )
+        """
+        # Input validation
+        if len(args) < 18:
+            raise ValueError(
+                f"batched_add_children requires 18 arguments, got {len(args)}. "
+                "Required: parent_indices, actions, priors, num_children, "
+                "node_counter, edge_counter, children, parent_indices_out, "
+                "parent_actions_out, node_priors_out, visit_counts_out, "
+                "value_sums_out, col_indices, edge_actions, edge_priors, "
+                "max_nodes, max_children, max_edges"
+            )
+        
+        # Validate tensor arguments (first 15 are tensors)
+        import torch
+        for i in range(15):
+            if args[i] is not None and not isinstance(args[i], torch.Tensor):
+                arg_names = [
+                    "parent_indices", "actions", "priors", "num_children",
+                    "node_counter", "edge_counter", "children", "parent_indices_out",
+                    "parent_actions_out", "node_priors_out", "visit_counts_out",
+                    "value_sums_out", "col_indices", "edge_actions", "edge_priors"
+                ]
+                raise TypeError(
+                    f"Argument '{arg_names[i]}' (position {i}) must be a torch.Tensor, "
+                    f"got {type(args[i]).__name__}"
+                )
+        
+        # Check if CUDA kernel is available
+        if not hasattr(self._kernel_interface, 'batched_add_children'):
+            raise NotImplementedError(
+                "batched_add_children requires CUDA kernels to be compiled and loaded. "
+                "CPU fallback should be implemented in CSRTree. "
+                "To compile CUDA kernels, run: python setup.py build_ext --inplace"
+            )
+        
+        try:
+            return self._kernel_interface.batched_add_children(*args, **kwargs)
+        except RuntimeError as e:
+            # Provide more helpful error message
+            if "expected scalar type" in str(e):
+                raise RuntimeError(
+                    f"Type mismatch in batched_add_children: {e}. "
+                    "Ensure all tensor dtypes match expected types "
+                    "(int32 for indices/counts, float32 for values/priors)"
+                )
+            raise
+    
     def get_stats(self):
         """Get kernel statistics"""
         base_stats = {
@@ -117,6 +206,19 @@ class MCTSGPUAccelerator:
             base_stats.update(self._kernel_interface.get_stats())
         
         return base_stats
+    
+    def reset_stats(self):
+        """Reset kernel statistics"""
+        if hasattr(self._kernel_interface, 'reset_stats'):
+            self._kernel_interface.reset_stats()
+        # For PyTorch interface, reset the stats dict
+        if hasattr(self, 'stats'):
+            self.stats = {
+                'ucb_calls': 0,
+                'backup_calls': 0,
+                'expansion_calls': 0,
+                'total_time': 0.0
+            }
     
     def _pytorch_find_expansion_nodes(self, current_nodes, children, visit_counts, valid_path_mask, wave_size, max_children):
         """PyTorch fallback for find_expansion_nodes"""
@@ -161,6 +263,9 @@ class ConsolidatedKernelInterface:
     
     def quantum_ucb_selection(self, *args, **kwargs):
         return self.kernels.quantum_ucb_selection(*args, **kwargs)
+    
+    def batched_add_children(self, *args, **kwargs):
+        return self.kernels.batched_add_children(*args, **kwargs)
     
     def get_stats(self):
         if CUDA_MANAGER_AVAILABLE:
@@ -244,7 +349,6 @@ def get_mcts_gpu_accelerator(device: torch.device = None) -> MCTSGPUAccelerator:
         
         _GLOBAL_KERNELS = MCTSGPUAccelerator(device)
         _GLOBAL_KERNELS._process_id = current_pid
-        logger.debug(f"Created new MCTS GPU accelerator for process {current_pid}")
     
     return _GLOBAL_KERNELS
 

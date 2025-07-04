@@ -1402,12 +1402,12 @@ def _precompile_cuda_kernels(device: str):
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
         
-        from mcts.gpu.unified_kernels import get_unified_kernels
+        from mcts.gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
         from mcts.core.mcts import MCTS, MCTSConfig
         
         # Force kernel loading
         print("  📦 Loading unified kernels...")
-        kernels = get_unified_kernels(torch.device(device))
+        kernels = get_mcts_gpu_accelerator(torch.device(device))
         
         # Create ultra-minimal MCTS instance to trigger kernel compilation
         print("  ⚙️  Initializing minimal MCTS system...")

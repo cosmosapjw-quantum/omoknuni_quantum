@@ -1049,9 +1049,9 @@ class ArenaManager:
                 
             # Pre-compile CUDA kernels to avoid JIT compilation during games
             try:
-                from mcts.gpu.unified_kernels import get_unified_kernels
+                from mcts.gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
                 logger.debug("Pre-loading CUDA kernels for arena...")
-                kernels = get_unified_kernels('cuda')
+                kernels = get_mcts_gpu_accelerator('cuda')
                 # Force compilation by calling a simple operation
                 if kernels and hasattr(kernels, 'compile'):
                     kernels.compile()

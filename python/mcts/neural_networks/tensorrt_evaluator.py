@@ -14,7 +14,8 @@ import logging
 import warnings
 import time
 
-from mcts.core.evaluator import Evaluator, EvaluatorConfig
+from mcts.core.evaluator import EvaluatorConfig
+from .base_neural_evaluator import BaseNeuralEvaluator
 from .nn_framework import ModelLoader, BaseGameModel, ModelMetadata
 from .resnet_evaluator import ResNetEvaluator
 from .tensorrt_converter import TensorRTConverter, TensorRTModel, optimize_for_hardware, HAS_TENSORRT
@@ -22,7 +23,7 @@ from .tensorrt_converter import TensorRTConverter, TensorRTModel, optimize_for_h
 logger = logging.getLogger(__name__)
 
 
-class TensorRTEvaluator(Evaluator):
+class TensorRTEvaluator(BaseNeuralEvaluator):
     """TensorRT-accelerated neural network evaluator for MCTS"""
     
     def __init__(

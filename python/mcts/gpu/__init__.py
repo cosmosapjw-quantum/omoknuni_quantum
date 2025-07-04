@@ -20,6 +20,16 @@ from .mcts_gpu_accelerator import (
 # Import CSR tree components
 from .csr_tree import CSRTree, CSRTreeConfig
 
+# Import refactored components
+try:
+    from .node_data_manager import NodeDataManager, NodeDataConfig
+    from .csr_storage import CSRStorage, CSRStorageConfig
+    from .ucb_selector import UCBSelector, UCBConfig
+    from .csr_tree_refactored import CSRTree as CSRTreeRefactored
+    REFACTORED_AVAILABLE = True
+except ImportError:
+    REFACTORED_AVAILABLE = False
+
 # Import CSR operations (now using unified kernels)
 from .csr_gpu_kernels import (
     CSRBatchOperations,

@@ -1947,14 +1947,14 @@ class UnifiedTrainingPipeline:
     def _warmup_cuda_kernels(self):
         """Warm up CUDA kernels (detection only, compilation handled by setup.py)"""
         try:
-            from mcts.gpu.unified_kernels import get_unified_kernels
+            from mcts.gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
             from mcts.core.mcts import MCTS, MCTSConfig
             from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
             import torch
             
             # Detect and load pre-compiled kernels
             logger.info("  📦 Loading unified kernels...")
-            kernels = get_unified_kernels(torch.device(self.config.mcts.device))
+            kernels = get_mcts_gpu_accelerator(torch.device(self.config.mcts.device))
             
             # Create minimal MCTS instance for kernel warmup
             logger.info("  ⚙️  Initializing MCTS system...")
@@ -1965,8 +1965,11 @@ class UnifiedTrainingPipeline:
                 enable_quantum=False  # Keep it simple
             )
             
-            # Use actual model for warmup instead of mock
-            evaluator = ResNetEvaluator(self.model, self.game_interface, self.config.mcts.device)
+            # Use actual model for warmup instead of mock  
+            evaluator = ResNetEvaluator(
+                model=self.model,
+                device=self.config.mcts.device
+            )
             mcts = MCTS(mcts_config, evaluator)
             
             # Run a minimal search for kernel warmup (not compilation)

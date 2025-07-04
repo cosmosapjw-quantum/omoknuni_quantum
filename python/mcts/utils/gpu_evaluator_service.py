@@ -214,8 +214,6 @@ class GPUEvaluatorService:
                 logger.warning(f"Failed to enable adaptive tuning: {e}")
                 self.adaptive_tuning_enabled = False
         
-        logger.debug(f"GPUEvaluatorService initialized on {device} with batch_size={batch_size}, "
-                    f"adaptive_tuning={self.adaptive_tuning_enabled}")
     
     def start(self):
         """Start the evaluation service"""
@@ -226,7 +224,6 @@ class GPUEvaluatorService:
         self.service_thread = threading.Thread(target=self._service_loop, daemon=True)
         self.service_thread.start()
         
-        logger.debug("GPUEvaluatorService started")
     
     def stop(self):
         """Stop the evaluation service"""
@@ -350,7 +347,6 @@ class GPUEvaluatorService:
     
     def _service_loop(self):
         """Main service loop that processes evaluation requests"""
-        logger.debug("GPUEvaluatorService loop started")
         
         while not self.stop_event.is_set():
             try:
@@ -438,12 +434,18 @@ class GPUEvaluatorService:
         batch_size = batch_request.states.shape[0]
         
         try:
-            # Convert pre-batched numpy arrays to tensors (much faster than individual conversions)
+            # Handle both numpy arrays and PyTorch tensors
             tensor_start = time.time()
-            state_tensor = torch.from_numpy(batch_request.states).float().to(self.device)
+            if isinstance(batch_request.states, torch.Tensor):
+                state_tensor = batch_request.states.float().to(self.device)
+            else:
+                state_tensor = torch.from_numpy(batch_request.states).float().to(self.device)
             
             if batch_request.legal_masks is not None:
-                legal_mask_tensor = torch.from_numpy(batch_request.legal_masks).bool().to(self.device)
+                if isinstance(batch_request.legal_masks, torch.Tensor):
+                    legal_mask_tensor = batch_request.legal_masks.bool().to(self.device)
+                else:
+                    legal_mask_tensor = torch.from_numpy(batch_request.legal_masks).bool().to(self.device)
             else:
                 legal_mask_tensor = None
             
@@ -507,7 +509,6 @@ class GPUEvaluatorService:
             max_buffer_size = max(1024, batch_size)  # At least 1024 for efficiency
             if not hasattr(self, '_cpu_policy_buffer') or self._cpu_policy_buffer.shape[0] < batch_size:
                 # Create pinned memory buffers for faster transfers (dynamically sized)
-                logger.debug(f"Allocating pinned memory buffers for batch size {max_buffer_size}")
                 self._cpu_policy_buffer = torch.empty((max_buffer_size, 225), dtype=torch.float32, pin_memory=True)
                 self._cpu_value_buffer = torch.empty((max_buffer_size,), dtype=torch.float32, pin_memory=True)
             
@@ -555,9 +556,6 @@ class GPUEvaluatorService:
             
             total_time = time.time() - start_time
             
-            # Log performance for monitoring
-            logger.debug(f"Batch {batch_request.request_id} processed - Size: {batch_size}, "
-                        f"Total: {total_time*1000:.1f}ms ({batch_size/total_time:.1f} req/s)")
             
         except Exception as e:
             logger.error(f"Error processing optimized batch {batch_request.request_id}: {e}")
@@ -621,7 +619,7 @@ class GPUEvaluatorService:
                         legal_masks.append(None)
                         
                 except Exception as e:
-                    self.logger.error(f"Error processing request {req.request_id}: {e}")
+                    logger.error(f"Error processing request {req.request_id}: {e}")
                     # Send error response
                     response = EvaluationResponse(
                         request_id=req.request_id,

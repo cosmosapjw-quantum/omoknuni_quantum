@@ -37,10 +37,32 @@ class CudaManager:
             force_rebuild: Ignored (compilation now handled by setup.py)
             disable_cuda: Disable CUDA detection entirely
         """
+        # Auto-detect build directory for both development and installed modes
         self.current_dir = Path(__file__).parent
-        # Use a shared build directory that all processes can access
-        project_root = self.current_dir.parent.parent.parent
-        self.build_dir = project_root / "build_cuda_shared"
+        
+        # Try multiple possible locations for the build directory
+        possible_build_dirs = [
+            # Current working directory (for when running from project root)
+            Path.cwd() / "build_cuda_shared",
+            # Parent of current working directory
+            Path.cwd().parent / "build_cuda_shared",
+            # Development mode: python/mcts/gpu -> project_root/build_cuda_shared
+            self.current_dir.parent.parent.parent / "build_cuda_shared",
+            # Look for build directories in site-packages parent directories
+            self.current_dir.parent.parent.parent.parent / "build_cuda_shared",
+            self.current_dir.parent.parent.parent.parent.parent / "build_cuda_shared",
+        ]
+        
+        # Find the first existing build directory
+        self.build_dir = None
+        for build_dir in possible_build_dirs:
+            if build_dir.exists() and (build_dir / "mcts_cuda_kernels.so").exists():
+                self.build_dir = build_dir
+                break
+        
+        # Fallback: use the first candidate if none found
+        if self.build_dir is None:
+            self.build_dir = possible_build_dirs[0]
         
         # Environment settings
         self.disable_cuda = disable_cuda or os.environ.get('DISABLE_CUDA_KERNELS', '0') == '1'
@@ -57,11 +79,11 @@ class CudaManager:
                 'batched_ucb_selection', 
                 'quantum_ucb_selection',
                 'vectorized_backup',
+                'batched_add_children',
                 'initialize_lookup_tables'
             ]
         }
         
-        logger.debug(f"CudaManager initialized: disable_cuda={self.disable_cuda}")
     
     def is_cuda_available(self) -> bool:
         """Check if CUDA is available and compilation is enabled"""
@@ -113,17 +135,12 @@ class CudaManager:
                 logger.debug("No pre-compiled kernels found")
                 return None
         
-        logger.debug(f"Returning kernel module: {self._kernel_module}")
         return self._kernel_module
     
     def _try_load_existing_module(self) -> bool:
         """Try to load an existing compiled module without recompilation"""
         try:
             module_path = self.build_dir / f"{self.kernel_config['module_name']}.so"
-            logger.debug(f"Checking for module at: {module_path}")
-            logger.debug(f"Module exists: {module_path.exists()}")
-            logger.debug(f"Working directory: {os.getcwd()}")
-            logger.debug(f"Build directory: {self.build_dir}")
             
             if not module_path.exists():
                 logger.debug(f"Module not found at {module_path}")
@@ -145,10 +162,8 @@ class CudaManager:
             # Add parallel_backup alias if needed
             if hasattr(module, 'vectorized_backup') and not hasattr(module, 'parallel_backup'):
                 setattr(module, 'parallel_backup', module.vectorized_backup)
-                logger.debug("Added parallel_backup alias to loaded module")
             
             self._kernel_module = module
-            logger.debug(f"Successfully loaded existing module from {module_path}")
             return True
             
         except Exception as e:
@@ -223,7 +238,6 @@ def get_cuda_manager(force_rebuild: bool = False, disable_cuda: bool = False) ->
         
         _cuda_manager = CudaManager(force_rebuild=force_rebuild, disable_cuda=disable_cuda)
         _cuda_manager._process_id = current_pid
-        logger.debug(f"Created new CUDA manager for process {current_pid}")
     
     return _cuda_manager
 

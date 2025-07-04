@@ -70,16 +70,19 @@ class PolicyHead(nn.Module):
         self._initialize_policy_weights()
     
     def _initialize_policy_weights(self):
-        """Initialize policy head weights to prevent gradient explosion"""
+        """Initialize policy head weights with proper symmetry breaking"""
         # Standard initialization for fc1
-        nn.init.kaiming_normal_(self.fc1.weight)
+        nn.init.kaiming_normal_(self.fc1.weight, mode='fan_in', nonlinearity='relu')
         if self.fc1.bias is not None:
             nn.init.constant_(self.fc1.bias, 0)
         
-        # Special small initialization for fc2 to prevent extreme log probabilities
-        nn.init.normal_(self.fc2.weight, mean=0.0, std=0.005)
+        # Proper initialization for fc2 to break symmetry while maintaining stability
+        # Use Xavier/Glorot initialization which considers both fan-in and fan-out
+        # This creates diverse initial policies without extreme values
+        nn.init.xavier_normal_(self.fc2.weight, gain=0.5)  # Reduced gain for stability
         if self.fc2.bias is not None:
-            nn.init.constant_(self.fc2.bias, 0)
+            # Small random bias to break symmetry
+            nn.init.uniform_(self.fc2.bias, -0.01, 0.01)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through policy head"""
@@ -94,6 +97,7 @@ class PolicyHead(nn.Module):
         # Fully connected layers
         x = self.fc1(x)
         x = F.relu(x, inplace=True)
+        
         x = self.fc2(x)
         
         # Log softmax for numerical stability during training
@@ -114,6 +118,21 @@ class ValueHead(nn.Module):
         # Fully connected layers
         self.fc1 = nn.Linear(board_size * board_size, fc_hidden)
         self.fc2 = nn.Linear(fc_hidden, 1)
+        
+        # Custom initialization for value head
+        self._initialize_value_weights()
+    
+    def _initialize_value_weights(self):
+        """Initialize value head to produce values near zero initially"""
+        # Standard initialization for fc1
+        nn.init.xavier_normal_(self.fc1.weight)
+        if self.fc1.bias is not None:
+            nn.init.constant_(self.fc1.bias, 0)
+        
+        # Small weights for fc2 to produce values near 0 initially
+        nn.init.normal_(self.fc2.weight, mean=0.0, std=0.1)
+        if self.fc2.bias is not None:
+            nn.init.constant_(self.fc2.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through value head"""
@@ -191,20 +210,30 @@ class ResNetModel(BaseGameModel):
         self._initialize_weights()
     
     def _initialize_weights(self):
-        """Initialize network weights"""
+        """Initialize network weights with proper symmetry breaking"""
         for module in self.modules():
             if isinstance(module, nn.Conv2d):
-                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                # Use fan_in mode for better gradient flow in deep networks
+                nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
             elif isinstance(module, nn.BatchNorm2d):
-                nn.init.constant_(module.weight, 1)
+                # Add small noise to break symmetry in batch norm
+                nn.init.normal_(module.weight, mean=1.0, std=0.02)
                 nn.init.constant_(module.bias, 0)
             elif isinstance(module, nn.Linear):
-                # Standard initialization for most linear layers
-                nn.init.kaiming_normal_(module.weight)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0)
+                # Use Xavier initialization for linear layers (except policy head)
+                if module not in [self.policy_head.fc2]:  # Skip policy head fc2
+                    nn.init.xavier_normal_(module.weight)
+                    if module.bias is not None:
+                        nn.init.constant_(module.bias, 0)
+        
+        # Special initialization for input convolution to break spatial symmetry
+        if hasattr(self, 'conv_input'):
+            # Add spatial noise pattern to break symmetry
+            with torch.no_grad():
+                noise = torch.randn_like(self.conv_input.weight) * 0.01
+                self.conv_input.weight.add_(noise)
         
         # Policy head has its own custom initialization in PolicyHead.__init__
     

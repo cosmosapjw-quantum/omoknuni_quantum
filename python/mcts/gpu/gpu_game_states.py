@@ -84,7 +84,6 @@ class GPUGameStates:
         # Debug logging
         import logging
         logger = logging.getLogger(__name__)
-        logger.debug(f"Initializing storage for game_type={self.game_type} (value={self.game_type.value}), board_size={self.board_size}")
         
         if self.game_type == GameType.CHESS:
             # Chess state representation
@@ -415,7 +414,7 @@ class GPUGameStates:
                                  device=self.device, dtype=torch.float32)
             
             # Channel 0: Current board state (all stones)
-            features[:, 0] = (boards > 0).float()
+            features[:, 0] = (boards != 0).float()  # CRITICAL FIX: Use != 0 to include both players!
             
             # Channel 1: Current player indicator (constant plane)
             features[:, 1] = current_players.float().view(-1, 1, 1).expand(-1, self.board_size, self.board_size)
