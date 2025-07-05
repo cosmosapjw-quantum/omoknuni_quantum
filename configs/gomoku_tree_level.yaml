@@ -1,7 +1,7 @@
-# Gomoku Tree-Level Quantum Configuration
-# AlphaZero with tree-level quantum corrections for enhanced exploration
+# Gomoku Classical Configuration
+# Classical AlphaZero implementation
 
-experiment_name: gomoku_tree_level_quantum
+experiment_name: gomoku_classical
 seed: 42
 log_level: INFO
 num_iterations: 300
@@ -40,20 +40,8 @@ mcts:
   use_mixed_precision: true
   use_tensor_cores: true
   
-  # Tree-level quantum features
-  quantum_level: tree_level
-  enable_quantum: true
-  quantum_version: 'v2'
-  quantum_config:
-    quantum_coupling: 0.1
-    quantum_temperature: 1.0
-    decoherence_rate: 0.0  # No decoherence at tree level
-    measurement_noise: 0.0
-    # Interference settings
-    interference_alpha: 0.05
-    interference_method: minhash
-    minhash_size: 64
-    phase_kick_strength: 0.1
+  # Classical MCTS only
+  enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
@@ -113,7 +101,7 @@ training:
   # Training loop
   num_epochs: 10
   
-  # Self-play with quantum - 12 cores
+  # Self-play - 12 cores
   num_games_per_iteration: 200
   num_workers: 12
   max_moves_per_game: 225
@@ -151,7 +139,8 @@ arena:
   update_elo: true
   
   # Random policy checks
-  min_win_rate_vs_random: 0.95
+  # min_win_rate_vs_random: 0.95  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Logging
   save_game_records: false

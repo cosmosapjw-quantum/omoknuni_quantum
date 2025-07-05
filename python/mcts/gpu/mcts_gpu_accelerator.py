@@ -97,10 +97,8 @@ class MCTSGPUAccelerator:
         return self._pytorch_find_expansion_nodes(*args, **kwargs)
     
     def quantum_ucb_selection(self, *args, **kwargs):
-        """Quantum-enhanced UCB selection"""
-        if hasattr(self._kernel_interface, 'quantum_ucb_selection'):
-            return self._kernel_interface.quantum_ucb_selection(*args, **kwargs)
-        return self.batched_ucb_selection(*args, **kwargs)  # Fallback to classical
+        """Placeholder for quantum UCB (disabled) - uses classical UCB"""
+        return self.batched_ucb_selection(*args, **kwargs)
     
     def batched_add_children(self, *args, **kwargs):
         """Batched addition of children with proper parent assignment

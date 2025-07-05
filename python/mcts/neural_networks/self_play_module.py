@@ -20,8 +20,7 @@ from mcts.core.game_interface import GameInterface, GameType
 from mcts.core.evaluator import AlphaZeroEvaluator
 from mcts.core.mcts import MCTS, MCTSConfig
 from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
-from mcts.utils.config_system import QuantumLevel
-from mcts.quantum import OptimizedConfig as QuantumConfig, create_quantum_mcts
+# Quantum imports removed
 from .unified_training_pipeline import GameExample
 
 logger = logging.getLogger(__name__)
@@ -446,22 +445,8 @@ class SelfPlayManager:
             logger.debug(f"P{resigning_player} resigned, P{winner} wins")
     
     def _create_quantum_config(self):
-        """Create quantum configuration from MCTS config"""
-        return QuantumConfig(
-            quantum_level=self.config.mcts.quantum_level.value,
-            enable_quantum=self.config.mcts.enable_quantum,
-            min_wave_size=self.config.mcts.min_wave_size,
-            optimal_wave_size=self.config.mcts.max_wave_size,
-            hbar_eff=self.config.mcts.quantum_coupling,
-            phase_kick_strength=self.config.mcts.phase_kick_strength,
-            interference_alpha=self.config.mcts.interference_alpha,
-            coupling_strength=self.config.mcts.quantum_coupling,
-            temperature=self.config.mcts.quantum_temperature,
-            decoherence_rate=self.config.mcts.decoherence_rate,
-            fast_mode=True,  # Enable fast mode for training
-            device=self.config.mcts.device,
-            use_mixed_precision=self.config.mcts.use_mixed_precision
-        )
+        """Placeholder for quantum config (disabled)"""
+        return None
 
     def _create_mcts(self, evaluator: Any, is_sequential: bool = True):
         """Create MCTS instance with quantum features if enabled
@@ -504,9 +489,8 @@ class SelfPlayManager:
             game_type=self.game_type,
             board_size=self.config.game.board_size,
         
-        # Enable quantum features if configured
-        enable_quantum=self.config.mcts.enable_quantum,
-        quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
+        # Quantum features disabled
+        enable_quantum=False,
         
         # Virtual loss for parallel exploration
         enable_virtual_loss=True,
@@ -516,18 +500,8 @@ class SelfPlayManager:
         profile_gpu_kernels=False  # Don't profile in main process MCTS
         )
         
-        # Create MCTS with quantum features if enabled
-        if self.config.mcts.enable_quantum and self.config.mcts.quantum_level != QuantumLevel.CLASSICAL:
-            # Create standard MCTS first
-            base_mcts = MCTS(mcts_config, evaluator)
-            # Wrap with quantum features
-            mcts = create_quantum_mcts(
-                enable_quantum=True,
-                quantum_level=self.config.mcts.quantum_level.value,
-                mcts=base_mcts
-            )
-        else:
-            mcts = MCTS(mcts_config, evaluator)
+        # Create classical MCTS
+        mcts = MCTS(mcts_config, evaluator)
         
         return mcts
 
@@ -624,8 +598,7 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         # Use optimized MCTS directly as requested
         from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.gpu.gpu_game_states import GameType as GPUGameType
-        from mcts.quantum import create_quantum_mcts
-        from mcts.utils.config_system import QuantumLevel
+        # Quantum imports removed
         from mcts.utils.gpu_evaluator_service import RemoteEvaluator
         # Use optimized evaluator for performance improvements
         from mcts.utils.optimized_remote_evaluator import OptimizedRemoteEvaluator
@@ -761,36 +734,15 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         dirichlet_epsilon=0.25,  # Add exploration noise to root
         dirichlet_alpha=0.3,  # Dirichlet noise parameter
         board_size=config.game.board_size,  # Add missing board_size parameter
-        # Quantum features
-        enable_quantum=config.mcts.enable_quantum,
-        quantum_config=None,  # Will be created if needed
+        # Quantum features disabled
+        enable_quantum=False,
         # Debug options - disable for workers
         enable_debug_logging=False,
         profile_gpu_kernels=False
         )
         
-        # CRITICAL FIX: Disable quantum features in workers to prevent state pool corruption
-        # The quantum wrapper creates its own MCTS with default config, ignoring our 62,500 node config
-        # This causes workers to get only ~100 nodes instead of 62,500, leading to state pool exhaustion
-        force_classical_in_workers = True
-        
-        # Create MCTS - quantum disabled in workers due to config override bug in quantum wrapper
-        if config.mcts.enable_quantum and config.mcts.quantum_level != QuantumLevel.CLASSICAL and not force_classical_in_workers:
-            # Create standard MCTS first
-            base_mcts = MCTS(mcts_config, evaluator)
-            # Wrap with quantum features
-            try:
-                mcts = create_quantum_mcts(
-                    enable_quantum=True,
-                    quantum_level=config.mcts.quantum_level.value,
-                    mcts=base_mcts
-                )
-            except Exception as e:
-                logger.warning(f"[WORKER {game_idx}] Quantum MCTS creation failed: {e}, using classical")
-                mcts = base_mcts
-        else:
-            # Use classical MCTS with correct configuration
-            mcts = MCTS(mcts_config, evaluator)
+        # Create classical MCTS
+        mcts = MCTS(mcts_config, evaluator)
         
         # Clean logging - only essential information
         logger.debug(f"[WORKER {game_idx}] MCTS configured: {nodes_per_worker} nodes, {config.mcts.num_simulations} simulations, device: {mcts_config.device}")

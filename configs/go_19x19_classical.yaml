@@ -1,7 +1,7 @@
-# Go 19x19 Quantum Configuration
-# Professional-level Go training with quantum enhancements
+# Go 19x19 Classical Configuration
+# Professional-level Go training with classical MCTS
 
-experiment_name: go_19x19_quantum
+experiment_name: go_19x19_classical
 seed: 42
 log_level: INFO
 num_iterations: 1000
@@ -28,9 +28,9 @@ mcts:
   max_wave_size: 2048  # Reduced to fit Go's larger state
   batch_size: 256  # Smaller batches for 19x19
   
-  # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
-  virtual_loss: 0.0
-  enable_virtual_loss: false
+  # Virtual loss for exploration diversity
+  virtual_loss: 3.0
+  enable_virtual_loss: true
   
   # Larger memory for Go - 64GB RAM advantage
   memory_pool_size_mb: 8192  # Double for Go
@@ -42,24 +42,8 @@ mcts:
   use_mixed_precision: true
   use_tensor_cores: true
   
-  # One-loop quantum for complex strategic game
-  quantum_level: one_loop
-  enable_quantum: true
-  quantum_version: 'v2'
-  quantum_config:
-    quantum_coupling: 0.15
-    quantum_temperature: 2.0
-    decoherence_rate: 0.02
-    measurement_noise: 0.002
-    # Path integral for long-range planning
-    path_integral_steps: 30
-    path_integral_beta: 1.5
-    use_wick_rotation: true
-    # Interference for joseki diversity
-    interference_alpha: 0.1
-    interference_method: minhash
-    minhash_size: 256
-    phase_kick_strength: 0.2
+  # Classical MCTS only
+  enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
@@ -161,7 +145,8 @@ arena:
   update_elo: true
   
   # Random policy checks
-  min_win_rate_vs_random: 0.99  # Should dominate random
+  # min_win_rate_vs_random: 0.99  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Tournament settings
   tournament_rounds: 1

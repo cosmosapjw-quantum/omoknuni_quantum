@@ -42,7 +42,6 @@ mcts:
   use_tensor_cores: false     # Disabled for debugging
   
   # Quantum features - disabled
-  quantum_level: classical
   enable_quantum: false
   
   # Device configuration
@@ -157,7 +156,8 @@ arena:
   update_elo: true
   
   # Random policy evaluation
-  min_win_rate_vs_random: 0.5
+  # min_win_rate_vs_random: 0.5  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Tournament settings
   tournament_rounds: 1

@@ -40,32 +40,14 @@ from .gpu import (
     GPUTreeKernels
 )
 
-# Quantum-inspired components (optional)
-try:
-    from .quantum import (
-        QuantumConfig,
-        create_quantum_mcts,
-        QuantumLevel,
-        PathIntegral, PathIntegralConfig,
-        DecoherenceEngine, DecoherenceConfig,
-        MinHashInterference, MinHashConfig
-    )
-    __all_quantum = [
-        "QuantumConfig",
-        "create_quantum_mcts",
-        "QuantumLevel",
-        "PathIntegral", "PathIntegralConfig",
-        "DecoherenceEngine", "DecoherenceConfig",
-        "MinHashInterference", "MinHashConfig"
-    ]
-except ImportError:
-    __all_quantum = []
+# Quantum components removed
+__all_quantum = []
 
 # Utility components
 from .utils import (
     AlphaZeroConfig,
     MCTSFullConfig,
-    QuantumLevel,
+    # QuantumLevel removed,
     HardwareInfo,
     create_default_config,
     merge_configs

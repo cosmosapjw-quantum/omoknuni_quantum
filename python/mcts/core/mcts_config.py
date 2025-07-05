@@ -52,17 +52,8 @@ class MCTSConfig:
     game_type: Union[GameType, LegacyGameType] = GameType.GOMOKU
     board_size: int = 15
     
-    # Quantum features - Full integration (v1 and v2)
+    # Quantum features disabled
     enable_quantum: bool = False
-    quantum_config: Optional['QuantumConfig'] = None
-    quantum_version: str = 'v2'  # 'v1' or 'v2'
-    
-    # v2.0 specific quantum parameters
-    quantum_branching_factor: Optional[int] = None  # Auto-detect if None
-    quantum_avg_game_length: Optional[int] = None   # Auto-detect if None
-    enable_phase_adaptation: bool = True
-    envariance_threshold: float = 1e-3
-    envariance_check_interval: int = 1000
     
     # Virtual loss for leaf parallelization
     enable_virtual_loss: bool = True
@@ -101,28 +92,9 @@ class MCTSConfig:
     enable_state_pool_debug: bool = False  # Specific logging for state pool management
     profile_gpu_kernels: bool = False
     
-    def get_or_create_quantum_config(self) -> 'QuantumConfig':
-        """Get quantum config, creating default if needed"""
-        if self.quantum_config is None:
-            # Create unified quantum config compatible with new implementation
-            from ..quantum import QuantumMode, QuantumConfig
-            
-            # Determine quantum mode based on legacy settings
-            if not self.enable_quantum:
-                quantum_mode = QuantumMode.CLASSICAL
-            elif self.quantum_version == 'v2' or self.enable_phase_adaptation:
-                quantum_mode = QuantumMode.PRAGMATIC
-            else:
-                quantum_mode = QuantumMode.MINIMAL
-            
-            self.quantum_config = QuantumConfig(
-                quantum_mode=quantum_mode,
-                base_c_puct=self.c_puct,
-                device=self.device,
-                enable_phase_adaptation=self.enable_phase_adaptation,
-                enable_power_law_annealing=True if quantum_mode != QuantumMode.CLASSICAL else False
-            )
-        return self.quantum_config
+    def get_or_create_quantum_config(self):
+        """Placeholder for quantum config (disabled)"""
+        return None
     
     def _estimate_branching_factor(self) -> int:
         """Estimate branching factor based on game type"""

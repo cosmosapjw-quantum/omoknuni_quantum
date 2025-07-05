@@ -1,7 +1,7 @@
-# Gomoku One-Loop Quantum Configuration
-# Full quantum field theory corrections for maximum exploration
+# Gomoku Classical Configuration
+# Classical MCTS implementation
 
-experiment_name: gomoku_one_loop_quantum
+experiment_name: gomoku_classical
 seed: 42
 log_level: INFO
 num_iterations: 500
@@ -23,14 +23,14 @@ mcts:
   temperature_threshold: 30
   temperature_final: 0.1
   
-  # Performance optimization - adjusted for one-loop overhead
-  min_wave_size: 1536  # Lower for one-loop overhead
-  max_wave_size: 2560  # Slightly reduced
-  batch_size: 320  # Balanced for quantum overhead
+  # Performance optimization
+  min_wave_size: 2048  # Optimized for RTX 3060 Ti
+  max_wave_size: 3072  # Maximum for hardware
+  batch_size: 512  # Optimized batch size
   
-  # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
-  virtual_loss: 0.0
-  enable_virtual_loss: false
+  # Virtual loss for exploration diversity
+  virtual_loss: 3.0
+  enable_virtual_loss: true
   
   # Memory settings - 8GB VRAM + 64GB RAM
   memory_pool_size_mb: 4096
@@ -42,24 +42,8 @@ mcts:
   use_mixed_precision: true
   use_tensor_cores: true
   
-  # One-loop quantum features
-  quantum_level: one_loop
-  enable_quantum: true
-  quantum_version: 'v2'
-  quantum_config:
-    quantum_coupling: 0.15  # Stronger coupling for one-loop
-    quantum_temperature: 1.5
-    decoherence_rate: 0.01
-    measurement_noise: 0.001
-    # Path integral configuration
-    path_integral_steps: 20
-    path_integral_beta: 1.0
-    use_wick_rotation: true
-    # Interference settings
-    interference_alpha: 0.08
-    interference_method: minhash
-    minhash_size: 128  # Larger for one-loop
-    phase_kick_strength: 0.15
+  # Classical MCTS only
+  enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
@@ -79,7 +63,7 @@ mcts:
   tensorrt_engine_cache_dir: null # Custom cache directory
 
 network:
-  # Slightly larger network for quantum features
+  # Standard network configuration
   model_type: resnet
   input_channels: 20
   num_res_blocks: 12
@@ -99,9 +83,9 @@ network:
 
 training:
   # Basic training parameters
-  batch_size: 640  # Slightly lower due to quantum overhead
+  batch_size: 768  # Optimized for RTX 3060 Ti
   learning_rate: 0.01
-  learning_rate_schedule: cosine  # Smoother for quantum
+  learning_rate_schedule: cosine
   lr_decay_steps: 100
   lr_decay_rate: 0.1
   min_learning_rate: 0.00001
@@ -119,14 +103,14 @@ training:
   # Training loop
   num_epochs: 10
   
-  # Self-play with full quantum - 12 cores
+  # Self-play - 12 cores
   num_games_per_iteration: 100
   num_workers: 1
   max_moves_per_game: 225
   resign_threshold: -0.95
   
   # Data handling - 64GB RAM
-  window_size: 600000  # Larger buffer for quantum diversity
+  window_size: 500000  # Standard buffer size
   augment_data: true
   mixed_precision: true
   
@@ -157,7 +141,8 @@ arena:
   update_elo: true
   
   # Random policy checks
-  min_win_rate_vs_random: 0.95
+  # min_win_rate_vs_random: 0.95  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Logging
   save_game_records: false

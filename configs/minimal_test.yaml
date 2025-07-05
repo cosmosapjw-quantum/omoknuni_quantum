@@ -22,7 +22,7 @@ mcts:
   max_wave_size: 128
   batch_size: 64
   
-  # Virtual loss - disabled for quantum versions (quantum interference handles diversity)
+  # Virtual loss
   virtual_loss: 0.0
   enable_virtual_loss: false
   
@@ -31,12 +31,8 @@ mcts:
   max_tree_nodes: 10000
   tree_reuse: false
   
-  # Test quantum features
-  quantum_level: classical
-  enable_quantum: true
-  quantum_version: 'v2'
-  quantum_config:
-    quantum_coupling: 0.1
+  # Quantum features disabled
+  enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
@@ -98,7 +94,8 @@ arena:
   mcts_simulations: 50
   
   # Skip random evaluation
-  min_win_rate_vs_random: 0.5
+  # min_win_rate_vs_random: 0.5  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Minimal logging
   save_game_records: false

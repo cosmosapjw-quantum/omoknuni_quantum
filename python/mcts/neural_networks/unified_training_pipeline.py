@@ -33,7 +33,7 @@ import time
 
 # Import only essential components at module level
 from mcts.utils.config_system import (
-    AlphaZeroConfig, QuantumLevel, create_default_config,
+    AlphaZeroConfig, create_default_config,
     merge_configs
 )
 
@@ -719,37 +719,15 @@ class UnifiedTrainingPipeline:
         return examples
     
     def _create_quantum_config(self):
-        """Create quantum configuration from MCTS config"""
-        from mcts.quantum.quantum_features import QuantumConfig
-        
-        return QuantumConfig(
-            quantum_level=self.config.mcts.quantum_level.value,
-            enable_quantum=self.config.mcts.enable_quantum,
-            min_wave_size=self.config.mcts.min_wave_size,
-            optimal_wave_size=self.config.mcts.max_wave_size,
-            hbar_eff=self.config.mcts.quantum_coupling,
-            phase_kick_strength=self.config.mcts.phase_kick_strength,
-            interference_alpha=self.config.mcts.interference_alpha,
-            coupling_strength=self.config.mcts.quantum_coupling,
-            temperature=self.config.mcts.quantum_temperature,
-            decoherence_rate=self.config.mcts.decoherence_rate,
-            fast_mode=True,  # Enable fast mode for training
-            device=self.config.mcts.device,
-            use_mixed_precision=self.config.mcts.use_mixed_precision
-        )
+        """Placeholder for quantum config (disabled)"""
+        return None
     
     def _play_single_game(self, evaluator, game_idx: int) -> List[GameExample]:
         """Play a single self-play game"""
         from mcts.core.mcts import MCTS, MCTSConfig
         from mcts.gpu.gpu_game_states import GameType as GPUGameType
         
-        # Only import quantum features if quantum is enabled
-        if getattr(self.config.mcts, 'enable_quantum', False):
-            try:
-                from mcts.quantum.quantum_features import create_quantum_mcts
-            except ImportError:
-                # Quantum features not available, disable quantum
-                pass
+        # Quantum features disabled
         
         # Convert game_interface.GameType to gpu_game_states.GameType
         game_type_mapping = {
@@ -794,18 +772,8 @@ class UnifiedTrainingPipeline:
         )
         
         
-        # Create MCTS with quantum features if enabled
-        if self.config.mcts.enable_quantum and self.config.mcts.quantum_level != QuantumLevel.CLASSICAL:
-            # Create standard MCTS first
-            base_mcts = MCTS(mcts_config, evaluator)
-            # Wrap with quantum features
-            mcts = create_quantum_mcts(
-                enable_quantum=True,
-                quantum_level=self.config.mcts.quantum_level.value,
-                mcts=base_mcts
-            )
-        else:
-            mcts = MCTS(mcts_config, evaluator)
+        # Create classical MCTS
+        mcts = MCTS(mcts_config, evaluator)
         
         # Play game
         examples = []
@@ -1369,8 +1337,10 @@ class UnifiedTrainingPipeline:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         else:
-            # First model - check against random baseline
-            accepted = win_rate_vs_random >= self.config.arena.min_win_rate_vs_random
+            # First model - check against random baseline with logarithmic scheduling
+            dynamic_threshold = self._get_dynamic_win_rate_threshold()
+            accepted = win_rate_vs_random >= dynamic_threshold
+            tqdm.write(f"      Dynamic threshold: {dynamic_threshold:.1%} (iteration {self.iteration})")
         
         # Get final ELO ratings
         current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
@@ -1554,6 +1524,28 @@ class UnifiedTrainingPipeline:
                 return wins / games
         
         return 0.55  # Default slightly above 50% since we beat the best
+    
+    def _get_dynamic_win_rate_threshold(self) -> float:
+        """Calculate dynamic win rate threshold using logarithmic scheduling
+        
+        Formula: threshold(N) = 0.4366 * log10(N / 0.7682)
+        Target: 100% at iteration 150
+        Clamped between 5% and 100%
+        """
+        import numpy as np
+        
+        # Logarithmic scheduling parameters (pre-calculated for target=150)
+        A = 0.4366
+        B = 0.7682
+        
+        # Calculate threshold
+        if self.iteration < 1:
+            return 0.05
+        
+        threshold = A * np.log10(self.iteration / B)
+        
+        # Clamp between 5% and 100%
+        return min(max(threshold, 0.05), 1.0)
     
     def _save_best_model(self):
         """Save current model as best"""

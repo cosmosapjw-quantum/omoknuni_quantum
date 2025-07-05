@@ -42,7 +42,6 @@ mcts:
   use_tensor_cores: true
   
   # Quantum features - disabled
-  quantum_level: classical
   enable_quantum: false
   classical_only_mode: true
   enable_fast_ucb: true

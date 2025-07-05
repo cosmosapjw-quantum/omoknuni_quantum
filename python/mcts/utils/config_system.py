@@ -66,10 +66,8 @@ def convert_field_value(value: Any, field_type: type) -> Any:
 
 
 class QuantumLevel(Enum):
-    """Quantum computation level for MCTS"""
-    CLASSICAL = "classical"      # No quantum features
-    TREE_LEVEL = "tree_level"    # Tree-level quantum corrections
-    ONE_LOOP = "one_loop"        # One-loop quantum corrections
+    """Quantum computation level (disabled)"""
+    CLASSICAL = "classical"      # Classical only
 
 
 @dataclass
@@ -129,26 +127,8 @@ class MCTSFullConfig:
     tensorrt_max_batch_size: int = 512  # Maximum batch size to optimize for
     tensorrt_engine_cache_dir: Optional[str] = None  # Custom cache directory
     
-    # Quantum features
-    quantum_level: QuantumLevel = QuantumLevel.CLASSICAL
+    # Quantum features disabled
     enable_quantum: bool = False
-    
-    # Quantum physics parameters
-    quantum_coupling: float = 0.1
-    quantum_temperature: float = 1.0
-    decoherence_rate: float = 0.01
-    measurement_noise: float = 0.0
-    
-    # Path integral parameters
-    path_integral_steps: int = 10
-    path_integral_beta: float = 1.0
-    use_wick_rotation: bool = True
-    
-    # Interference parameters
-    interference_alpha: float = 0.05
-    interference_method: str = "minhash"  # minhash, phase_kick, cosine
-    minhash_size: int = 64
-    phase_kick_strength: float = 0.1
     
     # Wave MCTS specific
     wave_min_size: int = 256
@@ -177,7 +157,6 @@ class MCTSFullConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, handling enums"""
         data = asdict(self)
-        data['quantum_level'] = self.quantum_level.value
         return data
     
     @classmethod
@@ -522,8 +501,7 @@ class AlphaZeroConfig:
         if self.mcts.max_wave_size < self.mcts.min_wave_size:
             warnings.append("MCTS max_wave_size < min_wave_size")
         
-        if self.mcts.quantum_level != QuantumLevel.CLASSICAL and not self.mcts.enable_quantum:
-            warnings.append("Quantum level set but quantum not enabled")
+        # Quantum validation removed
         
         # Training validation
         if self.training.num_workers > self.training.num_games_per_iteration:

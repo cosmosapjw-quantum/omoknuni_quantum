@@ -44,7 +44,6 @@ mcts:
   use_tensor_cores: true     # Leverage Ampere architecture
   
   # Performance mode
-  quantum_level: classical
   enable_quantum: false
   classical_only_mode: true     # Optimize for performance
   enable_fast_ucb: true
@@ -170,7 +169,8 @@ arena:
   elo_health_monitoring: true
   
   # Performance expectations for strong play
-  min_win_rate_vs_random: 0.88  # Higher expectation with more training time
+  # min_win_rate_vs_random: 0.88  # DEPRECATED - Now using dynamic logarithmic scheduling
+  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Tournament settings
   tournament_rounds: 1

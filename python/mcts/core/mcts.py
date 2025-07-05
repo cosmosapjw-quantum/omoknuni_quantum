@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from ..gpu.csr_tree import CSRTree, CSRTreeConfig
 from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig, GameType
 from ..gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
-from ..quantum import QuantumConfig, SearchPhase, create_pragmatic_quantum_mcts
+# Quantum imports removed
 from .game_interface import GameInterface, GameType as LegacyGameType
 from .mcts_config import MCTSConfig
 from .wave_search import WaveSearch
@@ -185,18 +185,9 @@ class MCTS:
         self.stats_internal = defaultdict(float)
         
     def _initialize_quantum(self):
-        """Initialize quantum features if enabled"""
+        """Placeholder for quantum features (disabled)"""
         self.quantum_features = None
         self.quantum_total_simulations = 0
-        self.quantum_phase = SearchPhase.EXPLORATION
-        
-        if self.config.enable_quantum and not self.config.classical_only_mode:
-            quantum_config = self.config.get_or_create_quantum_config()
-            self.quantum_features = create_pragmatic_quantum_mcts(
-                quantum_config,
-                self.tree,
-                self.device
-            )
             
     def search(self, state: Any, num_simulations: Optional[int] = None) -> np.ndarray:
         """Run MCTS search from given state
@@ -269,9 +260,7 @@ class MCTS:
             
             completed += actual_completed
             
-            # Update quantum state if enabled
-            if self.quantum_features and self.config.quantum_version == 'v2':
-                self._update_quantum_state(completed, wave_size)
+            # Quantum features disabled
                 
         # Extract and return policy
         policy = self._extract_policy(0)
@@ -279,14 +268,8 @@ class MCTS:
         return policy
         
     def _update_quantum_state(self, completed: int, wave_size: int):
-        """Update quantum state during search"""
-        self.quantum_total_simulations = completed
-        
-        # Check for convergence
-        if (self.config.enable_phase_adaptation and 
-            hasattr(self.quantum_features, 'check_convergence')):
-            if self.quantum_features.check_convergence(self.tree):
-                pass  # Convergence reached
+        """Placeholder for quantum state updates (disabled)"""
+        pass
                 
     def _extract_policy(self, node_idx: int) -> np.ndarray:
         """Extract policy from node visit counts"""
