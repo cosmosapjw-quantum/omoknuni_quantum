@@ -10,9 +10,9 @@ num_iterations: 200  # Increased for 3-4 day training (est. 1 iter/hour = 72-96 
 game:
   game_type: gomoku
   board_size: 15
-  gomoku_use_renju: false     # Pure freestyle Gomoku
-  gomoku_use_omok: false      # No opening restrictions
-  gomoku_use_pro_long_opening: false
+  gomoku_use_renju: false            # Pure freestyle Gomoku
+  gomoku_use_omok: false             # Pure freestyle Gomoku
+  gomoku_use_pro_long_opening: false # No opening restrictions
 
 mcts:
   # Optimized for RTX 3060 Ti performance and quality balance
@@ -57,7 +57,11 @@ mcts:
   enable_debug_logging: false
   enable_state_pool_debug: false
   
-  # TensorRT with aggressive optimization
+  # Progressive widening parameters for lazy expansion
+  progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
+  progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
+  # TensorRT optimizations for RTX 3060 Ti
   use_tensorrt: true
   tensorrt_fp16: true
   tensorrt_fallback: true

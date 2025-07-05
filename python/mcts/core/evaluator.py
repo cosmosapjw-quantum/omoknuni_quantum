@@ -315,3 +315,101 @@ class AlphaZeroEvaluator(Evaluator):
         self._update_stats(batch_size, eval_time)
         
         return policies, values
+
+
+class RandomEvaluator(Evaluator):
+    """Random evaluator for baseline comparisons
+    
+    Returns random policies and neutral values for all positions.
+    Useful for testing and as a baseline opponent.
+    """
+    
+    def __init__(self, action_size: int = 225, config: Optional[EvaluatorConfig] = None):
+        """Initialize random evaluator
+        
+        Args:
+            action_size: Number of possible actions
+            config: Evaluator configuration
+        """
+        if config is None:
+            config = EvaluatorConfig()
+        
+        super().__init__(config, action_size)
+        
+        # Initialize random seed for reproducibility
+        self.rng = np.random.RandomState(42)
+    
+    def evaluate(
+        self, 
+        state: np.ndarray,
+        legal_mask: Optional[np.ndarray] = None,
+        temperature: float = 1.0
+    ) -> Tuple[np.ndarray, float]:
+        """Return random policy and neutral value"""
+        start_time = time.time()
+        
+        # Create random policy
+        policy = self.rng.random(self.action_size).astype(np.float32)
+        
+        # Apply legal mask if provided
+        if legal_mask is not None:
+            policy[~legal_mask] = 0
+            policy_sum = policy.sum()
+            if policy_sum > 0:
+                policy = policy / policy_sum
+            else:
+                # Fallback to uniform over legal moves
+                legal_actions = np.where(legal_mask)[0]
+                policy = np.zeros(self.action_size, dtype=np.float32)
+                if len(legal_actions) > 0:
+                    policy[legal_actions] = 1.0 / len(legal_actions)
+        else:
+            # Normalize
+            policy = policy / policy.sum()
+        
+        # Random value between -0.1 and 0.1 (slightly biased around 0)
+        value = (self.rng.random() - 0.5) * 0.2
+        
+        eval_time = time.time() - start_time
+        self._update_stats(1, eval_time)
+        
+        return policy, float(value)
+    
+    def evaluate_batch(
+        self,
+        states: np.ndarray,
+        legal_masks: Optional[np.ndarray] = None,
+        temperature: float = 1.0
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Return random policies and neutral values for batch"""
+        start_time = time.time()
+        batch_size = states.shape[0]
+        
+        # Create random policies
+        policies = self.rng.random((batch_size, self.action_size)).astype(np.float32)
+        
+        # Apply legal masks if provided
+        if legal_masks is not None:
+            for i in range(batch_size):
+                policies[i][~legal_masks[i]] = 0
+                policy_sum = policies[i].sum()
+                if policy_sum > 0:
+                    policies[i] = policies[i] / policy_sum
+                else:
+                    # Fallback to uniform over legal moves
+                    legal_actions = np.where(legal_masks[i])[0]
+                    policies[i] = np.zeros(self.action_size, dtype=np.float32)
+                    if len(legal_actions) > 0:
+                        policies[i][legal_actions] = 1.0 / len(legal_actions)
+        else:
+            # Normalize each policy
+            for i in range(batch_size):
+                policies[i] = policies[i] / policies[i].sum()
+        
+        # Random values between -0.1 and 0.1
+        values = (self.rng.random(batch_size) - 0.5) * 0.2
+        
+        eval_time = time.time() - start_time
+        self._update_stats(batch_size, eval_time)
+        
+        return policies, values.astype(np.float32)

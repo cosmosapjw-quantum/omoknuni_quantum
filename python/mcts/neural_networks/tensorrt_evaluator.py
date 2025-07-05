@@ -35,11 +35,13 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
         device: Optional[str] = None,
         network_config: Optional[Any] = None,
         tensorrt_engine_path: Optional[str] = None,
+        model_path: Optional[str] = None,  # Added for compatibility
         fp16_mode: bool = True,
         int8_mode: bool = False,
         max_batch_size: int = 512,
         fallback_to_pytorch: bool = True,
-        cache_engine: bool = True
+        cache_engine: bool = True,
+        num_threads: int = 1  # Added for compatibility
     ):
         """
         Initialize TensorRT evaluator
@@ -52,15 +54,26 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
             device: Device to run on
             network_config: Neural network architecture config
             tensorrt_engine_path: Path to pre-built TensorRT engine
+            model_path: Alternative to tensorrt_engine_path for compatibility
             fp16_mode: Enable FP16 precision
             int8_mode: Enable INT8 precision (requires calibration)
             max_batch_size: Maximum batch size for optimization
             fallback_to_pytorch: Fall back to PyTorch if TensorRT fails
             cache_engine: Cache converted TensorRT engines
+            num_threads: Number of threads (ignored, for compatibility)
         """
-        # Initialize with default action size for gomoku, will be updated after model loading
-        action_size = 225 if game_type == 'gomoku' else 362 if game_type == 'go' else 4096
-        super().__init__(config, action_size)
+        # Handle model_path parameter for compatibility
+        if model_path and not tensorrt_engine_path:
+            tensorrt_engine_path = model_path
+        # Initialize base class with proper parameters
+        super().__init__(
+            model=model,
+            config=config,
+            game_type=game_type,
+            device=device,
+            checkpoint_path=checkpoint_path,
+            network_config=network_config
+        )
         
         if not HAS_TENSORRT:
             if fallback_to_pytorch:
@@ -89,8 +102,9 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
         if tensorrt_engine_path and Path(tensorrt_engine_path).exists():
             # Load pre-built engine
             logger.info(f"Loading TensorRT engine from {tensorrt_engine_path}")
+            # TensorRTConverter.load_engine is a static method
             self.trt_model = TensorRTConverter.load_engine(
-                tensorrt_engine_path, 
+                tensorrt_engine_path,
                 max_batch_size
             )
             self._setup_from_engine()
@@ -173,20 +187,53 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
         if self.cache_engine and checkpoint_path and engine_save_path is None:
             cache_path = self._get_engine_cache_path(checkpoint_path)
             logger.info(f"Caching TensorRT engine to {cache_path}")
-            converter.save_engine(self.trt_model, str(cache_path))
+            self.trt_model.save_engine(str(cache_path))
     
     def _setup_from_engine(self):
         """Setup evaluator from loaded TensorRT engine"""
-        # Infer game properties from engine
-        # This is simplified - you may need to store metadata with the engine
-        if self.game_type == 'gomoku':
-            self.board_size = 15
-            self.action_size = 225
-        elif self.game_type == 'go':
-            self.board_size = 19
-            self.action_size = 362
+        # Get properties from the model if available
+        if hasattr(self, 'model') and self.model is not None:
+            if hasattr(self.model, 'board_size'):
+                self.board_size = self.model.board_size
+            if hasattr(self.model, 'action_size'):
+                self.action_size = self.model.action_size
+            elif hasattr(self.model, 'num_actions'):
+                self.action_size = self.model.num_actions
         else:
-            raise ValueError(f"Unknown game type: {self.game_type}")
+            # Fallback to game type defaults
+            if self.game_type == 'gomoku':
+                self.board_size = 15
+                self.action_size = 225
+            elif self.game_type == 'go':
+                self.board_size = 19
+                self.action_size = 362
+            else:
+                raise ValueError(f"Unknown game type: {self.game_type}")
+    
+    def _forward_model(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the TensorRT model
+        
+        Args:
+            states: Input states tensor
+            
+        Returns:
+            Tuple of (policy_logits, values)
+        """
+        if not self.use_tensorrt:
+            return self._fallback_evaluator._forward_model(states)
+        
+        # Run TensorRT inference
+        policy_logits, values = self.trt_model(states)
+        
+        # Apply softmax to get probabilities
+        if self.trt_model.trt_model is None:
+            # Manual inference doesn't apply log_softmax
+            policies = F.softmax(policy_logits, dim=1)
+        else:
+            # torch2trt model returns log probabilities
+            policies = policy_logits.exp()
+        
+        return policies, values
     
     def _get_engine_cache_path(self, checkpoint_path: str) -> Path:
         """Get cache path for TensorRT engine"""

@@ -81,6 +81,10 @@ class MCTSConfig:
     max_children_per_node: int = 50
     progressive_expansion_threshold: int = 5
     
+    # Progressive widening parameters (for lazy expansion)
+    progressive_widening_alpha: float = 0.5  # k = alpha * sqrt(n)
+    progressive_widening_base: float = 10.0  # Minimum children to expand
+    
     # Legacy parameters (for compatibility)
     target_sims_per_second: int = 100000
     cache_legal_moves: bool = True

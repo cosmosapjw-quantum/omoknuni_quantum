@@ -53,30 +53,27 @@ class TreeOperations:
             return None
             
         # Find the child node corresponding to the action
-        root_children_start = self.tree.csr_storage.row_ptr[0].item()
-        root_children_end = self.tree.csr_storage.row_ptr[1].item() if self.tree.num_nodes > 1 else root_children_start
-        
-        new_root_idx = None
-        for i in range(root_children_start, root_children_end):
-            child_idx = self.tree.csr_storage.col_indices[i].item()
-            if self.tree.node_data.parent_actions[child_idx].item() == new_root_action:
-                new_root_idx = child_idx
-                break
-                
-        if new_root_idx is None:
+        child_idx = self.tree.get_child_by_action(0, new_root_action)
+        if child_idx is None:
             return None
             
         # Check if the subtree is worth preserving
-        subtree_visits = self.tree.node_data.visit_counts[new_root_idx].item()
+        subtree_visits = self.tree.node_data.visit_counts[child_idx].item()
         if subtree_visits < self.config.subtree_reuse_min_visits:
-            return None
+            # Not worth preserving - just reset the tree
+            self.tree.reset()
+            return {}
             
-        # Perform subtree extraction and remapping
-        mapping = self._extract_subtree(new_root_idx)
+        # Use shift_root to efficiently reuse the subtree
+        mapping = self.tree.shift_root(child_idx)
+        
+        # CRITICAL: The new root now has proper children from its subtree
+        # No need to clear children as shift_root handles the structure correctly
+        
         return mapping
         
     def _extract_subtree(self, new_root_idx: int) -> Dict[int, int]:
-        """Extract subtree rooted at given node
+        """Extract subtree rooted at given node using efficient shift_root
         
         Args:
             new_root_idx: Index of new root node
@@ -84,57 +81,13 @@ class TreeOperations:
         Returns:
             Mapping from old node indices to new indices
         """
-        # BFS to collect all nodes in subtree
-        nodes_to_keep = []
-        queue = [new_root_idx]
-        
-        while queue:
-            node = queue.pop(0)
-            nodes_to_keep.append(node)
-            
-            # Add children to queue
-            start = self.tree.csr_storage.row_ptr[node].item()
-            end = self.tree.csr_storage.row_ptr[node + 1].item() if node + 1 < self.tree.num_nodes else start
-            
-            for i in range(start, end):
-                child = self.tree.csr_storage.col_indices[i].item()
-                if child not in nodes_to_keep:
-                    queue.append(child)
-                    
-        # Create mapping: old index -> new index
-        mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(nodes_to_keep)}
-        
-        # Create new tree data
-        new_num_nodes = len(nodes_to_keep)
-        
-        # Reset tree first
-        self.tree.reset()
-        
-        # Copy node data
-        for new_idx, old_idx in enumerate(nodes_to_keep):
-            if new_idx >= self.tree.max_nodes:
-                break
-                
-            # Copy node statistics using new API
-            self.tree.node_data.visit_counts[new_idx] = self.tree.node_data.visit_counts[old_idx]
-            self.tree.node_data.value_sums[new_idx] = self.tree.node_data.value_sums[old_idx]
-            self.tree.node_data.node_priors[new_idx] = self.tree.node_data.node_priors[old_idx]
-            
-            # Update parent relationships
-            if old_idx == new_root_idx:
-                self.tree.node_data.parent_indices[new_idx] = -1
-                self.tree.node_data.parent_actions[new_idx] = -1
-            else:
-                old_parent = self.tree.node_data.parent_indices[old_idx].item()
-                if old_parent in mapping:
-                    self.tree.node_data.parent_indices[new_idx] = mapping[old_parent]
-                    self.tree.node_data.parent_actions[new_idx] = self.tree.node_data.parent_actions[old_idx]
-                    
-        # Update number of nodes
-        self.tree.num_nodes = new_num_nodes
+        # Use the efficient shift_root method from CSRTree
+        # This preserves the entire subtree structure and remaps indices
+        mapping = self.tree.shift_root(new_root_idx)
         
         return mapping
         
+
     def get_root_children_info(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get information about root node's children
         

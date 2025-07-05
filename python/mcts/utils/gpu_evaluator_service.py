@@ -74,7 +74,8 @@ class GPUEvaluatorService:
                  max_queue_size: Optional[int] = None,
                  workload_type: str = "balanced",
                  use_tensorrt: bool = True,
-                 tensorrt_fp16: bool = True):
+                 tensorrt_fp16: bool = True,
+                 tensorrt_engine_path: Optional[str] = None):
         """Initialize GPU evaluator service
         
         Args:
@@ -86,6 +87,7 @@ class GPUEvaluatorService:
             workload_type: Type of workload - "latency", "throughput", or "balanced"
             use_tensorrt: Enable TensorRT acceleration
             tensorrt_fp16: Use FP16 precision for TensorRT
+            tensorrt_engine_path: Path to pre-compiled TensorRT engine
         """
         self.model = model
         self.device = torch.device(device)
@@ -118,27 +120,69 @@ class GPUEvaluatorService:
                         GPUEvaluatorService._tensorrt_logged = True
                     self.use_tensorrt = False
                 else:
-                    if not GPUEvaluatorService._tensorrt_logged:
-                        logger.info("Converting model to TensorRT...")
-                    # Get input shape from model metadata or assume Gomoku defaults
-                    if hasattr(model, 'metadata') and hasattr(model.metadata, 'input_channels'):
-                        input_channels = model.metadata.input_channels
-                        board_size = model.metadata.board_size
+                    # Check if pre-compiled engine path is provided
+                    if tensorrt_engine_path and os.path.exists(tensorrt_engine_path):
+                        # Load pre-compiled TensorRT engine
+                        if not GPUEvaluatorService._tensorrt_logged:
+                            logger.info(f"Loading pre-compiled TensorRT engine from: {tensorrt_engine_path}")
+                        
+                        # Use TensorRT evaluator to load the pre-compiled engine
+                        from ..neural_networks.tensorrt_evaluator import TensorRTEvaluator
+                        
+                        try:
+                            # Need to provide the model for proper initialization
+                            self.tensorrt_model = TensorRTEvaluator(
+                                model=model,  # Provide the PyTorch model
+                                tensorrt_engine_path=tensorrt_engine_path,
+                                device=str(self.device),
+                                fp16_mode=tensorrt_fp16,
+                                fallback_to_pytorch=False,  # We already have fallback logic here
+                                network_config=None  # Engine already exists, no config needed
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to load TensorRT engine: {e}")
+                            logger.info("Using PyTorch model instead of TensorRT")
+                            self.use_tensorrt = False
+                            self.tensorrt_model = None
+                        
+                        if not GPUEvaluatorService._tensorrt_logged:
+                            logger.info("Successfully loaded pre-compiled TensorRT engine")
+                            GPUEvaluatorService._tensorrt_logged = True
                     else:
-                        input_channels = 18  # Default for Gomoku
-                        board_size = 15
-                    
-                    input_shape = (input_channels, board_size, board_size)
-                    
-                    # Convert to TensorRT
-                    start_time = time.time()
-                    self.tensorrt_model = optimize_for_hardware(
-                        model, input_shape
-                    )
-                    conversion_time = time.time() - start_time
-                    if not GPUEvaluatorService._tensorrt_logged:
-                        logger.info(f"TensorRT conversion completed in {conversion_time:.2f}s")
-                        GPUEvaluatorService._tensorrt_logged = True
+                        # No pre-compiled engine, use centralized TensorRT manager
+                        from .tensorrt_manager import get_tensorrt_manager
+                        
+                        # Get input shape from model metadata or assume Gomoku defaults
+                        if hasattr(model, 'metadata') and hasattr(model.metadata, 'input_channels'):
+                            input_channels = model.metadata.input_channels
+                            board_size = model.metadata.board_size
+                        else:
+                            input_channels = 18  # Default for Gomoku
+                            board_size = 15
+                        
+                        input_shape = (input_channels, board_size, board_size)
+                        
+                        # Get worker ID for logging
+                        worker_id = os.getpid()
+                        
+                        # Get or convert model using centralized manager
+                        tensorrt_manager = get_tensorrt_manager()
+                        self.tensorrt_model = tensorrt_manager.get_or_convert_model(
+                            pytorch_model=model,
+                            input_shape=input_shape,
+                            batch_size=batch_size,
+                            fp16=True,
+                            workspace_size=2 * (1 << 30),  # 2GB
+                            worker_id=worker_id
+                        )
+                        
+                        if self.tensorrt_model is None:
+                            logger.warning(f"Worker {worker_id}: TensorRT conversion failed, falling back to PyTorch")
+                            self.use_tensorrt = False
+                        else:
+                            if not GPUEvaluatorService._tensorrt_logged:
+                                logger.info(f"Worker {worker_id}: Using TensorRT acceleration")
+                                GPUEvaluatorService._tensorrt_logged = True
                     
                 # Restore original TRT log level
                 if old_trt_log_level:
@@ -147,8 +191,9 @@ class GPUEvaluatorService:
                     os.environ.pop('TRT_LOGGER_VERBOSITY', None)
                     
                 # Set CUDA stream for TensorRT model if available
-                if hasattr(self.tensorrt_model, 'cuda_stream') and hasattr(self, 'cuda_stream') and self.cuda_stream:
-                    self.tensorrt_model.cuda_stream = self.cuda_stream
+                if self.tensorrt_model is not None:
+                    if hasattr(self.tensorrt_model, 'cuda_stream') and hasattr(self, 'cuda_stream') and self.cuda_stream:
+                        self.tensorrt_model.cuda_stream = self.cuda_stream
                     
                     # Use TensorRT model for inference
                     self.model = self.tensorrt_model
@@ -518,7 +563,7 @@ class GPUEvaluatorService:
             
             # Ultra-fast non-blocking transfer with proper error handling
             try:
-                policy_slice.copy_(policy_logits, non_blocking=True)
+                policy_slice.copy_(policies, non_blocking=True)
                 # Ensure values tensor is 1D for copying
                 values_flat = values.view(-1) if values.dim() > 1 else values
                 value_slice.copy_(values_flat, non_blocking=True)

@@ -54,6 +54,10 @@ mcts:
   constructive_interference_factor: 0.1
   destructive_interference_factor: 0.05
   
+  # Progressive widening parameters for lazy expansion
+  progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
+  progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
   # Device configuration
   device: cuda
   num_threads: 22
@@ -62,6 +66,10 @@ mcts:
   use_tensorrt: true
   tensorrt_fp16: true
   tensorrt_fallback: true
+  tensorrt_workspace_size: 2048  # MB - workspace size for optimization
+  tensorrt_int8: false           # INT8 quantization (requires calibration)
+  tensorrt_max_batch_size: 512   # Maximum batch size to optimize for
+  tensorrt_engine_cache_dir: null # Custom cache directory
 
 network:
   # Optimized network for master-level Gomoku (no attack/defense overhead)

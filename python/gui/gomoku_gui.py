@@ -621,10 +621,9 @@ class GomokuGUI:
     def ai_think(self):
         """AI thinking process (runs in separate thread)"""
         try:
-            # Run MCTS search
+            # Run MCTS search and get best action
             if self.game_state:
-                policy = self.mcts.search(self.game_state)
-                best_action = self.mcts.get_best_action(self.game_state)
+                best_action = self.mcts.select_action(self.game_state, temperature=0.0)
                 
                 # Get root value for resignation check
                 root_value = self.mcts.get_root_value() if hasattr(self.mcts, 'get_root_value') else 0.0

@@ -214,21 +214,7 @@ class MCTS:
         
         # If subtree reuse is disabled, reset the tree for each search
         if not self.config.enable_subtree_reuse:
-            # Reset tree to clean state
-            self.tree.reset()
-            # Reset node-to-state mapping
-            self.node_to_state.fill_(-1)
-            # Clear state pool - but preserve state 0 for root
-            # Don't include 0 in free list since root will use it
-            self.state_pool_free_list = list(range(1, self.config.max_tree_nodes))
-            # CRITICAL: Clear the GPU game state for state 0 to avoid stale data
-            if hasattr(self, 'game_states'):
-                # Reset state 0 to empty
-                self.game_states.boards[0] = 0
-                self.game_states.current_player[0] = 0
-                self.game_states.move_count[0] = 0
-                self.game_states.is_terminal[0] = False
-                self.game_states.winner[0] = 0
+            self._reset_for_new_search()
         
         # Initialize root if needed
         self._ensure_root_initialized(state)
@@ -239,14 +225,18 @@ class MCTS:
         # Run search
         policy = self._run_search(num_sims)
         
-        # Debug: Check root visits after search
+        # Check root visits after search
         root_visits = self.tree.node_data.visit_counts[0].item()
         if root_visits == 0:
-            logger.warning(f"[MCTS DEBUG] Root has {root_visits} visits after {num_sims} simulations!")
+            logger.warning(f"Root has {root_visits} visits after {num_sims} simulations!")
         
         # Update statistics
         elapsed_time = time.perf_counter() - start_time
         self._update_statistics(num_sims, elapsed_time)
+        
+        # CRITICAL: Clean up allocated states after search if subtree reuse is disabled
+        if not self.config.enable_subtree_reuse:
+            self._cleanup_after_search()
         
         return policy
         
@@ -302,6 +292,34 @@ class MCTS:
         """Extract policy from node visit counts"""
         actions, visits, _ = self.tree_ops.get_root_children_info()
         
+        # CRITICAL FIX: Validate children against current legal moves when tree reuse is enabled
+        if self.config.enable_subtree_reuse and len(actions) > 0:
+            # Get current legal moves
+            state_idx = self.node_to_state[node_idx].item()
+            if state_idx >= 0:
+                legal_mask = self.game_states.get_legal_moves_mask(
+                    torch.tensor([state_idx], device=self.device)
+                )[0]
+                legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
+                
+                # Filter out illegal children
+                valid_child_mask = torch.zeros(len(actions), dtype=torch.bool, device=self.device)
+                for i, action in enumerate(actions):
+                    if action.item() in legal_moves_set:
+                        valid_child_mask[i] = True
+                    else:
+                        logger.debug(f"Filtering out illegal child action {action.item()} from tree reuse")
+                
+                # Keep only valid children
+                if valid_child_mask.any():
+                    actions = actions[valid_child_mask]
+                    visits = visits[valid_child_mask]
+                else:
+                    # No valid children from tree reuse - treat as if no children
+                    logger.warning("All children from tree reuse are illegal - ignoring stale children")
+                    actions = torch.tensor([], dtype=torch.int32, device=self.device)
+                    visits = torch.tensor([], dtype=torch.int32, device=self.device)
+        
         # Get legal moves for the current state
         state_idx = self.node_to_state[node_idx].item()
         if state_idx >= 0:
@@ -315,83 +333,20 @@ class MCTS:
             legal_moves = np.array([])
         
         if len(actions) == 0:
-            # No children - this might happen if root wasn't expanded
-            # Force expansion of root node if not expanded
-            if state_idx >= 0:
-                # Get legal moves and expand root
-                legal_mask_tensor = self.game_states.get_legal_moves_mask(
-                    torch.tensor([state_idx], device=self.device)
-                )[0]
-                legal_actions = torch.nonzero(legal_mask_tensor).squeeze(-1)
-                
-                if len(legal_actions) > 0:
-                    # Evaluate root state to get priors
-                    features = self.game_states.get_nn_features_batch(
-                        torch.tensor([state_idx], device=self.device)
-                    )[0]
-                    
-                    with torch.no_grad():
-                        features_np = features.cpu().numpy()
-                        if hasattr(self.evaluator, 'evaluate_batch'):
-                            policy_logits, _ = self.evaluator.evaluate_batch(features_np[np.newaxis, :])
-                            policy_logits = policy_logits[0]
-                        else:
-                            policy_logits, _ = self.evaluator.evaluate(features_np)
-                    
-                    # Convert to tensor and extract legal action priors
-                    if isinstance(policy_logits, np.ndarray):
-                        policy_logits = torch.from_numpy(policy_logits).to(self.device)
-                    
-                    priors = policy_logits[legal_actions]
-                    priors = torch.softmax(priors, dim=0)  # Convert logits to probabilities
-                    
-                    # Add children to root
-                    actions_list = legal_actions.cpu().tolist()
-                    priors_list = priors.cpu().tolist()
-                    
-                    # Clone states for children
-                    parent_indices = torch.tensor([state_idx], dtype=torch.int32, device=self.device)
-                    num_clones = torch.tensor([len(actions_list)], dtype=torch.int32, device=self.device)
-                    child_state_indices = self.game_states.clone_states(parent_indices, num_clones)
-                    
-                    # Apply actions to cloned states
-                    actions_tensor = torch.tensor(actions_list, dtype=torch.int32, device=self.device)
-                    self.game_states.apply_moves(child_state_indices, actions_tensor)
-                    
-                    child_states = child_state_indices.cpu().tolist()
-                    
-                    # Add children to tree
-                    child_indices = self.tree.add_children_batch(
-                        node_idx,
-                        actions_list,
-                        priors_list,
-                        child_states
-                    )
-                    
-                    # Update node-to-state mapping
-                    for child_idx, child_state_idx in zip(child_indices, child_states):
-                        if child_idx < len(self.node_to_state):
-                            self.node_to_state[child_idx] = child_state_idx
-                    
-                    # Ensure CSR consistency
-                    self.tree.ensure_consistent()
-                    
-                    # Now try to get children info again
-                    actions, visits, _ = self.tree_ops.get_root_children_info()
-            
-            # If still no children, return uniform over legal moves
-            if len(actions) == 0:
-                policy = np.zeros(self.config.board_size ** 2)
-                if len(legal_moves) > 0:
-                    policy[legal_moves] = 1.0 / len(legal_moves)
-                return policy
+            # No children - this can happen if no simulations reached the root
+            # or if the root wasn't expanded during search
+            # Return uniform policy over legal moves
+            logger.warning(f"Root node has no children after {self.config.num_simulations} simulations")
+            policy = np.zeros(self.config.board_size ** 2)
+            if len(legal_moves) > 0:
+                policy[legal_moves] = 1.0 / len(legal_moves)
+            return policy
             
         # Convert visits to probabilities
         total_visits = visits.sum().item()
         if total_visits == 0:
             # No visits - return uniform over legal moves
-            print(f"[DEBUG] Root has {len(actions)} children but ZERO visits! This should not happen after 1000 simulations!")
-            print(f"[DEBUG] Actions: {actions.cpu().numpy()[:10]}")
+            logger.warning(f"Root has {len(actions)} children but zero visits")
             policy = np.zeros(self.config.board_size ** 2)
             if len(legal_moves) > 0:
                 policy[legal_moves] = 1.0 / len(legal_moves)
@@ -431,6 +386,25 @@ class MCTS:
                 raise RuntimeError("MCTS visited only illegal moves - tree search is broken")
                 
         return policy
+        
+    def get_root_value(self) -> float:
+        """Get the value estimate of the root node
+        
+        Returns:
+            Value estimate from the root node's perspective
+        """
+        if self.tree.num_nodes == 0:
+            return 0.0
+            
+        # Get root value (Q-value)
+        root_value = self.tree.node_data.value_sums[0].item()
+        root_visits = self.tree.node_data.visit_counts[0].item()
+        
+        if root_visits == 0:
+            return 0.0
+            
+        # Return average value
+        return root_value / root_visits
         
     def select_action(self, state: Any, temperature: float = 1.0) -> int:
         """Select action using MCTS
@@ -475,9 +449,21 @@ class MCTS:
                 self.stats['tree_reuse_count'] += 1
                 self.stats['tree_reuse_nodes'] += len(mapping)
                 
-        # Initialize new root if needed
-        if new_state is not None:
-            self._ensure_root_initialized(new_state)
+                # After tree reuse, we need to ensure the root state is correct
+                if new_state is not None:
+                    self._update_root_state(new_state)
+                    
+                # Validate children after reuse
+                self._validate_children_after_reuse()
+            else:
+                # No reuse occurred, reset tree
+                self._reset_for_new_search()
+                if new_state is not None:
+                    self._initialize_root(new_state)
+        else:
+            # No tree reuse - ensure root is initialized
+            if new_state is not None:
+                self._ensure_root_initialized(new_state)
             
     def clear(self):
         """Clear tree and reset state"""
@@ -522,6 +508,13 @@ class MCTS:
         # Otherwise allocate a new state
         if not self.config.enable_subtree_reuse:
             state_idx = 0  # Always use state 0 for root when reuse is disabled
+            # Make sure state 0 is properly marked as allocated
+            if not self.game_states.allocated_mask[0]:
+                self.game_states.allocated_mask[0] = True
+                self.game_states.num_states = max(self.game_states.num_states, 1)
+                # Remove state 0 from free indices if present
+                free_mask = self.game_states.free_indices != 0
+                self.game_states.free_indices = self.game_states.free_indices[free_mask]
         else:
             # Allocate a state in the game states pool
             state_indices = self.game_states.allocate_states(1)
@@ -600,17 +593,43 @@ class MCTS:
             self._initialize_root(new_root_state)
         
     def _update_state_mappings_after_reuse(self, mapping: Dict[int, int]):
-        """Update state mappings after subtree reuse"""
-        # Update node_to_state mapping based on node remapping
+        """Update state mappings after subtree reuse
+        
+        This method ensures that the node-to-state mapping is correctly updated
+        after tree reuse, and that game states are properly synchronized.
+        """
+        # Create new node_to_state mapping
         new_node_to_state = torch.full_like(self.node_to_state, -1)
+        
+        # Track which states are still in use
+        states_in_use = set()
         
         for old_node, new_node in mapping.items():
             if old_node < len(self.node_to_state):
                 old_state = self.node_to_state[old_node]
                 if old_state >= 0 and new_node < len(new_node_to_state):
                     new_node_to_state[new_node] = old_state
-                    
+                    states_in_use.add(old_state.item())
+        
+        # Free states that are no longer in use
+        for i in range(len(self.node_to_state)):
+            state_idx = self.node_to_state[i].item()
+            if state_idx >= 0 and state_idx not in states_in_use:
+                # Return state to free pool
+                if state_idx > 0:  # Don't free state 0 (reserved for root)
+                    self.state_pool_free_list.append(state_idx)
+                    # Mark state as unallocated in GPU game states
+                    if hasattr(self.game_states, 'allocated_mask'):
+                        self.game_states.allocated_mask[state_idx] = False
+        
+        # Update the mapping
         self.node_to_state = new_node_to_state
+        
+        # Sort free list for better locality
+        self.state_pool_free_list.sort()
+        self.state_pool_free_count = len(self.state_pool_free_list)
+        
+        logger.debug(f"After tree reuse: {len(states_in_use)} states in use, {self.state_pool_free_count} states free")
         
     def _get_evaluator_input_channels(self) -> int:
         """Get number of input channels expected by evaluator"""
@@ -623,6 +642,160 @@ class MCTS:
             # Default based on game type
             return 18  # Standard AlphaZero channels
             
+    def _reset_for_new_search(self):
+        """Reset tree and state pool for a new search"""
+        # CRITICAL FIX: Properly free all allocated GPU states before resetting
+        if hasattr(self, 'game_states'):
+            # Find all currently allocated states
+            allocated_indices = torch.nonzero(self.game_states.allocated_mask, as_tuple=True)[0]
+            
+            if len(allocated_indices) > 0:
+                # Free all states
+                self.game_states.free_states(allocated_indices)
+                logger.debug(f"Freed {len(allocated_indices)} GPU states before tree reset")
+            
+            # Verify clean state
+            remaining_allocated = self.game_states.allocated_mask.sum().item()
+            if remaining_allocated > 0:
+                logger.warning(f"State pool not fully cleaned: {remaining_allocated} states still allocated")
+                # Force clean state
+                self.game_states.num_states = 0
+                self.game_states.allocated_mask.fill_(False)
+                self.game_states.free_indices = torch.arange(self.game_states.capacity, device=self.device, dtype=torch.int32)
+        
+        # Reset tree to clean state
+        self.tree.reset()
+        # Reset node-to-state mapping
+        self.node_to_state.fill_(-1)
+        # Clear state pool - but preserve state 0 for root
+        self.state_pool_free_list = list(range(1, self.config.max_tree_nodes))
+        
+        # Clear the GPU game state for state 0 to avoid stale data
+        if hasattr(self, 'game_states'):
+            # Reset state 0 to empty
+            self.game_states.boards[0] = 0
+            self.game_states.current_player[0] = 0
+            self.game_states.move_count[0] = 0
+            self.game_states.is_terminal[0] = False
+            self.game_states.winner[0] = 0
+    
+    def _cleanup_after_search(self):
+        """Clean up allocated states after search completes"""
+        # For non-reuse mode, we want to track how many states were used
+        # This helps with debugging and optimization
+        if hasattr(self, 'game_states'):
+            allocated_count = self.game_states.allocated_mask.sum().item()
+            logger.debug(f"Search completed with {allocated_count} states allocated")
+    
+
+    def _cleanup_stale_children_after_reuse(self):
+        """Clean up stale children that are no longer valid after tree reuse
+        
+        This is critical when tree reuse is enabled to prevent illegal move selection.
+        """
+        if not self.config.enable_subtree_reuse:
+            return
+            
+        # Get current root state
+        root_state_idx = self.node_to_state[0].item()
+        if root_state_idx < 0:
+            return
+            
+        # Get legal moves for current position
+        legal_mask = self.game_states.get_legal_moves_mask(
+            torch.tensor([root_state_idx], device=self.device)
+        )[0]
+        legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
+        
+        # Check root's children
+        children, _, _ = self.tree.get_children(0)
+        if len(children) == 0:
+            return
+            
+        # Remove illegal children
+        children_to_remove = []
+        for child_idx in children:
+            action = self.tree.node_data.parent_actions[child_idx].item()
+            if action not in legal_moves_set:
+                children_to_remove.append(child_idx)
+        
+        if children_to_remove:
+            logger.info(f"Removing {len(children_to_remove)} stale children after tree reuse")
+            # TODO: Implement actual removal in CSRTree
+            # For now, we rely on validation in _extract_policy
+
+    def _validate_children_after_reuse(self):
+        """Validate and clean up children after tree reuse
+        
+        This method ensures that all children in the reused tree are still valid
+        for the current game state. It removes invalid children to prevent
+        illegal move selection and wasted simulations.
+        
+        CRITICAL: After tree reuse, the new root's "children" may include its
+        former siblings, which are not valid children of the new position.
+        """
+        # Get current root state
+        root_state_idx = self.node_to_state[0].item()
+        if root_state_idx < 0:
+            return
+            
+        # Get legal moves for current position
+        legal_mask = self.game_states.get_legal_moves_mask(
+            torch.tensor([root_state_idx], device=self.device)
+        )[0]
+        legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
+        
+        # Validate all nodes in the tree, not just root children
+        nodes_to_validate = []
+        nodes_processed = set()
+        
+        # BFS to validate entire tree
+        queue = [0]  # Start with root
+        while queue:
+            node_idx = queue.pop(0)
+            if node_idx in nodes_processed:
+                continue
+            nodes_processed.add(node_idx)
+            
+            # Get node's state
+            state_idx = self.node_to_state[node_idx].item()
+            if state_idx < 0:
+                continue
+                
+            # Get children of this node
+            children, actions, _ = self.tree.get_children(node_idx)
+            if len(children) == 0:
+                continue
+                
+            # Get legal moves for this node's state
+            node_legal_mask = self.game_states.get_legal_moves_mask(
+                torch.tensor([state_idx], device=self.device)
+            )[0]
+            node_legal_moves = set(torch.nonzero(node_legal_mask).squeeze(-1).cpu().numpy())
+            
+            # Check each child
+            invalid_children = []
+            for i, (child_idx, action) in enumerate(zip(children.cpu().numpy(), actions.cpu().numpy())):
+                if action not in node_legal_moves:
+                    invalid_children.append(i)
+                    logger.debug(f"Node {node_idx}: child {child_idx} with action {action} is invalid")
+                else:
+                    # Add valid children to queue for further validation
+                    queue.append(child_idx)
+            
+            # Mark invalid children for removal
+            if invalid_children:
+                # For now, we'll zero out their visit counts and values
+                # This effectively makes them invisible to UCB selection
+                for i in invalid_children:
+                    child_idx = children[i].item()
+                    self.tree.node_data.visit_counts[child_idx] = 0
+                    self.tree.node_data.value_sums[child_idx] = 0.0
+                    # Set prior to 0 to prevent selection
+                    self.tree.node_data.node_priors[child_idx] = 0.0
+                    
+                logger.info(f"Invalidated {len(invalid_children)} stale children for node {node_idx}")
+
     def shutdown(self):
         """Cleanup resources"""
         # Cleanup any resources

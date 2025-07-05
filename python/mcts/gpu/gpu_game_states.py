@@ -10,6 +10,9 @@ from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass
 from enum import IntEnum
 import alphazero_py
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class GameType(IntEnum):
@@ -162,10 +165,18 @@ class GPUGameStates:
         Args:
             indices: State indices to free
         """
-        # Return indices to free pool
-        self.free_indices = torch.cat([self.free_indices, indices])
-        self.allocated_mask[indices] = False
-        self.num_states -= len(indices)
+        # Validate that states are actually allocated
+        if not self.allocated_mask[indices].all():
+            unallocated = indices[~self.allocated_mask[indices]]
+            logger.warning(f"Attempting to free unallocated states: {unallocated.tolist()}")
+            # Filter to only allocated states
+            indices = indices[self.allocated_mask[indices]]
+        
+        if len(indices) > 0:
+            # Return indices to free pool
+            self.free_indices = torch.cat([self.free_indices, indices])
+            self.allocated_mask[indices] = False
+            self.num_states -= len(indices)
         
     def _reset_states(self, indices: torch.Tensor):
         """Reset states to initial empty state"""

@@ -1029,11 +1029,22 @@ class ArenaManager:
             input_channels1 = getattr(self.config.network, 'input_channels', 18)
             input_channels2 = getattr(self.config.network, 'input_channels', 18)
             
-            # Try to get actual input channels from model metadata if available
-            if hasattr(evaluator1, 'model') and hasattr(evaluator1.model, 'metadata'):
-                input_channels1 = evaluator1.model.metadata.input_channels
-            if hasattr(evaluator2, 'model') and hasattr(evaluator2.model, 'metadata'):
-                input_channels2 = evaluator2.model.metadata.input_channels
+            # Try to get actual input channels from model if available
+            if hasattr(evaluator1, 'model'):
+                # Check for config attribute in model
+                if hasattr(evaluator1.model, 'config') and hasattr(evaluator1.model.config, 'input_channels'):
+                    input_channels1 = evaluator1.model.config.input_channels
+                # Or check for direct input_channels attribute
+                elif hasattr(evaluator1.model, 'input_channels'):
+                    input_channels1 = evaluator1.model.input_channels
+                    
+            if hasattr(evaluator2, 'model'):
+                # Check for config attribute in model
+                if hasattr(evaluator2.model, 'config') and hasattr(evaluator2.model.config, 'input_channels'):
+                    input_channels2 = evaluator2.model.config.input_channels
+                # Or check for direct input_channels attribute
+                elif hasattr(evaluator2.model, 'input_channels'):
+                    input_channels2 = evaluator2.model.input_channels
                 
             with torch.no_grad():
                 # Warm up both evaluators if they have models
@@ -1115,10 +1126,16 @@ class ArenaManager:
         # Get resource allocation from config (similar to self-play)
         allocation = getattr(self.config, '_resource_allocation', None)
         if allocation is None:
-            # Fallback: calculate allocation if not already done
-            hardware = self.config.detect_hardware()
-            allocation = self.config.calculate_resource_allocation(hardware, self.arena_config.num_workers)
-            self.config._resource_allocation = allocation
+            # Fallback: use default allocation for arena
+            import psutil
+            cpu_count = psutil.cpu_count(logical=True) or 4
+            allocation = {
+                'num_workers': min(self.arena_config.num_workers, cpu_count),
+                'max_concurrent_workers': min(self.arena_config.num_workers, cpu_count),
+                'memory_per_worker_mb': 512,  # Conservative default for arena
+                'batch_size': min(256, self.arena_config.num_games),
+                'gpu_batch_timeout_ms': 100  # Arena prefers lower latency
+            }
         
         logger.info(f"[ARENA] Starting parallel arena with {self.arena_config.num_workers} workers")
         logger.debug(f"[ARENA] Resource allocation: {allocation}")
@@ -1150,10 +1167,9 @@ class ArenaManager:
                 gpu_service1 = GPUEvaluatorService(
                     model=actual_model1,
                     device=self.config.mcts.device,
-                    auto_optimize=True,
                     workload_type="latency",  # Arena prefers low latency
-                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', True),  # Use config or default to True
-                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True)  # Use config or default to True
+                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', False),  # Default to False for arena stability
+                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', False)  # Default to False for arena stability
                 )
                 gpu_service1.start()
                 logger.debug(f"[ARENA] GPU evaluation service 1 started")
@@ -1169,10 +1185,9 @@ class ArenaManager:
                 gpu_service2 = GPUEvaluatorService(
                     model=actual_model2,
                     device=self.config.mcts.device,
-                    auto_optimize=True,
                     workload_type="latency",  # Arena prefers low latency
-                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', True),  # Use config or default to True
-                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True)  # Use config or default to True
+                    use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', False),  # Default to False for arena stability
+                    tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', False)  # Default to False for arena stability
                 )
                 gpu_service2.start()
                 logger.debug(f"[ARENA] GPU evaluation service 2 started")
@@ -1322,8 +1337,7 @@ class ArenaManager:
             if torch.cuda.is_available():
                 gpu_allocated = torch.cuda.memory_allocated()/1024/1024/1024
                 gpu_reserved = torch.cuda.memory_reserved()/1024/1024/1024
-                gpu_cached = torch.cuda.memory_reserved()/1024/1024/1024
-                logger.debug(f"[ARENA] Game {game_idx} START - GPU Memory: Allocated={gpu_allocated:.3f}GB, Reserved={gpu_reserved:.3f}GB, Cached={gpu_cached:.3f}GB")
+                logger.debug(f"[ARENA] Game {game_idx} START - GPU Memory: Allocated={gpu_allocated:.3f}GB, Reserved={gpu_reserved:.3f}GB")
                 
                 # Log GPU memory summary
                 if game_idx < 3:
@@ -1351,11 +1365,11 @@ class ArenaManager:
             if game_idx % 10 == 0:
                 logger.debug(f"[ARENA] Game {game_idx} - MCTS instances created in {mcts_creation_time:.3f}s")
                 
-                # Log MCTS memory usage
-                if hasattr(mcts1, 'get_memory_usage'):
-                    mcts1_mem = mcts1.get_memory_usage()
-                    mcts2_mem = mcts2.get_memory_usage()
-                    logger.debug(f"[ARENA] MCTS memory: Player1={mcts1_mem/1024/1024:.1f}MB, Player2={mcts2_mem/1024/1024:.1f}MB")
+                # Log MCTS tree size instead of memory usage
+                if hasattr(mcts1, 'tree') and hasattr(mcts1.tree, 'num_nodes'):
+                    mcts1_nodes = mcts1.tree.num_nodes
+                    mcts2_nodes = mcts2.tree.num_nodes if hasattr(mcts2, 'tree') else 0
+                    logger.debug(f"[ARENA] MCTS tree size: Player1={mcts1_nodes} nodes, Player2={mcts2_nodes} nodes")
         
             # Play game
             state = self.game_interface.create_initial_state()
@@ -1381,9 +1395,7 @@ class ArenaManager:
                     temp = 0.0
                 
                 # Clear MCTS tree before search to ensure fresh state
-                if hasattr(current_mcts, 'reset_tree'):
-                    current_mcts.reset_tree()
-                elif hasattr(current_mcts, 'clear'):
+                if hasattr(current_mcts, 'clear'):
                     current_mcts.clear()
                 
                 # Run MCTS search
@@ -1392,13 +1404,10 @@ class ArenaManager:
                 
                 if temp == 0:
                     # Deterministic - choose best action
-                    action = current_mcts.get_best_action(state)
+                    action = current_mcts.select_action(state, temperature=0.0)
                 else:
-                    # Sample from policy
-                    valid_actions, valid_probs = current_mcts.get_valid_actions_and_probabilities(state, temperature=temp)
-                    if not valid_actions:
-                        raise ValueError(f"No valid actions available at move {move_num}")
-                    action = np.random.choice(valid_actions, p=valid_probs)
+                    # Sample from policy with temperature
+                    action = current_mcts.select_action(state, temperature=temp)
                 
                 # Apply action
                 state = self.game_interface.get_next_state(state, action)
@@ -1456,16 +1465,16 @@ class ArenaManager:
                 # Force cleanup of MCTS instances
                 if 'mcts1' in locals():
                     try:
-                        if hasattr(mcts1, 'clear_tree'):
-                            mcts1.clear_tree()
+                        if hasattr(mcts1, 'clear'):
+                            mcts1.clear()
                         del mcts1
                     except:
                         pass
                         
                 if 'mcts2' in locals():
                     try:
-                        if hasattr(mcts2, 'clear_tree'):
-                            mcts2.clear_tree()
+                        if hasattr(mcts2, 'clear'):
+                            mcts2.clear()
                         del mcts2
                     except:
                         pass
@@ -1506,19 +1515,15 @@ class ArenaManager:
             # Clear MCTS trees before deletion if they exist
             if 'mcts1' in locals():
                 try:
-                    if hasattr(mcts1, 'clear_tree'):
-                        mcts1.clear_tree()
-                    elif hasattr(mcts1, 'reset_tree'):
-                        mcts1.reset_tree()
+                    if hasattr(mcts1, 'clear'):
+                        mcts1.clear()
                 except Exception as e:
                     logger.warning(f"Error during MCTS cleanup: {e}")
                 del mcts1
             if 'mcts2' in locals():
                 try:
-                    if hasattr(mcts2, 'clear_tree'):
-                        mcts2.clear_tree()
-                    elif hasattr(mcts2, 'reset_tree'):
-                        mcts2.reset_tree()
+                    if hasattr(mcts2, 'clear'):
+                        mcts2.clear()
                 except Exception as e:
                     logger.warning(f"Error during MCTS cleanup: {e}")
                 del mcts2
@@ -1578,9 +1583,8 @@ class ArenaManager:
             profile_gpu_kernels=False
         )
         
-        # Optimize for hardware
+        # Create MCTS instance
         mcts = MCTS(mcts_config, evaluator)
-        mcts.optimize_for_hardware()
         
         return mcts
     
@@ -1851,14 +1855,8 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
         
         logger.debug(f"[ARENA WORKER {game_idx}] MCTS configured - device: {mcts_config.device}, memory: {mcts_config.memory_pool_size_mb}MB")
         
-        # Optimize MCTS for hardware
-        if hasattr(mcts1, 'optimize_for_hardware'):
-            try:
-                mcts1.optimize_for_hardware()
-                mcts2.optimize_for_hardware()
-                logger.debug(f"[ARENA WORKER {game_idx}] MCTS optimized for hardware")
-            except Exception as e:
-                logger.warning(f"[ARENA WORKER {game_idx}] Failed to optimize MCTS: {e}")
+        # MCTS instances are ready to use
+        logger.debug(f"[ARENA WORKER {game_idx}] MCTS instances created successfully")
         
         logger.debug(f"[ARENA WORKER {game_idx}] MCTS configured - device: {mcts_config.device}, memory: {mcts_config.memory_pool_size_mb}MB")
         
@@ -1870,19 +1868,19 @@ def _play_arena_game_worker_with_gpu_service(config_dict: Dict, arena_config_dic
             # Get current MCTS
             current_mcts = mcts1 if current_player == 1 else mcts2
             
-            # Run MCTS search
+            # Run MCTS search and get best action (deterministic)
             with torch.no_grad():  # Ensure no gradients are tracked
-                policy = current_mcts.search(state, num_simulations=arena_config_dict['mcts_simulations'])
-            
-            # Get best action (deterministic)
-            action = current_mcts.get_best_action(state)
+                action = current_mcts.select_action(state, temperature=0.0)
             
             # Apply action
             state = game_interface.get_next_state(state, action)
             
             # No tree reuse in arena to save memory
-            mcts1.reset_tree()
-            mcts2.reset_tree()
+            if hasattr(mcts1, 'clear'):
+                mcts1.clear()
+                
+            if hasattr(mcts2, 'clear'):
+                mcts2.clear()
             
             # Check terminal
             if game_interface.is_terminal(state):

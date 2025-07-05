@@ -48,18 +48,42 @@ def _detect_cuda_kernels(device: str):
         if module:
             print(f"  ✅ CUDA kernels detected successfully in {detection_time:.3f}s")
             
-            # Verify critical functions are available
-            critical_functions = ['batched_ucb_selection', 'parallel_backup', 'vectorized_backup']
+            # List all expected CUDA functions
+            expected_functions = [
+                # Core MCTS operations
+                'find_expansion_nodes',
+                'vectorized_backup',
+                'batched_add_children',
+                # UCB selection operations
+                'batched_ucb_selection',
+                # Quantum-enhanced operations
+                'quantum_ucb_selection',
+                # Wave search optimizations
+                'batched_dirichlet_noise',
+                'fused_ucb_with_noise',
+                'optimized_backup_scatter'
+            ]
+            
+            # Check which functions are available
             available = []
-            for func in critical_functions:
+            for func in expected_functions:
                 if hasattr(module, func):
                     available.append(func)
             
-            print(f"  🎯 Available functions: {len(available)}/{len(critical_functions)}")
-            if len(available) < len(critical_functions):
-                missing = [f for f in critical_functions if f not in available]
+            print(f"  🎯 Available functions: {len(available)}/{len(expected_functions)}")
+            
+            # Show detailed function availability
+            if len(available) < len(expected_functions):
+                missing = [f for f in expected_functions if f not in available]
                 print(f"  ⚠️  Missing functions: {missing}")
                 print("  💡 Run 'python setup.py install' to compile missing functions")
+            
+            # Check for critical functions (minimum required)
+            critical_functions = ['batched_ucb_selection', 'vectorized_backup']
+            critical_available = [f for f in critical_functions if f in available]
+            if len(critical_available) < len(critical_functions):
+                print(f"  ❌ Critical functions missing: {[f for f in critical_functions if f not in available]}")
+                print("  ⚠️  Performance will be significantly reduced")
         else:
             print("  ⚠️  No pre-compiled CUDA kernels found")
             print("  💡 Run 'python setup.py install' to compile CUDA kernels")

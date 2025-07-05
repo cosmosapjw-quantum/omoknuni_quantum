@@ -124,6 +124,10 @@ class MCTSFullConfig:
     use_tensorrt: bool = True
     tensorrt_fp16: bool = True
     tensorrt_fallback: bool = True
+    tensorrt_workspace_size: int = 2048  # MB - workspace size for optimization
+    tensorrt_int8: bool = False  # INT8 quantization (requires calibration)
+    tensorrt_max_batch_size: int = 512  # Maximum batch size to optimize for
+    tensorrt_engine_cache_dir: Optional[str] = None  # Custom cache directory
     
     # Quantum features
     quantum_level: QuantumLevel = QuantumLevel.CLASSICAL

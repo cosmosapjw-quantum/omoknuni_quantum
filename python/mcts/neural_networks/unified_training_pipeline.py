@@ -698,12 +698,23 @@ class UnifiedTrainingPipeline:
         
         # Use self-play manager
         self_play_manager = SelfPlayManager(self.config)
-        examples = self_play_manager.generate_games(
-            self.model, 
-            self.iteration,
-            num_games=self.config.training.num_games_per_iteration,
-            num_workers=self.config.training.num_workers
-        )
+        
+        # Pass TensorRT engine path if available
+        if hasattr(self, 'tensorrt_engine_path'):
+            examples = self_play_manager.generate_games(
+                self.model, 
+                self.iteration,
+                num_games=self.config.training.num_games_per_iteration,
+                num_workers=self.config.training.num_workers,
+                tensorrt_engine_path=str(self.tensorrt_engine_path)
+            )
+        else:
+            examples = self_play_manager.generate_games(
+                self.model, 
+                self.iteration,
+                num_games=self.config.training.num_games_per_iteration,
+                num_workers=self.config.training.num_workers
+            )
         
         return examples
     
@@ -1087,12 +1098,11 @@ class UnifiedTrainingPipeline:
         # Create random evaluator
         from mcts.core.evaluator import EvaluatorConfig
         eval_config = EvaluatorConfig(
-            device=self.config.mcts.device,
-            use_fp16=self.config.mcts.use_mixed_precision
+            device=self.config.mcts.device
         )
         random_evaluator = RandomEvaluator(
-            eval_config, 
-            self._get_action_size()
+            self._get_action_size(),
+            eval_config
         )
         
         results_summary = []
@@ -1945,7 +1955,7 @@ class UnifiedTrainingPipeline:
             json.dump(tournament_results, f, indent=2)
     
     def _warmup_cuda_kernels(self):
-        """Warm up CUDA kernels (detection only, compilation handled by setup.py)"""
+        """Warm up CUDA kernels and pre-compile TensorRT if enabled"""
         try:
             from mcts.gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
             from mcts.core.mcts import MCTS, MCTSConfig
@@ -1955,6 +1965,10 @@ class UnifiedTrainingPipeline:
             # Detect and load pre-compiled kernels
             logger.info("  📦 Loading unified kernels...")
             kernels = get_mcts_gpu_accelerator(torch.device(self.config.mcts.device))
+            
+            # Pre-compile TensorRT if enabled
+            if self.config.mcts.use_tensorrt:
+                self._precompile_tensorrt_engine()
             
             # Create minimal MCTS instance for kernel warmup
             logger.info("  ⚙️  Initializing MCTS system...")
@@ -1982,6 +1996,75 @@ class UnifiedTrainingPipeline:
         except Exception as e:
             logger.warning(f"Kernel warmup failed: {e}")
             logger.info("  📝 Continuing with PyTorch fallback...")
+    
+    def _precompile_tensorrt_engine(self):
+        """Pre-compile TensorRT engine in main process before worker spawning"""
+        logger.info("  🚀 Pre-compiling TensorRT engine...")
+        
+        try:
+            from mcts.utils.tensorrt_manager import get_tensorrt_manager
+            from mcts.neural_networks.tensorrt_converter import HAS_TENSORRT
+            
+            if not HAS_TENSORRT:
+                logger.warning("  ⚠️  TensorRT not available, skipping compilation")
+                return
+            
+            # Get TensorRT manager with custom cache directory if specified
+            cache_dir = getattr(self.config.mcts, 'tensorrt_engine_cache_dir', None)
+            manager = get_tensorrt_manager(cache_dir=cache_dir)
+            
+            # Get input shape based on game configuration
+            initial_state = self.game_interface.create_initial_state()
+            state_array = self.game_interface.state_to_numpy(initial_state)
+            input_shape = state_array.shape  # Should be (C, H, W)
+            
+            # Determine batch sizes to optimize for
+            max_batch_size = getattr(self.config.mcts, 'tensorrt_max_batch_size', 512)
+            batch_sizes = [1, 8, 32, 64, 128]  # Common batch sizes
+            if hasattr(self.config.training, 'batch_size'):
+                batch_sizes.append(self.config.training.batch_size)
+            if max_batch_size not in batch_sizes:
+                batch_sizes.append(max_batch_size)
+            batch_sizes = [bs for bs in batch_sizes if bs <= max_batch_size]
+            
+            logger.info(f"  📏 Input shape: {input_shape}")
+            logger.info(f"  📊 Optimizing for batch sizes: {batch_sizes}")
+            
+            # Get workspace size from config (convert MB to bytes)
+            workspace_size_mb = getattr(self.config.mcts, 'tensorrt_workspace_size', 2048)
+            workspace_size = workspace_size_mb << 20  # Convert MB to bytes
+            
+            # Convert model to TensorRT
+            start_time = time.time()
+            trt_model = manager.get_or_convert_model(
+                pytorch_model=self.model,
+                input_shape=input_shape,
+                batch_size=max_batch_size,
+                fp16=self.config.mcts.tensorrt_fp16,
+                workspace_size=workspace_size,
+                worker_id=0  # Main process
+            )
+            
+            if trt_model is not None:
+                conversion_time = time.time() - start_time
+                logger.info(f"  ✅ TensorRT engine compiled successfully in {conversion_time:.2f}s")
+                
+                # Store engine path for workers to use
+                model_hash = manager.get_model_hash(self.model, input_shape)
+                self.tensorrt_engine_path = manager.get_cached_engine_path(model_hash)
+                logger.info(f"  💾 Engine cached at: {self.tensorrt_engine_path}")
+                
+                # Verify engine can be loaded
+                if self.tensorrt_engine_path.exists():
+                    logger.info("  ✅ Engine file verified")
+                else:
+                    logger.warning("  ⚠️  Engine file not found after compilation")
+            else:
+                logger.warning("  ⚠️  TensorRT compilation failed, workers will use PyTorch")
+                
+        except Exception as e:
+            logger.error(f"  ❌ TensorRT pre-compilation error: {e}")
+            logger.info("  📝 Workers will fall back to PyTorch")
 
 
 # Old wrapper function removed - now using GPU service architecture from self_play_module

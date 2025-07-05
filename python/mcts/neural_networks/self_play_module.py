@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import time
 import queue
+import os
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -52,7 +53,8 @@ class SelfPlayManager:
     
     def generate_games(self, model: torch.nn.Module, iteration: int,
                   num_games: Optional[int] = None,
-                  num_workers: Optional[int] = None) -> List[Any]:
+                  num_workers: Optional[int] = None,
+                  tensorrt_engine_path: Optional[str] = None) -> List[Any]:
         """Generate self-play games with progress tracking
         
         Args:
@@ -60,6 +62,7 @@ class SelfPlayManager:
         iteration: Current training iteration
         num_games: Number of games to generate (overrides config)
         num_workers: Number of parallel workers (overrides config)
+        tensorrt_engine_path: Path to pre-compiled TensorRT engine
         
         Returns:
         List of game examples
@@ -70,7 +73,7 @@ class SelfPlayManager:
         if num_workers <= 1:
             return self._sequential_self_play(model, iteration, num_games)
         else:
-            return self._parallel_self_play(model, iteration, num_games, num_workers)
+            return self._parallel_self_play(model, iteration, num_games, num_workers, tensorrt_engine_path)
     
     def _sequential_self_play(self, model: torch.nn.Module, iteration: int,
                          num_games: int) -> List[Any]:
@@ -98,7 +101,8 @@ class SelfPlayManager:
         return examples
     
     def _parallel_self_play(self, model: torch.nn.Module, iteration: int,
-                       num_games: int, num_workers: int) -> List[Any]:
+                       num_games: int, num_workers: int,
+                       tensorrt_engine_path: Optional[str] = None) -> List[Any]:
         """Generate games in parallel with GPU evaluation service"""
         import multiprocessing as mp
         
@@ -127,7 +131,8 @@ class SelfPlayManager:
             device=self.config.mcts.device,
             workload_type="throughput",  # Optimize for maximum throughput
             use_tensorrt=getattr(self.config.mcts, 'use_tensorrt', True),  # Use config or default to True
-            tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True)  # Use config or default to True
+            tensorrt_fp16=getattr(self.config.mcts, 'tensorrt_fp16', True),  # Use config or default to True
+            tensorrt_engine_path=tensorrt_engine_path  # Pass pre-compiled engine path
         )
         
         # Start the service
@@ -319,28 +324,17 @@ class SelfPlayManager:
             # Note: MCTS already applies temperature scaling to visit counts using
             # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
             
-            # DEBUG: Add comprehensive logging to trace the illegal move bug
-            logger.debug(f"[DEBUG] Policy shape: {policy.shape}, sum: {np.sum(policy):.6f}")
-            logger.debug(f"[DEBUG] Policy range: [{np.min(policy):.6f}, {np.max(policy):.6f}]")
-            logger.debug(f"[DEBUG] Temperature: {mcts.config.temperature}")
-            
             if mcts.config.temperature == 0:
                 # Deterministic - select highest probability action
                 action = np.argmax(policy)
-                logger.debug(f"[DEBUG] Deterministic action selected: {action} (policy[{action}]={policy[action]:.6f})")
             else:
                 # Stochastic - sample from the temperature-scaled distribution
                 if np.sum(policy) > 0:
                     normalized_policy = policy / np.sum(policy)
                     action = np.random.choice(len(policy), p=normalized_policy)
-                    logger.debug(f"[DEBUG] Stochastic action selected: {action} (normalized_policy[{action}]={normalized_policy[action]:.6f})")
                 else:
                     # Fallback to uniform random
                     action = np.random.choice(len(policy))
-                    logger.debug(f"[DEBUG] Fallback random action selected: {action}")
-            
-            # DEBUG: Verify action is within bounds
-            logger.debug(f"[DEBUG] Selected action: {action}, policy length: {len(policy)}")
             
             # Store example with the full policy (before move selection)
             canonical_state = self.game_interface.get_canonical_form(state)
@@ -469,8 +463,22 @@ class SelfPlayManager:
             use_mixed_precision=self.config.mcts.use_mixed_precision
         )
 
-    def _create_mcts(self, evaluator: Any):
-        """Create MCTS instance with quantum features if enabled"""
+    def _create_mcts(self, evaluator: Any, is_sequential: bool = True):
+        """Create MCTS instance with quantum features if enabled
+        
+        Args:
+            evaluator: Neural network evaluator
+            is_sequential: True for sequential mode, False for worker mode
+        """
+        # Determine if CUDA kernels should be enabled
+        cuda_available = torch.cuda.is_available() and os.environ.get('DISABLE_CUDA_KERNELS', '0') != '1'
+        
+        # Use CUDA for sequential mode if available
+        if is_sequential and cuda_available:
+            device = 'cuda'
+        else:
+            device = 'cpu'
+        
         # Create MCTS configuration using unified config system
         mcts_config = MCTSConfig(
             # Core MCTS parameters
@@ -484,17 +492,17 @@ class SelfPlayManager:
             min_wave_size=self.config.mcts.min_wave_size,
             max_wave_size=self.config.mcts.max_wave_size,
             
-            # Memory and optimization (reduced for workers)
-            memory_pool_size_mb=max(512, self.config.mcts.memory_pool_size_mb // 4),  # Reduced for workers
-        max_tree_nodes=self.config.mcts.max_tree_nodes // 2,  # Reduced for workers
-        use_mixed_precision=self.config.mcts.use_mixed_precision,
-        use_cuda_graphs=self.config.mcts.use_cuda_graphs,
-        use_tensor_cores=self.config.mcts.use_tensor_cores,
-        
-        # Game and device configuration  
-        device=self.config.mcts.device,
-        game_type=self.game_type,
-        board_size=self.config.game.board_size,
+            # Memory and optimization
+            memory_pool_size_mb=max(512, self.config.mcts.memory_pool_size_mb // 4),
+            max_tree_nodes=min(100000, self.config.mcts.max_tree_nodes // 2),  # Cap at 100k for stability
+            use_mixed_precision=cuda_available and self.config.mcts.use_mixed_precision,
+            use_cuda_graphs=cuda_available and self.config.mcts.use_cuda_graphs,
+            use_tensor_cores=cuda_available and self.config.mcts.use_tensor_cores,
+            
+            # Game and device configuration  
+            device=device,
+            game_type=self.game_type,
+            board_size=self.config.game.board_size,
         
         # Enable quantum features if configured
         enable_quantum=self.config.mcts.enable_quantum,
@@ -563,21 +571,53 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
     # Add project path for imports
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     
-    # Enable CUDA for MCTS kernels but not for neural networks
-    # We bypass the CUDA fix to allow GPU kernels while keeping NN evaluation in main process
-    # from mcts.utils.cuda_multiprocessing_fix import fix_existing_worker_process
-    # fix_existing_worker_process()  # DISABLED: We want CUDA for MCTS kernels
+    # CRITICAL: Only disable CUDA for multi-worker mode
+    # Single worker mode can safely use CUDA kernels
+    import os
+    import sys
+    
+    # CUDA kernel control for workers
+    # We want to use CUDA kernels for performance, but prevent GPU memory corruption
+    if game_idx > 0:  # Multi-worker mode (worker 1, 2, 3...)
+        # Don't hide GPUs completely - we need them for CUDA kernels
+        # Just ensure workers don't try to initialize TensorRT or allocate large GPU memory
+        os.environ['WORKER_INDEX'] = str(game_idx)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # All workers use same GPU
+        # Don't disable CUDA kernels - we want to use them!
+        # os.environ['DISABLE_CUDA_KERNELS'] = '1'  # REMOVED - allow CUDA kernels
+    else:  # Single worker mode (worker 0) or sequential mode
+        # Main worker/process
+        os.environ['WORKER_INDEX'] = '0'
+        # Allow full GPU access
+        pass
     
     try:
         # Now safe to import torch and other modules
         import torch
         
-        # Verify CUDA is available for MCTS kernels
-        cuda_available = torch.cuda.is_available()
-        if cuda_available:
-            logger.debug(f"[WORKER {game_idx}] CUDA available for MCTS kernels - NN eval via GPU service")
-        else:
-            logger.debug(f"[WORKER {game_idx}] CUDA not available - using CPU fallback")
+        # CRITICAL: Prevent TensorRT initialization in workers
+        # This is what causes memory corruption when multiple processes access GPU
+        os.environ['DISABLE_TENSORRT_IN_WORKERS'] = '1'
+        
+        # Check CUDA availability based on worker mode
+        if game_idx > 0:  # Multi-worker mode
+            # Force disable CUDA in torch to prevent any GPU operations
+            torch.cuda.is_available = lambda: False
+            torch.cuda.device_count = lambda: 0
+            torch.cuda.current_device = lambda: 0
+            torch.cuda.get_device_name = lambda x=0: "CPU"
+            torch.cuda.get_device_properties = lambda x=0: None
+            worker_device = 'cpu'
+            cuda_available = False
+            logger.debug(f"[WORKER {game_idx}] Multi-worker mode - CUDA disabled, NN eval via GPU service")
+        else:  # Single worker mode
+            cuda_available = torch.cuda.is_available()
+            if cuda_available:
+                worker_device = 'cuda'
+                logger.debug(f"[WORKER {game_idx}] Single worker mode - CUDA enabled for MCTS kernels")
+            else:
+                worker_device = 'cpu'
+                logger.debug(f"[WORKER {game_idx}] Single worker mode - CUDA not available, using CPU")
         
         from .unified_training_pipeline import GameExample
         from mcts.core.game_interface import GameInterface, GameType
@@ -664,9 +704,9 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
                 values_tensor = torch.from_numpy(values).float().to(self.device)
                 return policies_tensor, values_tensor
         
-        # CRITICAL: Use CPU for tensor operations in workers, neural network evaluation happens in main process via GPU service
-        tensor_device = 'cpu'  # Use CPU in workers
-        evaluator = TensorEvaluator(remote_evaluator, tensor_device)
+        # Use the same device as MCTS for tensor operations
+        # Neural network evaluation still happens in main process via GPU service
+        evaluator = TensorEvaluator(remote_evaluator, worker_device)
         # Removed verbose logging - tensor evaluator created
         
         # Memory debugging removed - fix confirmed working
@@ -687,13 +727,16 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         # This is critical because workers run independent MCTS searches
         nodes_per_worker = config.mcts.max_tree_nodes
         
-        # Ensure minimum for safety, but workers need full allocation
-        nodes_per_worker = max(nodes_per_worker, 500000)
+        # Cap nodes based on device to avoid GPU state pool exhaustion
+        if worker_device == 'cuda':
+            # GPU has limited state pool capacity
+            nodes_per_worker = min(nodes_per_worker, 100000)
+        else:
+            # CPU can handle more nodes
+            nodes_per_worker = max(nodes_per_worker, 500000)
         
-        # CRITICAL: Force CPU usage for tree operations in workers
-        # This prevents GPU memory exhaustion while maintaining performance
-        # Neural network evaluation still happens on GPU via the service
-        worker_device = 'cpu'  # Always use CPU for tree operations in workers
+        # Worker device already set above based on CUDA availability
+        # MCTS kernels can safely use GPU in worker processes
         
         # Clean logging removed - using CPU for tree operations
         
@@ -710,9 +753,9 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
         # use_optimized_implementation=True,  # This parameter doesn't exist in MCTSConfig
         # Dynamic memory pool based on hardware allocation
         memory_pool_size_mb=min(allocation.get('memory_per_worker_mb', 512) // 2, 512),
-        use_mixed_precision=False,  # Disable for CPU workers
-        use_cuda_graphs=False,  # Disable for CPU workers
-        use_tensor_cores=False,  # Disable for CPU workers
+        use_mixed_precision=cuda_available and config.mcts.use_mixed_precision,
+        use_cuda_graphs=cuda_available and config.mcts.use_cuda_graphs,
+        use_tensor_cores=cuda_available and config.mcts.use_tensor_cores,
         # FIXED: Ensure sufficient tree size to prevent state pool exhaustion
         max_tree_nodes=nodes_per_worker,
         dirichlet_epsilon=0.25,  # Add exploration noise to root
@@ -867,28 +910,17 @@ def _play_game_worker_with_gpu_service(config, request_queue, response_queue, ac
             # Note: MCTS already applies temperature scaling to visit counts using
             # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
             
-            # DEBUG: Add comprehensive logging to trace the illegal move bug
-            logger.debug(f"[DEBUG] Policy shape: {policy.shape}, sum: {np.sum(policy):.6f}")
-            logger.debug(f"[DEBUG] Policy range: [{np.min(policy):.6f}, {np.max(policy):.6f}]")
-            logger.debug(f"[DEBUG] Temperature: {mcts.config.temperature}")
-            
             if mcts.config.temperature == 0:
                 # Deterministic - select highest probability action
                 action = np.argmax(policy)
-                logger.debug(f"[DEBUG] Deterministic action selected: {action} (policy[{action}]={policy[action]:.6f})")
             else:
                 # Stochastic - sample from the temperature-scaled distribution
                 if np.sum(policy) > 0:
                     normalized_policy = policy / np.sum(policy)
                     action = np.random.choice(len(policy), p=normalized_policy)
-                    logger.debug(f"[DEBUG] Stochastic action selected: {action} (normalized_policy[{action}]={normalized_policy[action]:.6f})")
                 else:
                     # Fallback to uniform random
                     action = np.random.choice(len(policy))
-                    logger.debug(f"[DEBUG] Fallback random action selected: {action}")
-            
-            # DEBUG: Verify action is within bounds
-            logger.debug(f"[DEBUG] Selected action: {action}, policy length: {len(policy)}")
             
             # Store example with the full policy (before move selection)
             canonical_state = game_interface.get_canonical_form(state)

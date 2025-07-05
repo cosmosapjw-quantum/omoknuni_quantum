@@ -84,7 +84,7 @@ class CSRBatchOperations:
         value_sums: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Coalesced backup using unified kernels"""
-        return self.kernels.parallel_backup(
+        return self.kernels.vectorized_backup(
             paths, values, path_lengths, visit_counts, value_sums
         )
     

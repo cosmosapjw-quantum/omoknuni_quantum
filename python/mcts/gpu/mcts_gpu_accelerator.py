@@ -89,9 +89,6 @@ class MCTSGPUAccelerator:
             return self._kernel_interface.vectorized_backup(*args, **kwargs)
         return self._kernel_interface.pytorch_backup(*args, **kwargs)
     
-    def parallel_backup(self, *args, **kwargs):
-        """Parallel backup operation (alias for vectorized_backup)"""
-        return self.vectorized_backup(*args, **kwargs)
     
     def find_expansion_nodes(self, *args, **kwargs):
         """Find expansion nodes"""
@@ -243,19 +240,11 @@ class ConsolidatedKernelInterface:
     
     def __init__(self, kernel_module):
         self.kernels = kernel_module
-        
-        # Add parallel_backup alias dynamically if not present
-        if hasattr(self.kernels, 'vectorized_backup') and not hasattr(self.kernels, 'parallel_backup'):
-            setattr(self.kernels, 'parallel_backup', self.kernels.vectorized_backup)
     
     def batch_ucb_selection(self, *args, **kwargs):
         return self.kernels.batched_ucb_selection(*args, **kwargs)
     
     def vectorized_backup(self, *args, **kwargs):
-        return self.kernels.vectorized_backup(*args, **kwargs)
-    
-    def parallel_backup(self, *args, **kwargs):
-        """Parallel backup operation (alias for vectorized_backup)"""
         return self.kernels.vectorized_backup(*args, **kwargs)
     
     def find_expansion_nodes(self, *args, **kwargs):

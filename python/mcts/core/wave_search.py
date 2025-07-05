@@ -77,6 +77,31 @@ class WaveSearch:
         # Cache for batched Dirichlet noise generation
         self._dirichlet_cache = {}
         
+        # Progressive widening parameters
+        self.pw_alpha = getattr(config, 'progressive_widening_alpha', 0.5)  # k = alpha * sqrt(n)
+        self.pw_base = getattr(config, 'progressive_widening_base', 10.0)   # Minimum children
+        
+    def _get_max_children_for_expansion(self, parent_visits: int, num_legal_moves: int) -> int:
+        """Calculate maximum children to expand using progressive widening
+        
+        Args:
+            parent_visits: Number of visits to parent node
+            num_legal_moves: Total number of legal moves
+            
+        Returns:
+            Maximum number of children to expand
+        """
+        # Progressive widening: expand more children as parent gets more visits
+        # Formula: min(num_legal_moves, base + alpha * sqrt(parent_visits))
+        import math
+        max_children = int(self.pw_base + self.pw_alpha * math.sqrt(max(1, parent_visits)))
+        
+        # For root node on first expansion, be more aggressive
+        if parent_visits == 0:
+            max_children = min(int(self.pw_base * 2), num_legal_moves)
+        
+        return min(max_children, num_legal_moves)
+        
     def allocate_buffers(self, wave_size: int, max_depth: int = 100):
         """Allocate work buffers for wave operations
         
@@ -429,6 +454,23 @@ class WaveSearch:
                     # Extract and normalize priors
                     priors = policy[legal_actions]
                     priors = priors / (priors.sum() + 1e-8)
+                    
+                    # CRITICAL: Implement progressive widening to avoid eager expansion
+                    # Only expand a subset of moves based on visit count
+                    parent_visits = self.tree.node_data.visit_counts[node_idx].item()
+                    
+                    # Progressive widening formula: k * sqrt(n) where n is parent visits
+                    # Start with a small number and grow
+                    max_children = self._get_max_children_for_expansion(parent_visits, len(legal_actions))
+                    
+                    if max_children < len(legal_actions):
+                        # Select top moves by prior probability
+                        logger.debug(f"Progressive widening: Node {node_idx} with {parent_visits} visits, "
+                                   f"expanding {max_children}/{len(legal_actions)} children")
+                        top_k_indices = torch.topk(priors, min(max_children, len(priors))).indices
+                        legal_actions = legal_actions[top_k_indices]
+                        priors = priors[top_k_indices]
+                        priors = priors / priors.sum()  # Re-normalize
                     
                     # Prepare for batch operations
                     num_actions = len(legal_actions)
