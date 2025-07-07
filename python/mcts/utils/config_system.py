@@ -178,10 +178,11 @@ class NeuralNetworkConfig:
     """Neural network architecture and training configuration"""
     # Architecture
     model_type: str = "resnet"  # resnet, simple, lightweight
-    input_channels: int = 20
-    input_representation: str = "standard"  # standard, enhanced, compact
+    input_channels: int = 18
+    input_representation: str = "basic"  # basic, standard, enhanced, compact
     num_res_blocks: int = 10
     num_filters: int = 256
+    fc_hidden_size: int = 256  # Hidden size for fully connected layers
     value_head_hidden_size: int = 256
     policy_head_filters: int = 2
     
@@ -198,6 +199,15 @@ class NeuralNetworkConfig:
     # Initialization
     weight_init: str = "he_normal"  # he_normal, xavier_normal, orthogonal
     bias_init: float = 0.0
+    
+    def __post_init__(self):
+        """Validate neural network configuration"""
+        if self.num_res_blocks < 0:
+            raise ValueError(f"num_res_blocks must be non-negative, got {self.num_res_blocks}")
+        if self.num_filters <= 0:
+            raise ValueError(f"num_filters must be positive, got {self.num_filters}")
+        if self.input_channels <= 0:
+            raise ValueError(f"input_channels must be positive, got {self.input_channels}")
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -278,6 +288,9 @@ class TrainingFullConfig:
     save_dir: str = "checkpoints"
     tensorboard_dir: str = "runs"
     data_dir: str = "self_play_data"
+    
+    # Distributed training
+    distributed: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -372,11 +385,14 @@ class GameConfig:
     """Game-specific configuration"""
     game_type: str = "gomoku"  # chess, go, gomoku
     board_size: int = 15  # For Go and Gomoku
+    win_length: int = 5  # For Gomoku
+    use_symmetries: bool = True
     
     # Go-specific
     go_komi: float = 7.5
     go_rules: str = "chinese"  # chinese, japanese, tromp_taylor
     go_superko: bool = True
+    komi: float = 7.5  # Alias for go_komi
     
     # Gomoku-specific
     gomoku_use_renju: bool = False
@@ -387,6 +403,17 @@ class GameConfig:
     chess_960: bool = False
     chess_starting_fen: Optional[str] = None
     
+    def __post_init__(self):
+        """Adjust board size based on game type and validate"""
+        # Validate game type
+        valid_game_types = ['chess', 'go', 'gomoku']
+        if self.game_type not in valid_game_types:
+            raise ValueError(f"Invalid game type: {self.game_type}. Must be one of {valid_game_types}")
+            
+        # Adjust board size based on game type
+        if self.game_type == 'chess' and self.board_size == 15:
+            self.board_size = 8
+            
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
     
@@ -404,23 +431,189 @@ class GameConfig:
 
 
 @dataclass
+class LogConfig:
+    """Logging configuration with comprehensive settings"""
+    # Directory settings
+    log_dir: str = "logs"
+    tensorboard_dir: str = "tensorboard"
+    checkpoint_dir: str = "checkpoints"
+    
+    # Logging levels
+    console_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+    file_level: str = "DEBUG"
+    
+    # Tensorboard settings
+    tensorboard: bool = True
+    tensorboard_flush_secs: int = 30
+    tensorboard_histogram_freq: int = 10
+    
+    # Checkpoint settings
+    checkpoint_frequency: int = 10  # Save every N iterations
+    checkpoint_keep_last: int = 5  # Keep last N checkpoints
+    checkpoint_keep_best: int = 3  # Keep best N checkpoints by ELO
+    
+    # Metrics logging
+    log_metrics: bool = True
+    metrics_frequency: int = 1  # Log metrics every N games
+    detailed_metrics: bool = False  # Log per-move metrics
+    
+    # Game logging
+    save_game_records: bool = True
+    game_record_format: str = "pgn"  # pgn, sgf, or custom
+    save_failed_games: bool = True  # Save games that ended in errors
+    
+    # Performance logging
+    profile_performance: bool = False
+    profile_frequency: int = 100  # Profile every N games
+    
+    def __post_init__(self):
+        """Validate logging configuration"""
+        valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR']
+        if self.console_level not in valid_levels:
+            raise ValueError(f"Invalid console_level: {self.console_level}")
+        if self.file_level not in valid_levels:
+            raise ValueError(f"Invalid file_level: {self.file_level}")
+            
+        valid_formats = ['pgn', 'sgf', 'custom']
+        if self.game_record_format not in valid_formats:
+            raise ValueError(f"Invalid game_record_format: {self.game_record_format}")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ResourceConfig:
+    """Resource management configuration with hardware optimization"""
+    # Worker settings
+    num_workers: int = 4  # Number of parallel workers
+    num_actors: int = 8  # Number of self-play actors
+    num_evaluators: int = 2  # Number of neural network evaluators
+    
+    # CPU settings
+    cpu_threads_per_worker: int = 1
+    cpu_affinity: bool = False  # Pin workers to specific CPU cores
+    
+    # Memory settings
+    memory_limit_gb: Optional[float] = None  # None = auto-detect
+    tree_memory_fraction: float = 0.4  # Fraction of memory for MCTS trees
+    buffer_memory_fraction: float = 0.3  # Fraction for replay buffers
+    
+    # GPU settings
+    num_gpus: int = 1  # Number of GPUs to use
+    gpu_memory_fraction: float = 0.9  # Fraction of GPU memory to use
+    gpu_allow_growth: bool = True  # Allow GPU memory to grow dynamically
+    mixed_precision: bool = True  # Use mixed precision training
+    
+    # Batch settings
+    inference_batch_size: int = 256  # Batch size for NN inference
+    training_batch_queue_size: int = 10  # Queue size for training batches
+    
+    # Queue settings
+    self_play_queue_size: int = 100  # Max games in self-play queue
+    training_queue_size: int = 50  # Max samples in training queue
+    
+    # Performance settings
+    enable_profiling: bool = False
+    profile_kernel_launches: bool = False
+    
+    # Resource limits
+    max_tree_nodes_per_worker: int = 800000
+    max_game_length: int = 500
+    
+    def __post_init__(self):
+        """Validate and auto-detect resources"""
+        import multiprocessing
+        
+        # Auto-detect number of workers if not set
+        if self.num_workers <= 0:
+            self.num_workers = max(1, multiprocessing.cpu_count() - 2)
+            
+        # Validate memory fractions
+        total_fraction = self.tree_memory_fraction + self.buffer_memory_fraction
+        if total_fraction > 0.95:
+            logger.warning(f"Memory fractions sum to {total_fraction}, may cause OOM")
+            
+        # Auto-detect memory limit if not set
+        if self.memory_limit_gb is None:
+            if psutil is not None:
+                total_memory_gb = psutil.virtual_memory().total / (1024**3)
+                self.memory_limit_gb = total_memory_gb * 0.8  # Use 80% of total
+            else:
+                self.memory_limit_gb = 8.0  # Conservative default
+                
+        # Ensure batch size is reasonable
+        if self.inference_batch_size > 1024:
+            logger.warning(f"Large inference_batch_size: {self.inference_batch_size}")
+    
+    def get_memory_budget(self) -> Dict[str, float]:
+        """Calculate memory budget for different components"""
+        total_gb = self.memory_limit_gb or 8.0
+        return {
+            'tree_gb': total_gb * self.tree_memory_fraction,
+            'buffer_gb': total_gb * self.buffer_memory_fraction,
+            'other_gb': total_gb * (1 - self.tree_memory_fraction - self.buffer_memory_fraction)
+        }
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 class AlphaZeroConfig:
     """Master configuration containing all components"""
-    game: GameConfig = field(default_factory=GameConfig)
-    mcts: MCTSFullConfig = field(default_factory=MCTSFullConfig)
-    network: NeuralNetworkConfig = field(default_factory=NeuralNetworkConfig)
-    training: TrainingFullConfig = field(default_factory=TrainingFullConfig)
-    arena: ArenaFullConfig = field(default_factory=ArenaFullConfig)
     
-    # Global settings
-    experiment_name: str = "alphazero_experiment"
-    seed: int = 42
-    log_level: str = "INFO"
-    num_iterations: int = 1000
+    def __post_init__(self):
+        """Post-initialization processing"""
+        # This is called after the dataclass __init__
+        pass
     
-    # Hardware auto-detection
-    auto_detect_hardware: bool = True
-    hardware_info: Optional[Dict[str, Any]] = None
+    def __init__(self, **kwargs):
+        """Custom initialization to handle nested attribute assignment"""
+        # Extract game config parameters first
+        game_kwargs = {}
+        if 'game_type' in kwargs:
+            game_kwargs['game_type'] = kwargs.pop('game_type')
+        
+        # Extract other nested config parameters
+        network_kwargs = {}
+        if 'num_res_blocks' in kwargs:
+            network_kwargs['num_res_blocks'] = kwargs.pop('num_res_blocks')
+            
+        training_kwargs = {}
+        if 'batch_size' in kwargs:
+            training_kwargs['batch_size'] = kwargs.pop('batch_size')
+        
+        # Initialize all fields with defaults and extracted parameters
+        self.game = GameConfig(**game_kwargs)
+        self.mcts = MCTSFullConfig()
+        self.network = NeuralNetworkConfig(**network_kwargs)
+        self.training = TrainingFullConfig(**training_kwargs)
+        self.arena = ArenaFullConfig()
+        self.log = LogConfig()
+        self.resources = ResourceConfig()
+        self.experiment_name = "alphazero_experiment"
+        self.seed = 42
+        self.log_level = "INFO"
+        self.num_iterations = 1000
+        self.auto_detect_hardware = True
+        self.hardware_info = None
+            
+        # Set remaining kwargs as direct attributes
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                # Try to set on nested configs
+                for config_name in ['game', 'mcts', 'network', 'training', 'arena']:
+                    config = getattr(self, config_name)
+                    if hasattr(config, key):
+                        setattr(config, key, value)
+                        break
+                else:
+                    logger.warning(f"Unknown config parameter: {key}")
+                    
+        # Call post_init
+        self.__post_init__()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert entire config to dictionary"""
@@ -430,6 +623,8 @@ class AlphaZeroConfig:
             'network': self.network.to_dict(),
             'training': self.training.to_dict(),
             'arena': self.arena.to_dict(),
+            'log': self.log.to_dict(),
+            'resources': self.resources.to_dict(),
             'experiment_name': self.experiment_name,
             'seed': self.seed,
             'log_level': self.log_level,

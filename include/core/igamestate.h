@@ -141,6 +141,19 @@ public:
     virtual std::vector<std::vector<std::vector<float>>> getTensorRepresentation() const = 0;
 
     /**
+     * @brief Get basic tensor representation (AlphaZero format)
+     * 
+     * Creates an 18-channel representation following the standard AlphaZero format:
+     * - Channel 0: Current player's pieces
+     * - Channel 1: Opponent's pieces
+     * - Channels 2-17: Previous 8 board states for each player (16 channels)
+     * - All channels normalized with current player indicator
+     * 
+     * @return 3D tensor with 18 channels
+     */
+    virtual std::vector<std::vector<std::vector<float>>> getBasicTensorRepresentation() const = 0;
+
+    /**
      * @brief Get enhanced tensor representation with additional features
      * 
      * Similar to getTensorRepresentation, but with additional planes

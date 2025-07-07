@@ -43,23 +43,26 @@ class MockEvaluator:
         self.action_spaces = {
             'gomoku': 225,  # 15x15
             'chess': 4096,  # 64x64 (from-to)
-            'go': 361,      # 19x19
+            'go': 362,      # 19x19 + pass (default)
         }
         
         self.action_space = self.action_spaces.get(game_type, 225)
+        
+        # Board size for Go/Gomoku
+        self.board_size = None
         
         # Track evaluation count for debugging
         self.eval_count = 0
         
         logger.info(f"MockEvaluator initialized for {game_type} with action space {self.action_space}")
-        
-        # Create board size for more intelligent policies
-        if game_type == 'gomoku':
-            self.board_size = 15
-        elif game_type == 'go':
-            self.board_size = 19
-        else:
-            self.board_size = 8  # chess
+    
+    def set_board_size(self, board_size: int):
+        """Set board size and update action space accordingly"""
+        self.board_size = board_size
+        if self.game_type == 'go':
+            self.action_space = board_size * board_size + 1  # +1 for pass
+        elif self.game_type == 'gomoku':
+            self.action_space = board_size * board_size
     
     def evaluate(self, states: Union[torch.Tensor, np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor]:
         """

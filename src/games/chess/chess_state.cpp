@@ -739,6 +739,88 @@ std::vector<std::vector<std::vector<float>>> ChessState::getTensorRepresentation
     return tensor;
 }
 
+std::vector<std::vector<std::vector<float>>> ChessState::getBasicTensorRepresentation() const {
+    // Unified format: 18 channels (same structure as Go/Gomoku)
+    // Channel 0: Current board state (piece encodings: 1-6 for white, 7-12 for black pieces)
+    // Channel 1: Current player indicator (all 1.0 if white's turn, all 0.0 if black's turn)
+    // Channels 2-17: Previous 8 board states (2 channels per historical position)
+    
+    const int boardSize = 8;
+    const int num_feature_planes = 18;
+    const int history_planes = 8;
+    
+    // Create tensor
+    std::vector<std::vector<std::vector<float>>> tensor(
+        num_feature_planes,
+        std::vector<std::vector<float>>(boardSize, std::vector<float>(boardSize, 0.0f))
+    );
+    
+    // Channel 0: Current board state
+    for (int row = 0; row < boardSize; ++row) {
+        for (int col = 0; col < boardSize; ++col) {
+            int square = row * 8 + col;
+            auto piece = board_[square];
+            
+            if (piece.type != PieceType::NONE) {
+                // Encode pieces: 1-6 for white, 7-12 for black
+                float pieceValue = 0.0f;
+                int typeOffset = 0;
+                switch (piece.type) {
+                    case PieceType::PAWN:   typeOffset = 0; break;
+                    case PieceType::KNIGHT: typeOffset = 1; break;
+                    case PieceType::BISHOP: typeOffset = 2; break;
+                    case PieceType::ROOK:   typeOffset = 3; break;
+                    case PieceType::QUEEN:  typeOffset = 4; break;
+                    case PieceType::KING:   typeOffset = 5; break;
+                    default: continue;
+                }
+                
+                if (piece.color == PieceColor::WHITE) {
+                    pieceValue = 1.0f + typeOffset;  // 1-6 for white pieces
+                } else {
+                    pieceValue = 7.0f + typeOffset;  // 7-12 for black pieces
+                }
+                
+                tensor[0][row][col] = pieceValue;
+            }
+        }
+    }
+    
+    // Channel 1: Current player indicator
+    float player_value = (current_player_ == PieceColor::WHITE) ? 1.0f : 0.0f;
+    for (int row = 0; row < boardSize; ++row) {
+        for (int col = 0; col < boardSize; ++col) {
+            tensor[1][row][col] = player_value;
+        }
+    }
+    
+    // Fill history planes (channels 2-17)
+    // Each pair of channels represents one historical position
+    // This is simplified - a full implementation would reconstruct positions
+    
+    for (int h = 0; h < history_planes; ++h) {
+        int board_channel = 2 + h * 2;
+        int player_channel = 2 + h * 2 + 1;
+        
+        // For chess, we'll leave history as zeros for now
+        // A complete implementation would track board positions through move history
+        // and reconstruct them similar to Go
+        
+        // Just indicate if we're tracking potential repetitions
+        if (h == 0 && halfmove_clock_ == 0) {
+            // Recent capture or pawn move - potential for new patterns
+            for (int row = 0; row < boardSize; ++row) {
+                for (int col = 0; col < boardSize; ++col) {
+                    tensor[board_channel][row][col] = 0.0f;
+                    tensor[player_channel][row][col] = 0.0f;
+                }
+            }
+        }
+    }
+    
+    return tensor;
+}
+
 std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepresentation() const {
     // PERFORMANCE FIX: Use cached enhanced tensor if available and not dirty
     if (!enhanced_tensor_cache_dirty_.load(std::memory_order_relaxed) && !cached_enhanced_tensor_repr_.empty()) {

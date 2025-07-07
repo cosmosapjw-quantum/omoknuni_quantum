@@ -204,8 +204,8 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getTensorRepresentatio
 
 std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresentation() const {
     // Basic tensor representation without attack/defense planes
-    // Channel 0: Current board state  
-    // Channel 1: Current player indicator
+    // Channel 0: Current player's stones  
+    // Channel 1: Opponent player's stones
     // Channels 2-17: Previous 8 moves for each player (16 channels)
     // Total: 18 channels (no attack/defense overhead)
     
@@ -217,25 +217,19 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
             num_feature_planes, std::vector<std::vector<float>>(
                 board_size_, std::vector<float>(board_size_, 0.0f)));
 
-        // Channel 0: Current board state
-        // BLACK stones = 1.0, WHITE stones = 2.0, empty = 0.0
+        // Channels 0-1: Current and opponent player stones (like standard representation)
+        int p_idx_current = current_player_ - 1;      // 0 for BLACK, 1 for WHITE
+        int p_idx_opponent = 1 - p_idx_current;       // 1 for BLACK, 0 for WHITE
+        
         for (int r = 0; r < board_size_; ++r) {
             for (int c = 0; c < board_size_; ++c) {
                 int action = coords_to_action(r, c);
-                if (is_bit_set(0, action)) { // BLACK (player 1)
-                    tensor[0][r][c] = 1.0f;
-                } else if (is_bit_set(1, action)) { // WHITE (player 2)
-                    tensor[0][r][c] = 2.0f;
+                if (is_bit_set(p_idx_current, action)) {
+                    tensor[0][r][c] = 1.0f; // Current player's stones
+                } else if (is_bit_set(p_idx_opponent, action)) {
+                    tensor[1][r][c] = 1.0f; // Opponent player's stones
                 }
-                // Empty squares remain 0.0f
-            }
-        }
-
-        // Channel 1: Current player indicator
-        float color_plane_val = (current_player_ == BLACK) ? 1.0f : 0.0f;
-        for (int r = 0; r < board_size_; ++r) {
-            for (int c = 0; c < board_size_; ++c) {
-                tensor[1][r][c] = color_plane_val;
+                // Empty squares remain 0.0f in both channels
             }
         }
 
@@ -309,9 +303,9 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
     // CRITICAL FIX: Don't cache tensors to prevent memory accumulation
     
     try {
-        // Option C format:
-        // Channel 0: Current board state
-        // Channel 1: Current player indicator
+        // Enhanced tensor format:
+        // Channel 0: Current player's stones
+        // Channel 1: Opponent player's stones
         // Channels 2-17: Previous 8 moves for each player (16 channels)
         // Channels 18-19: Attack/defense planes
         const int num_feature_planes = 20; // Total channels
@@ -321,25 +315,19 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
             num_feature_planes, std::vector<std::vector<float>>(
                 board_size_, std::vector<float>(board_size_, 0.0f)));
 
-        // Channel 0: Current board state
-        // BLACK stones = 1.0, WHITE stones = 2.0, empty = 0.0
+        // Channels 0-1: Current and opponent player stones (consistent with basic representation)
+        int p_idx_current = current_player_ - 1;      // 0 for BLACK, 1 for WHITE
+        int p_idx_opponent = 1 - p_idx_current;       // 1 for BLACK, 0 for WHITE
+        
         for (int r = 0; r < board_size_; ++r) {
             for (int c = 0; c < board_size_; ++c) {
                 int action = coords_to_action(r, c);
-                if (is_bit_set(0, action)) { // BLACK (player 1)
-                    tensor[0][r][c] = 1.0f;
-                } else if (is_bit_set(1, action)) { // WHITE (player 2)
-                    tensor[0][r][c] = 2.0f;
+                if (is_bit_set(p_idx_current, action)) {
+                    tensor[0][r][c] = 1.0f; // Current player's stones
+                } else if (is_bit_set(p_idx_opponent, action)) {
+                    tensor[1][r][c] = 1.0f; // Opponent player's stones
                 }
-                // Empty squares remain 0.0f
-            }
-        }
-
-        // Channel 1: Current player indicator
-        float color_plane_val = (current_player_ == BLACK) ? 1.0f : 0.0f;
-        for (int r = 0; r < board_size_; ++r) {
-            for (int c = 0; c < board_size_; ++c) {
-                tensor[1][r][c] = color_plane_val;
+                // Empty squares remain 0.0f in both channels
             }
         }
 

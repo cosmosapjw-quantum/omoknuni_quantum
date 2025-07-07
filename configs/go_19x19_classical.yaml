@@ -46,8 +46,29 @@ mcts:
   enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
+  enable_progressive_widening: true
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
   progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
+  # RAVE (Rapid Action Value Estimation) for faster learning
+  enable_rave: true
+  rave_c: 3000.0  # RAVE exploration constant
+  rave_threshold: 50  # Disable RAVE after this many training iterations
+  
+  # Tactical boost for finding important moves with untrained networks
+  enable_tactical_boost: true
+  tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
+  tactical_boost_decay: 0.99        # Decay factor per iteration
+  
+  # Go tactical parameters
+  go_capture_boost: 15.0            # Capture opponent stones
+  go_escape_boost: 12.0             # Escape from atari
+  go_atari_boost: 10.0              # Put opponent in atari
+  go_save_boost: 8.0                # Save own stones
+  go_territory_boost: 5.0           # Territory control
+  go_connection_boost: 3.0          # Connect stones
+  go_eye_boost: 7.0                 # Eye formation
+  go_corner_boost: 2.0              # Corner moves bonus
   
   # Device - Ryzen 9 5900X
   device: cuda
@@ -65,7 +86,8 @@ mcts:
 network:
   # Deeper network for Go complexity
   model_type: resnet
-  input_channels: 20
+  input_channels: 18           # Standard AlphaZero representation
+  input_representation: basic  # 'basic' (18ch), 'minimal' (3ch), or 'enhanced' (20ch)
   num_res_blocks: 20
   num_filters: 256
   value_head_hidden_size: 512

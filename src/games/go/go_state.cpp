@@ -593,6 +593,91 @@ std::vector<std::vector<std::vector<float>>> GoState::getTensorRepresentation() 
     return tensor;
 }
 
+std::vector<std::vector<std::vector<float>>> GoState::getBasicTensorRepresentation() const {
+    // Unified format: 18 channels
+    // Channel 0: Current board state (1.0 for player 1/black, 2.0 for player 2/white)
+    // Channel 1: Current player indicator (all 1.0 if player 1's turn, all 0.0 if player 2's turn)
+    // Channels 2-17: Previous 8 board states (2 channels per historical position)
+    
+    const int num_feature_planes = 18;
+    const int history_planes = 8; // 8 previous states
+    
+    // Create tensor
+    auto tensor = std::vector<std::vector<std::vector<float>>>(
+        num_feature_planes, 
+        std::vector<std::vector<float>>(board_size_, std::vector<float>(board_size_, 0.0f))
+    );
+    
+    // Channel 0: Current board state
+    for (int y = 0; y < board_size_; ++y) {
+        for (int x = 0; x < board_size_; ++x) {
+            int pos = y * board_size_ + x;
+            int stone = getStone(pos);
+            
+            if (stone == 1) {
+                tensor[0][y][x] = 1.0f;  // Black stone
+            } else if (stone == 2) {
+                tensor[0][y][x] = 2.0f;  // White stone
+            }
+            // Empty = 0.0 (default)
+        }
+    }
+    
+    // Channel 1: Current player indicator
+    float player_value = (current_player_ == 1) ? 1.0f : 0.0f;
+    for (int y = 0; y < board_size_; ++y) {
+        for (int x = 0; x < board_size_; ++x) {
+            tensor[1][y][x] = player_value;
+        }
+    }
+    
+    // Fill history planes (channels 2-17)
+    // Each pair of channels represents one historical position:
+    // Channels 2-3: 1 move ago (board state + player turn)
+    // Channels 4-5: 2 moves ago
+    // ... and so on
+    
+    for (int h = 0; h < history_planes; ++h) {
+        int board_channel = 2 + h * 2;      // Channels 2, 4, 6, 8, 10, 12, 14, 16
+        int player_channel = 2 + h * 2 + 1; // Channels 3, 5, 7, 9, 11, 13, 15, 17
+        
+        // Calculate how many moves back we need to go
+        int moves_back = h + 1;
+        
+        if (move_history_.size() >= moves_back) {
+            // Replay the game up to this historical position
+            GoState historical_state(board_size_, rule_set_, komi_);
+            
+            for (int i = 0; i < move_history_.size() - moves_back; ++i) {
+                int move = move_history_[i];
+                if (move >= 0 && historical_state.isLegalMove(move)) {
+                    historical_state.makeMove(move);
+                }
+            }
+            
+            // Fill the board state for this historical position
+            for (int y = 0; y < board_size_; ++y) {
+                for (int x = 0; x < board_size_; ++x) {
+                    int pos = y * board_size_ + x;
+                    int stone = historical_state.getStone(pos);
+                    
+                    if (stone == 1) {
+                        tensor[board_channel][y][x] = 1.0f;  // Black
+                    } else if (stone == 2) {
+                        tensor[board_channel][y][x] = 2.0f;  // White
+                    }
+                    
+                    // Player turn for that historical position
+                    tensor[player_channel][y][x] = (historical_state.getCurrentPlayer() == 1) ? 1.0f : 0.0f;
+                }
+            }
+        }
+        // If no history at this depth, planes remain zero
+    }
+    
+    return tensor;
+}
+
 std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresentation() const {
     // PERFORMANCE FIX: Use cached enhanced tensor if available and not dirty
     if (!enhanced_tensor_cache_dirty_.load(std::memory_order_relaxed) && !cached_enhanced_tensor_repr_.empty()) {

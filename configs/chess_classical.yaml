@@ -46,8 +46,31 @@ mcts:
   enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
+  enable_progressive_widening: true
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
   progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
+  # RAVE (Rapid Action Value Estimation) for faster learning
+  enable_rave: true
+  rave_c: 3000.0  # RAVE exploration constant
+  rave_threshold: 50  # Disable RAVE after this many training iterations
+  
+  # Tactical boost for finding important moves with untrained networks
+  enable_tactical_boost: true
+  tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
+  tactical_boost_decay: 0.99        # Decay factor per iteration
+  
+  # Chess tactical parameters  
+  chess_capture_good_base: 10.0     # Base good capture bonus
+  chess_capture_equal: 5.0          # Equal trade bonus
+  chess_capture_bad: 2.0            # Bad capture bonus
+  chess_check_boost: 8.0            # Check move bonus
+  chess_check_capture_boost: 4.0    # Check + capture bonus
+  chess_promotion_boost: 9.0        # Pawn promotion bonus
+  chess_center_boost: 1.0           # Central control bonus
+  chess_center_core_boost: 0.5      # Center core bonus
+  chess_development_boost: 2.0      # Piece development bonus
+  chess_castling_boost: 6.0         # Castling bonus
   
   # Device - Ryzen 9 5900X
   device: cuda
@@ -65,7 +88,8 @@ mcts:
 network:
   # Standard chess network architecture
   model_type: resnet
-  input_channels: 20
+  input_channels: 18           # Standard AlphaZero representation
+  input_representation: basic  # 'basic' (18ch), 'minimal' (3ch), or 'enhanced' (20ch)
   num_res_blocks: 20
   num_filters: 256
   value_head_hidden_size: 256

@@ -1,41 +1,38 @@
 #!/usr/bin/env python3
 """
-Optimized Self-play example for RTX 3060 Ti system with batch coordination.
+Self-play example with correct API usage and board visualization.
 
-This example demonstrates high-performance MCTS with batch inference optimized for:
-- RTX 3060 Ti (8GB VRAM, 4864 CUDA cores)
-- Ryzen 9 5900X (12 cores, 24 threads)
-- 64GB RAM
-
-Uses OptimizedRemoteEvaluator + GPUEvaluatorService + BatchEvaluationCoordinator
-for 14.7x performance improvement described in CLAUDE.md.
-
-Expected performance: 5000+ simulations/second (vs 850 without batch coordination)
+This example demonstrates high-performance MCTS with:
+- Correct board visualization using proper tensor channels
+- API calls matching the current implementation  
+- Proper handling of legal moves and action selection
+- Optional GPU service for batch processing
 """
 
 import torch
 import numpy as np
 import time
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from dataclasses import dataclass
 import logging
+import sys
+import os
 
 # MCTS imports
-from mcts.core.mcts import MCTS, MCTSConfig
+from mcts.core.mcts import MCTS
+from mcts.core.mcts_config import MCTSConfig
 from mcts.core.game_interface import GameInterface, GameType
-from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
+from mcts.core.evaluator import AlphaZeroEvaluator
+from mcts.neural_networks.resnet_model import create_resnet_for_game
 from mcts.utils.optimized_remote_evaluator import OptimizedRemoteEvaluator
 from mcts.utils.gpu_evaluator_service import GPUEvaluatorService
-from mcts.utils.batch_evaluation_coordinator import RequestBatchingCoordinator
-from mcts.gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
-import alphazero_py
 import multiprocessing as mp
 import queue
 import threading
 
 # Set up logging
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.WARNING,  # Only show warnings and errors
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -55,7 +52,7 @@ class GameRecord:
 
 
 class OptimizedSelfPlayWorker:
-    """Optimized self-play worker for RTX 3060 Ti"""
+    """Self-play worker with correct API usage"""
     
     def __init__(
         self,
@@ -72,9 +69,13 @@ class OptimizedSelfPlayWorker:
         self.temperature_threshold = temperature_threshold
         
         # Create game interface with basic representation (18 channels for ResNet)
-        self.game_interface = GameInterface(game_type, board_size, input_representation='basic')
+        self.game_interface = GameInterface(
+            game_type, 
+            board_size=board_size, 
+            input_representation='basic'
+        )
         
-        # Create MCTS instance with game interface
+        # Create MCTS instance
         self.mcts = MCTS(mcts_config, evaluator, self.game_interface)
         
         # Statistics
@@ -83,9 +84,9 @@ class OptimizedSelfPlayWorker:
         self.total_time = 0.0
         
     def play_game(self, verbose: bool = False) -> GameRecord:
-        """Play a single optimized self-play game"""
+        """Play a single self-play game with correct API usage"""
         
-        # Initialize game state using game interface
+        # Initialize game state
         state = self.game_interface.create_initial_state()
         
         # Game data
@@ -101,99 +102,111 @@ class OptimizedSelfPlayWorker:
         if verbose:
             print(f"\n{'='*50}")
             print(f"Starting new {self.game_type.name} game")
+            print(f"Board size: {self.board_size}x{self.board_size}")
             print(f"{'='*50}")
         
         # Play until game ends
-        while not state.is_terminal():
+        while not self.game_interface.is_terminal(state):
             move_count += 1
             
             # Record state
             state_tensor = self.game_interface.state_to_numpy(state)
-            states.append(state_tensor)
+            states.append(state_tensor.copy())
             
-            # Determine temperature
+            # Determine temperature for move selection
             if move_count <= self.temperature_threshold:
                 temperature = 1.0
             else:
-                temperature = 0.0  # Play deterministically
+                temperature = 0.0  # Play deterministically after threshold
             
-            # Run MCTS search and select action (with proper subtree reuse)
+            # Display current position
             if verbose:
-                print(f"\nMove {move_count} - Player {state.get_current_player()}")
+                current_player = self.game_interface.get_current_player(state)
+                print(f"\nMove {move_count} - Player {current_player}")
+                self._display_board(state)
             
             search_start = time.perf_counter()
             
-            # Run MCTS search - now using corrected evaluator configuration
-            policy = self.mcts.search(state, self.mcts_config.num_simulations)
+            # Run MCTS search - reset tree first to ensure clean state
+            self.mcts.reset_tree()
+            policy = self.mcts.search(state, num_simulations=self.mcts_config.num_simulations)
             
-            # Select action from policy (MCTS should only return valid moves)
-            if temperature > 0:
-                # Sample from policy distribution
-                action = np.random.choice(len(policy), p=policy)
+            # Get legal moves for validation
+            legal_moves = self.game_interface.get_legal_moves(state)
+            
+            # Ensure policy only has probability on legal moves
+            masked_policy = np.zeros(len(policy))
+            for move in legal_moves:
+                masked_policy[move] = policy[move]
+            
+            # Renormalize
+            if masked_policy.sum() > 0:
+                masked_policy = masked_policy / masked_policy.sum()
             else:
-                # Select best action
-                action = np.argmax(policy)
+                # Fallback: uniform over legal moves
+                for move in legal_moves:
+                    masked_policy[move] = 1.0 / len(legal_moves)
             
-            # Validate selected action is legal (should always pass with fixed configuration)
-            actual_legal_moves = self.game_interface.get_legal_moves(state, shuffle=False)
-            if action not in actual_legal_moves:
-                if verbose:
-                    print(f"  ERROR: Selected action {action} is ILLEGAL - this should not happen with fixed config")
-                    print(f"  Action {action} not in legal moves: {actual_legal_moves[:10]}...")
-                    # Debug the policy
-                    non_zero_actions = np.where(policy > 0)[0]
-                    print(f"  [DEBUG] Non-zero policy actions: {non_zero_actions[:10]}")
-                    print(f"  [DEBUG] Policy values: {policy[non_zero_actions[:10]]}")
-                # This should not happen anymore with the fixed configuration
-                action = actual_legal_moves[0]  # Fallback
+            # Select action from masked policy
+            if temperature > 0 and len(legal_moves) > 1:
+                # Sample from policy distribution
+                action = np.random.choice(len(masked_policy), p=masked_policy)
+            else:
+                # Select best action among legal moves
+                legal_values = [(move, masked_policy[move]) for move in legal_moves]
+                action = max(legal_values, key=lambda x: x[1])[0]
+            
+            # Validate selected action
+            if action not in legal_moves:
+                logger.error(f"Selected illegal action {action}! Legal moves: {legal_moves[:10]}...")
+                # Force legal move
+                action = legal_moves[0]
             
             search_time = time.perf_counter() - search_start
             total_simulations += self.mcts_config.num_simulations
             
             # Record policy and action
-            policies.append(policy.copy())
+            policies.append(masked_policy.copy())
             actions.append(action)
             
             # Print move info
             if verbose:
                 row = action // self.board_size
                 col = action % self.board_size
-                sims_per_sec = self.mcts_config.num_simulations / search_time
-                print(f"  Position: ({row}, {col})")
+                sims_per_sec = self.mcts_config.num_simulations / search_time if search_time > 0 else 0
+                print(f"  Selected move: ({row}, {col}) [action {action}]")
+                print(f"  Policy value: {masked_policy[action]:.3f}")
                 print(f"  Search time: {search_time:.3f}s")
                 print(f"  Simulations/second: {sims_per_sec:,.0f}")
+                
+                # Show top 5 moves
+                top_indices = np.argsort(masked_policy)[-5:][::-1]
                 print(f"  Top 5 moves:")
-                top_actions = np.argsort(policy)[-5:][::-1]
-                for i, a in enumerate(top_actions):
-                    r, c = a // self.board_size, a % self.board_size
-                    print(f"    {i+1}. ({r}, {c}): {policy[a]:.3f}")
+                for i, idx in enumerate(top_indices):
+                    if masked_policy[idx] > 0:
+                        r, c = idx // self.board_size, idx % self.board_size
+                        print(f"    {i+1}. ({r}, {c}): {masked_policy[idx]:.3f}")
             
-            # Make move (now guaranteed to be legal)
-            state = state.clone()
-            state.make_move(action)
-            
-            # Reuse subtree for better performance
-            # Only clear if subtree reuse is disabled
-            if not self.mcts_config.enable_subtree_reuse:
-                self.mcts.clear()
+            # Make move using correct API
+            state = self.game_interface.apply_move(state, action)
             
             # Display board periodically
-            if verbose and move_count % 10 == 0:
+            if verbose and move_count % 5 == 0:
                 self._display_board(state)
         
         # Game ended
         game_time = time.perf_counter() - game_start
         
-        # Determine winner using game interface
+        # Determine winner
         winner = self.game_interface.get_winner(state)
         
         if verbose:
             print(f"\n{'='*50}")
             print(f"Game ended after {move_count} moves")
             if winner == 1:
-                print("Winner: Player 1 (Black)")
+                print("Winner: Player 1 (Black/X)")
             elif winner == -1:
-                print("Winner: Player 2 (White)")
+                print("Winner: Player 2 (White/O)")
             else:
                 print("Result: Draw")
             print(f"Total time: {game_time:.1f}s")
@@ -221,14 +234,78 @@ class OptimizedSelfPlayWorker:
             total_time=game_time
         )
     
+    def _display_board(self, state):
+        """Display the current board state correctly"""
+        if self.game_type == GameType.GOMOKU:
+            # Get the basic tensor representation
+            board_tensor = self.game_interface.state_to_numpy(state, representation_type='basic')
+            
+            # Basic representation has 18 channels:
+            # Channel 0: Current player's stones
+            # Channel 1: Opponent's stones
+            # Channels 2-9: Move history
+            # etc.
+            
+            print("\n  ", end="")
+            for i in range(self.board_size):
+                print(f"{i:2}", end=" ")
+            print()
+            
+            for row in range(self.board_size):
+                print(f"{row:2}", end=" ")
+                for col in range(self.board_size):
+                    # Check current and opponent channels
+                    current_stone = board_tensor[0, row, col]
+                    opponent_stone = board_tensor[1, row, col]
+                    
+                    if current_stone > 0:
+                        # Determine which player based on current player
+                        current_player = self.game_interface.get_current_player(state)
+                        if current_player == 1:  # Current is P1, so this is P1's stone
+                            print(" X", end=" ")
+                        else:  # Current is P2, so this is P2's stone
+                            print(" O", end=" ")
+                    elif opponent_stone > 0:
+                        # Opponent's stone
+                        current_player = self.game_interface.get_current_player(state)
+                        if current_player == 1:  # Current is P1, so opponent is P2
+                            print(" O", end=" ")
+                        else:  # Current is P2, so opponent is P1
+                            print(" X", end=" ")
+                    else:
+                        print(" .", end=" ")
+                print()
+            
+        elif self.game_type == GameType.GO:
+            # Similar logic for Go
+            board_tensor = self.game_interface.state_to_numpy(state, representation_type='basic')
+            
+            print("\n  ", end="")
+            for i in range(self.board_size):
+                print(f"{i:2}", end=" ")
+            print()
+            
+            for row in range(self.board_size):
+                print(f"{row:2}", end=" ")
+                for col in range(self.board_size):
+                    current_stone = board_tensor[0, row, col]
+                    opponent_stone = board_tensor[1, row, col]
+                    
+                    if current_stone > 0:
+                        print(" ●", end=" ")  # Black stone
+                    elif opponent_stone > 0:
+                        print(" ○", end=" ")  # White stone
+                    else:
+                        print(" ·", end=" ")  # Empty
+                print()
+    
     def play_games(self, num_games: int, verbose_interval: int = 10) -> List[GameRecord]:
-        """Play multiple optimized self-play games"""
+        """Play multiple self-play games"""
         games = []
         
         print(f"Starting {num_games} self-play games...")
         print(f"MCTS config: {self.mcts_config.num_simulations} simulations per move")
-        print(f"Wave size: {self.mcts_config.min_wave_size}")
-        print(f"Hardware: RTX 3060 Ti + Ryzen 9 5900X")
+        print(f"Board size: {self.board_size}x{self.board_size}")
         print()
         
         for i in range(num_games):
@@ -246,46 +323,6 @@ class OptimizedSelfPlayWorker:
         
         return games
     
-    def _display_board(self, state, verbose=False):
-        """Display the current board state"""
-        if self.game_type == GameType.GOMOKU:
-            # Get board representation
-            board_tensor = self.game_interface.state_to_numpy(state)
-            # Simple text representation
-            print("\n  ", end="")
-            for i in range(self.board_size):
-                print(f"{i:2}", end=" ")
-            print()
-            
-            # Display the board
-            if verbose:
-                print(f"Board tensor shape: {board_tensor.shape}")
-                print(f"Current player: {state.get_current_player()}")
-            
-            for row in range(self.board_size):
-                print(f"{row:2}", end=" ")
-                for col in range(self.board_size):
-                    # Basic representation: look at multiple channels
-                    if board_tensor.shape[0] >= 3:
-                        # Try channels 0, 1, 2 for Player 1, Player 2, Empty
-                        p1_val = board_tensor[0, row, col]  # Player 1 channel
-                        p2_val = board_tensor[1, row, col]  # Player 2 channel
-                        empty_val = board_tensor[2, row, col] if board_tensor.shape[0] > 2 else 0
-                        
-                        # Optional debug for first few positions
-                        if verbose and row < 2 and col < 5:
-                            print(f"[{p1_val:.1f},{p2_val:.1f}]", end="")
-                        
-                        if p1_val >= 2.0:  # Player 1 stone (value = 2.0)
-                            print(" ●", end=" ")  # Black stone
-                        elif p1_val >= 1.0 and p1_val < 2.0:  # Player 2 stone (value = 1.0)
-                            print(" ○", end=" ")  # White stone  
-                        else:
-                            print(" ·", end=" ")  # Empty position
-                    else:
-                        print(" ?", end=" ")  # Unknown format
-                print()
-    
     def _print_statistics(self):
         """Print current statistics"""
         if self.games_played > 0:
@@ -299,152 +336,51 @@ class OptimizedSelfPlayWorker:
             print(f"  Average time per game: {avg_time:.1f}s")
             print(f"  Average simulations/second: {avg_sims_per_sec:,.0f}")
             print()
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get worker statistics"""
-        return {
-            'games_played': self.games_played,
-            'total_moves': self.total_moves,
-            'total_time': self.total_time,
-            'avg_moves_per_game': self.total_moves / max(1, self.games_played),
-            'avg_time_per_game': self.total_time / max(1, self.games_played),
-            'avg_time_per_move': self.total_time / max(1, self.total_moves),
-            'total_simulations': self.total_moves * self.mcts_config.num_simulations,
-            'avg_sims_per_second': (self.total_moves * self.mcts_config.num_simulations) / max(0.001, self.total_time)
-        }
-
-
-def start_gpu_service(request_queue, response_queue, device='cuda'):
-    """Start the GPU evaluation service in a separate process"""
-    # Create base evaluator model
-    base_evaluator = ResNetEvaluator(
-        game_type='gomoku',
-        device=device
-    )
-    
-    # Create and run GPU service with correct parameter name
-    gpu_service = GPUEvaluatorService(
-        model=base_evaluator,
-        device=device,
-        batch_size=64,
-        batch_timeout=0.100,
-        use_tensorrt=False  # Disable TensorRT for simplicity
-    )
-    
-    # Start the service
-    gpu_service.start()
-    
-    # Run the service loop manually since we don't have a run() method
-    try:
-        gpu_service._service_loop()
-    except KeyboardInterrupt:
-        gpu_service.stop()
 
 
 def main():
-    """Main self-play demonstration optimized for RTX 3060 Ti"""
-    
-    # Set up multiprocessing for CUDA compatibility
-    try:
-        mp.set_start_method('spawn', force=True)
-    except RuntimeError:
-        pass  # Already set
+    """Main self-play demonstration with correct API usage"""
     
     # Check GPU availability
     if not torch.cuda.is_available():
-        print("WARNING: CUDA not available, running on CPU (will be slow)")
+        print("WARNING: CUDA not available, running on CPU (will be slower)")
         device = 'cpu'
     else:
         device = 'cuda'
         print(f"Using GPU: {torch.cuda.get_device_name()}")
-        props = torch.cuda.get_device_properties(0)
-        print(f"GPU Memory: {props.total_memory / 1024**3:.1f} GB")
-        print(f"CUDA Cores: {props.multi_processor_count * 64}")  # Approximate
-        
-        # Optimize CUDA memory allocation
-        import os
-        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-        torch.cuda.empty_cache()  # Clear any existing allocations
+        torch.cuda.empty_cache()
     
-    # Set up multiprocessing for CUDA compatibility - use threading instead
-    import threading
-    import queue as thread_queue
+    # Create MCTS configuration
+    mcts_config = MCTSConfig()
+    mcts_config.num_simulations = 800  # Standard setting
+    mcts_config.c_puct = 1.4
+    mcts_config.device = device
+    mcts_config.batch_size = 64
+    mcts_config.enable_virtual_loss = True
+    mcts_config.enable_fast_ucb = True
+    mcts_config.enable_subtree_reuse = True  # Enable for better performance
     
-    print("Initializing GPU service with threading (avoiding CUDA multiprocessing issues)...")
-    
-    # Create base evaluator
-    base_evaluator = ResNetEvaluator(
+    # Create neural network model
+    print("Creating neural network model...")
+    model = create_resnet_for_game(
         game_type='gomoku',
-        device=device
+        input_channels=18,  # Basic representation
+        num_blocks=10,
+        num_filters=128
     )
+    model = model.to(device)
+    model.eval()
     
-    # Create thread-safe queues instead of multiprocessing queues
-    request_queue = thread_queue.Queue()
-    response_queue = thread_queue.Queue()
+    # Create evaluator
+    print("Creating evaluator...")
+    evaluator = AlphaZeroEvaluator(model, device=device)
     
-    # Create GPU service using threading instead of multiprocessing
-    gpu_service = GPUEvaluatorService(
-        model=base_evaluator.model,
-        device=device,
-        batch_size=64,
-        batch_timeout=0.100,
-        use_tensorrt=False
-    )
+    # For high-performance batch processing, you can optionally use GPU service:
+    # 1. Start GPU service in a separate thread/process
+    # 2. Use OptimizedRemoteEvaluator instead of AlphaZeroEvaluator
+    # See the documentation for batch processing setup
     
-    # Override the multiprocessing queues with thread queues
-    gpu_service.request_queue = request_queue
-    gpu_service.response_queues[0] = response_queue  # For worker_id=0
-    gpu_service.response_queues[-1] = response_queue  # For coordinated batches (worker_id=-1)
-    
-    # Start GPU service in same process
-    gpu_service.start()
-    
-    print("GPU service started successfully")
-    
-    # Create MCTS configuration with OPTIMAL settings
-    mcts_config = MCTSConfig(
-        num_simulations=1000,       # Restored to optimal setting
-        min_wave_size=3072,         # OPTIMAL wave size for GPU throughput
-        max_wave_size=3072,         # Fixed size for best performance
-        device=device,
-        game_type=GameType.GOMOKU,
-        board_size=15,
-        c_puct=1.414,
-        temperature=1.0,
-        dirichlet_alpha=0.3,
-        dirichlet_epsilon=0.25,
-        memory_pool_size_mb=2048,  # Reasonable memory allocation
-        max_tree_nodes=500000,     # Reasonable node count (not 2M!)
-        use_mixed_precision=True,
-        use_cuda_graphs=True,       # Enable CUDA graphs for performance
-        use_tensor_cores=True,
-        enable_virtual_loss=True,
-        virtual_loss=1.0,
-        enable_debug_logging=True,  # Enable to debug the issue
-        classical_only_mode=True,   # Pure classical MCTS
-        enable_fast_ucb=True,       # Enable fast UCB for performance
-        enable_quantum=False,       # No quantum features
-        enable_subtree_reuse=False,  # Disable subtree reuse to debug state sync issue  
-        subtree_reuse_min_visits=5   # Keep nodes with 5+ visits
-    )
-    
-    # Create optimized evaluator with batch processing
-    print("Initializing optimized neural network evaluator...")
-    
-    # Use OptimizedRemoteEvaluator for performance (coordination disabled due to timeout issues)
-    evaluator = OptimizedRemoteEvaluator(
-        request_queue=request_queue,
-        response_queue=response_queue,
-        action_size=15 * 15,  # Gomoku board size
-        worker_id=0,
-        batch_timeout=0.100,  # 100ms timeout
-        enable_coordination=True,  # ENABLED: fixed coordinator eliminates 15+ second delays
-        max_coordination_batch_size=64
-    )
-    
-    print("Created OptimizedRemoteEvaluator (coordination enabled with fixed coordinator)")
-    
-    # Create optimized self-play worker
+    # Create self-play worker
     worker = OptimizedSelfPlayWorker(
         mcts_config=mcts_config,
         evaluator=evaluator,
@@ -455,8 +391,7 @@ def main():
     
     # Play demonstration games
     print("\n" + "="*70)
-    print("OPTIMIZED SELF-PLAY DEMONSTRATION")
-    print("RTX 3060 Ti + Ryzen 9 5900X + 64GB RAM")
+    print("SELF-PLAY DEMONSTRATION")
     print("="*70)
     
     # Play games with detailed output  
@@ -493,37 +428,9 @@ def main():
     print(f"  Total time: {total_time:.1f}s")
     print(f"  Average simulations/second: {total_sims/total_time:,.0f}")
     
-    # Hardware utilization with batch coordination
-    print(f"\nHardware utilization (with batch inference):")
-    print(f"  Expected on RTX 3060 Ti with batch coordination: 5000+ sims/sec")
-    actual_perf = total_sims/total_time
-    print(f"  Actual performance: {actual_perf:,.0f} sims/sec")
-    if actual_perf < 2000:
-        print(f"  Performance below expected - check batch coordination")
-    elif actual_perf > 5000:
-        print(f"  Excellent performance - batch coordination working!")
-    else:
-        print(f"  Good performance improvement from batch coordination")
-    
-    # Final statistics
-    stats = worker.get_statistics()
-    print(f"\nOverall self-play statistics:")
-    for key, value in stats.items():
-        if isinstance(value, float):
-            print(f"  {key}: {value:.2f}")
-        else:
-            print(f"  {key}: {value}")
-    
     print("\n" + "="*70)
-    print("Optimized self-play demonstration complete!")
-    print("Using batch coordination system for 14.7x performance improvement")
-    print("Configuration tuned for RTX 3060 Ti system")
+    print("Self-play demonstration complete!")
     print("="*70)
-    
-    # Cleanup: stop GPU service
-    print("\nShutting down GPU service...")
-    gpu_service.stop()
-    print("GPU service terminated")
 
 
 if __name__ == "__main__":

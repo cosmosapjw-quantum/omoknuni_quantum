@@ -44,8 +44,31 @@ mcts:
   enable_quantum: false
   
   # Progressive widening parameters for lazy expansion
+  enable_progressive_widening: true
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
   progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
+  # RAVE (Rapid Action Value Estimation) for faster learning
+  enable_rave: true
+  rave_c: 3000.0  # RAVE exploration constant
+  rave_threshold: 50  # Disable RAVE after this many training iterations
+  
+  # Tactical boost for finding important moves with untrained networks
+  enable_tactical_boost: true
+  tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
+  tactical_boost_decay: 0.99        # Decay factor per iteration
+  
+  # Gomoku tactical parameters
+  gomoku_win_boost: 100.0           # Immediate win move
+  gomoku_block_win_boost: 90.0      # Block opponent win
+  gomoku_open_four_boost: 50.0      # Create open four
+  gomoku_block_four_boost: 45.0     # Block opponent open four
+  gomoku_threat_base_boost: 40.0    # Base for multiple threats
+  gomoku_threat_multiplier: 5.0     # Per additional threat
+  gomoku_three_boost: 20.0          # Create three in a row
+  gomoku_block_three_boost: 18.0    # Block opponent three
+  gomoku_center_boost: 3.0          # Central position bonus
+  gomoku_connection_boost: 2.0      # Per connection bonus
   
   # Device - Ryzen 9 5900X
   device: cuda
@@ -63,7 +86,8 @@ mcts:
 network:
   # Network architecture
   model_type: resnet
-  input_channels: 20
+  input_channels: 18
+  input_representation: basic
   num_res_blocks: 10
   num_filters: 128
   value_head_hidden_size: 256

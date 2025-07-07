@@ -14,9 +14,10 @@ ZobristHash::ZobristHash(int boardSize, int numPieceTypes, int numPlayers, unsig
     if (numPieceTypes < 0) throw std::invalid_argument("Number of piece types must be non-negative");
     if (numPlayers <= 0) throw std::invalid_argument("Number of players must be positive");
     
-    // Use provided seed or generate from time
+    // Use provided seed or deterministic default seed based on board configuration
+    // This ensures consistent hashing across different instances with same parameters
     unsigned actualSeed = seed != 0 ? seed : 
-        static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count());
+        static_cast<unsigned>(42 + boardSize * 1000 + numPieceTypes * 100 + numPlayers * 10);
     std::mt19937_64 rng(actualSeed);
     
     // Initialize piece hashes

@@ -1,10 +1,11 @@
 # Gomoku Classical Configuration
-# Optimized for amateur-strength Gomoku AI
+# Optimized for amateur-strength Gomoku AI with 12-hour training budget
+# Balance between network capacity, search quality, and iteration count
 
-experiment_name: gomoku_master
+experiment_name: gomoku_amateur_12h_balanced
 seed: 42
 log_level: INFO
-num_iterations: 100
+num_iterations: 100  # Balanced for quality (8 min/iteration = 12 hours)
 game:
   game_type: gomoku
   board_size: 15
@@ -13,24 +14,24 @@ game:
   gomoku_use_pro_long_opening: false
 
 mcts:
-  num_simulations: 100
+  num_simulations: 150  # Increased for better tactical play (50ms per move)
   c_puct: 1.4
   dirichlet_alpha: 0.2
-  dirichlet_epsilon: 0.4
+  dirichlet_epsilon: 0.3  # Slightly less noise for better quality
   temperature: 1.0
   temperature_threshold: 30
   temperature_final: 0.1
   
-  # Performance optimizatio
-  min_wave_size: 3072      # Optimal for 80k+ sims/sec
-  max_wave_size: 3072      # Fixed size for best performance
-  batch_size: 1024 
+  # Performance optimization
+  min_wave_size: 3072      # Balanced for quality vs speed
+  max_wave_size: 3072      # Fixed size for consistency
+  batch_size: 512          # Optimized for RTX 3060 Ti
   virtual_loss: 0.5
   enable_virtual_loss: true
   
-  # Memory and optimization - Optimized for training speed
-  memory_pool_size_mb: 2048   # Reduced for faster training
-  max_tree_nodes: 200000      # Reduced for faster training
+  # Memory and optimization - Balanced settings
+  memory_pool_size_mb: 4096   # Increased for deeper search
+  max_tree_nodes: 400000      # Support deeper analysis
   tree_reuse: false
   
   # GPU optimization - RTX 3060 Ti
@@ -54,8 +55,31 @@ mcts:
   destructive_interference_factor: 0.05
   
   # Progressive widening parameters for lazy expansion
+  enable_progressive_widening: true
   progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
   progressive_widening_base: 10.0  # Minimum children to expand at each node
+  
+  # RAVE (Rapid Action Value Estimation) for faster learning
+  enable_rave: true
+  rave_c: 3000.0  # RAVE exploration constant
+  rave_threshold: 50  # Disable RAVE after this many training iterations
+  
+  # Tactical boost for finding important moves with untrained networks
+  enable_tactical_boost: true
+  tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
+  tactical_boost_decay: 0.99        # Decay factor per iteration
+  
+  # Gomoku tactical parameters
+  gomoku_win_boost: 100.0           # Immediate win move
+  gomoku_block_win_boost: 90.0      # Block opponent win
+  gomoku_open_four_boost: 50.0      # Create open four
+  gomoku_block_four_boost: 45.0     # Block opponent open four
+  gomoku_threat_base_boost: 40.0    # Base for multiple threats
+  gomoku_threat_multiplier: 5.0     # Per additional threat
+  gomoku_three_boost: 20.0          # Create three in a row
+  gomoku_block_three_boost: 18.0    # Block opponent three
+  gomoku_center_boost: 3.0          # Central position bonus
+  gomoku_connection_boost: 2.0      # Per connection bonus
   
   # Device configuration
   device: cuda
@@ -67,37 +91,37 @@ mcts:
   tensorrt_fallback: true
   tensorrt_workspace_size: 2048  # MB - workspace size for optimization
   tensorrt_int8: false           # INT8 quantization (requires calibration)
-  tensorrt_max_batch_size: 512   # Maximum batch size to optimize for
+  tensorrt_max_batch_size: 1024  # Maximum batch size to optimize for
   tensorrt_engine_cache_dir: null # Custom cache directory
 
 network:
-  # Optimized network for master-level Gomoku (no attack/defense overhead)
+  # Balanced network for strong amateur play (12-hour budget)
   model_type: resnet
-  input_channels: 18         # Standard AlphaZero representation (removed attack/defense)
+  input_channels: 18           # Standard AlphaZero representation
   input_representation: basic  # 'basic' (18ch), 'enhanced' (20ch), or 'standard' (3ch)
-  num_res_blocks: 15         # Increased for deeper tactical understanding
-  num_filters: 192           # Increased capacity for complex pattern recognition
-  value_head_hidden_size: 512 # Larger value head for precise position evaluation
-  policy_head_filters: 4     # Increased for better move prediction
+  num_res_blocks: 8            # Doubled for better pattern recognition
+  num_filters: 96              # Increased for better capacity
+  value_head_hidden_size: 192  # Larger for better evaluation
+  policy_head_filters: 3       # Balanced policy head
   
-  # Regularization - tuned for larger network
-  dropout_rate: 0.15         # Slightly increased to prevent overfitting
+  # Regularization - tuned for balanced network
+  dropout_rate: 0.12         # Slightly increased
   batch_norm: true
-  batch_norm_momentum: 0.995 # Slower moving average for stability
-  l2_regularization: 0.0002  # Increased regularization
+  batch_norm_momentum: 0.995 # More stable for larger network
+  l2_regularization: 0.0002  # Appropriate for network size
   
   # Activation
   activation: relu
   weight_init: he_normal
 
 training:
-  # Training parameters optimized for master-level learning
-  batch_size: 1024          # Reduced for better gradient estimates with larger network
-  learning_rate: 0.01       # Reduced for more stable training with larger network
-  learning_rate_schedule: cosine  # Smooth decay for long training
-  lr_decay_steps: 100       # Longer cycles for deeper learning
-  lr_decay_rate: 0.1
-  min_learning_rate: 0.000001  # Lower minimum for fine-tuning
+  # Training parameters balanced for quality and speed
+  batch_size: 1024          # Larger batches for stable training
+  learning_rate: 0.01       # Moderate LR for stable convergence
+  learning_rate_schedule: cosine  # Smooth decay
+  lr_decay_steps: 30        # More frequent updates
+  lr_decay_rate: 0.85       # Gentler decay
+  min_learning_rate: 0.0001  # Reasonable floor
   
   # Optimization
   optimizer: adam
@@ -119,24 +143,24 @@ training:
   final_tournament_max_models: 10
   
   # Training loop
-  num_epochs: 5
-  early_stopping_patience: 20
-  early_stopping_min_delta: 0.0001
+  num_epochs: 7              # More epochs for better learning
+  early_stopping_patience: 15
+  early_stopping_min_delta: 0.0002
   
-  # Self-play - Optimized for master-level training
-  num_games_per_iteration: 120  # Increased for more diverse training data
+  # Self-play - Balanced for quality training data
+  num_games_per_iteration: 100   # Increased for better diversity
   num_workers: 12  # Match CPU cores for optimal utilization
   max_moves_per_game: 225
-  resign_threshold: -0.98      # More conservative resignation for master play
-  resign_check_moves: 15       # Longer evaluation before resignation
-  resign_start_iteration: 20   # Later resignation start for better early learning
+  resign_threshold: -0.97      # Conservative for quality games
+  resign_check_moves: 15       # Balanced resignation checks
+  resign_start_iteration: 15   # Allow early learning
   
-  # Data handling - Optimized for master-level training
-  window_size: 25000        # Smaller window for faster adaptation to diverse play
+  # Data handling - Balanced for 90 iterations
+  window_size: 20000        # Larger window for 7200 games (80 × 90)
   sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 15000  # Increased buffer size
-  dataloader_workers: 16     # Optimized for larger batches
+  shuffle_buffer_size: 10000  # Good shuffle buffer
+  dataloader_workers: 12      # Optimized for batch size
   pin_memory: true
   persistent_workers: true
   
@@ -152,16 +176,16 @@ training:
   data_dir: self_play_data
 
 arena:
-  # Battle settings - Fast evaluation for training
-  num_games: 20             # Reduced for faster iteration
-  num_workers: 12            # Reduced for training
-  win_threshold: 0.55       # Higher threshold for model acceptance
+  # Battle settings - Balanced evaluation
+  num_games: 20             # Reasonable statistical significance
+  num_workers: 12           # Match available cores
+  win_threshold: 0.53       # Moderate threshold
   statistical_significance: true
   confidence_level: 0.95    # Slightly reduced for speed
   
-  # Game settings - Fast evaluation
+  # Game settings - Match training quality
   temperature: 0.0          # No temperature for deterministic evaluation
-  mcts_simulations: 100     # Reduced to match training
+  mcts_simulations: 100     # Good evaluation quality
   c_puct: 1.4               # Match training c_puct
   max_moves: 225
   time_limit_seconds: null

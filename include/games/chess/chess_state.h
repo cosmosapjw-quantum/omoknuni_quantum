@@ -113,6 +113,7 @@ public:
     int getBoardSize() const override { return 8; }
     int getActionSpaceSize() const override { return 64 * 64 * 5; }  // from * to * promotion options
     std::vector<std::vector<std::vector<float>>> getTensorRepresentation() const override;
+    std::vector<std::vector<std::vector<float>>> getBasicTensorRepresentation() const override;
     std::vector<std::vector<std::vector<float>>> getEnhancedTensorRepresentation() const override;
     uint64_t getHash() const override;
     std::unique_ptr<core::IGameState> clone() const override;

@@ -109,18 +109,11 @@ PYBIND11_MODULE(alphazero_py, m) {
         .def("get_tensor_representation", [](const core::IGameState& state) {
             return tensorToNumpy(state.getTensorRepresentation());
         })
+        .def("get_basic_tensor_representation", [](const core::IGameState& state) {
+            return tensorToNumpy(state.getBasicTensorRepresentation());
+        })
         .def("get_enhanced_tensor_representation", [](const core::IGameState& state) {
             return tensorToNumpy(state.getEnhancedTensorRepresentation());
-        })
-        .def("get_basic_tensor_representation", [](const core::IGameState& state) {
-            // Cast to Gomoku state for basic representation
-            const auto* gomoku_state = dynamic_cast<const games::gomoku::GomokuState*>(&state);
-            if (gomoku_state) {
-                return tensorToNumpy(gomoku_state->getBasicTensorRepresentation());
-            } else {
-                // For non-Gomoku games, fall back to standard representation
-                return tensorToNumpy(state.getTensorRepresentation());
-            }
         })
         .def("get_hash", &core::IGameState::getHash)
         .def("action_to_string", &core::IGameState::actionToString)

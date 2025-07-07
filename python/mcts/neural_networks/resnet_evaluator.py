@@ -185,6 +185,11 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         batch_size = states_tensor.shape[0]
         self.eval_count += batch_size
         
+        # Ensure tensor is on correct device and dtype
+        states_tensor = states_tensor.to(self.device)
+        if self.use_amp and self.device.type == 'cuda':
+            states_tensor = states_tensor.half()
+        
         # Forward pass with autocast
         from .nn_framework import safe_autocast
         with safe_autocast(device=self.device, enabled=self.use_amp):
@@ -194,8 +199,8 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         if temperature != 1.0:
             log_policies = log_policies / temperature
         
-        # Convert to probabilities
-        policies = torch.exp(log_policies)
+        # Convert to probabilities using softmax (not just exp)
+        policies = F.softmax(log_policies, dim=1)
         
         # Apply legal move masking if provided
         if legal_mask_tensor is not None:

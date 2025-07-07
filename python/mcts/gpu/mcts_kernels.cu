@@ -832,7 +832,11 @@ torch::Tensor find_expansion_nodes_cuda(
         current_nodes.size(0)
     );
     
-    return expansion_nodes;
+    // Get the actual number of expansion nodes found
+    int actual_count = expansion_count.item<int>();
+    
+    // Return only the portion of the tensor that was filled
+    return expansion_nodes.slice(0, 0, actual_count);
 }
 
 torch::Tensor batched_ucb_selection_cuda(
