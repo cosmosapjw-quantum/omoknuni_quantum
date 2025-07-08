@@ -533,7 +533,7 @@ class TestMCTSTreeReuse:
             
     def test_subtree_reuse_disabled(self, base_mcts_config, mock_evaluator, gomoku_game):
         """Test behavior when subtree reuse is disabled"""
-        base_mcts_config.enable_subtree_reuse = False
+        base_mcts_config.tree_reuse = False  # Use correct config attribute
         mcts = MCTS(base_mcts_config, mock_evaluator)
         
         # Run search

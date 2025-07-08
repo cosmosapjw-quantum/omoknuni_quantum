@@ -246,7 +246,7 @@ class TestNodeInformation:
         ret_actions, ret_visits, ret_values = tree_ops.get_root_children_info()
         
         assert len(ret_actions) == 3
-        assert torch.allclose(ret_actions, torch.tensor(actions, device=device))
+        assert torch.allclose(ret_actions, torch.tensor(actions, device=device, dtype=ret_actions.dtype))
         assert ret_visits[0] == 10
         assert ret_visits[1] == 15
         assert ret_visits[2] == 0

@@ -107,6 +107,9 @@ class MCTSFullConfig:
     max_wave_size: int = 3072
     batch_size: int = 256
     virtual_loss: float = 1.0
+    enable_virtual_loss: bool = True
+    enable_fast_ucb: bool = True
+    classical_only_mode: bool = True
     
     # Memory and optimization
     memory_pool_size_mb: int = 2048
@@ -229,12 +232,18 @@ class NeuralNetworkConfig:
 class TrainingFullConfig:
     """Complete training configuration"""
     # Basic training
-    batch_size: int = 512
+    batch_size: int = 512  # Default batch size
     learning_rate: float = 0.01
     learning_rate_schedule: str = "step"  # step, cosine, exponential, none
+    lr_schedule: str = "step"  # Alias for learning_rate_schedule
     lr_decay_steps: int = 50
     lr_decay_rate: float = 0.1
     min_learning_rate: float = 1e-5
+    device: str = "cuda"  # cuda or cpu
+    
+    # Training iterations
+    num_iterations: int = 100
+    checkpoint_interval: int = 10
     
     # Optimization
     optimizer: str = "adam"  # adam, sgd, adamw, lamb
@@ -242,12 +251,14 @@ class TrainingFullConfig:
     adam_beta2: float = 0.999
     adam_epsilon: float = 1e-8
     sgd_momentum: float = 0.9
+    momentum: float = 0.9  # Alias for sgd_momentum
     sgd_nesterov: bool = True
     weight_decay: float = 1e-4
     
     # Gradient handling
     gradient_accumulation_steps: int = 1
     max_grad_norm: float = 5.0
+    gradient_clip_norm: float = 10.0  # Alias for max_grad_norm
     gradient_clip_value: Optional[float] = None
     
     # Tournament settings for final evaluation
@@ -265,6 +276,7 @@ class TrainingFullConfig:
     num_workers: int = 4
     games_per_worker: int = 25
     max_moves_per_game: int = 500
+    temperature_threshold: int = 30  # Move threshold for temperature reduction
     resign_threshold: float = -0.98  # FIXED: More conservative threshold (was -0.95)
     resign_check_moves: int = 10
     resign_start_iteration: int = 20  # FIXED: Start resignation later (was 10)
@@ -322,11 +334,12 @@ class ArenaFullConfig:
     num_workers: int = 4
     games_per_worker: int = 10
     win_threshold: float = 0.55
+    update_threshold: float = 0.51  # Threshold for updating best model
     statistical_significance: bool = True
     confidence_level: float = 0.95
     
     # Game settings
-    temperature: float = 0.1
+    temperature: float = 0.0  # Deterministic play for arena evaluation
     mcts_simulations: int = 400
     c_puct: float = 1.0
     max_moves: int = 500
@@ -336,8 +349,11 @@ class ArenaFullConfig:
     # ELO settings
     elo_k_factor: float = 32.0
     elo_initial_rating: float = 1500.0
+    initial_elo: float = 1500.0  # Alias for elo_initial_rating
     elo_anchor_rating: float = 0.0  # Random policy anchor
+    random_elo_anchor: float = 0.0  # Alias for elo_anchor_rating
     update_elo: bool = True
+    play_vs_random_interval: int = 10  # How often to play vs random
     
     # Random policy evaluation
     min_win_rate_vs_random: float = 0.95  # Sanity check for first model
@@ -437,10 +453,13 @@ class LogConfig:
     log_dir: str = "logs"
     tensorboard_dir: str = "tensorboard"
     checkpoint_dir: str = "checkpoints"
+    file_path: str = "logs/training.log"
     
     # Logging levels
+    level: str = "INFO"  # Main log level
     console_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     file_level: str = "DEBUG"
+    console: bool = True
     
     # Tensorboard settings
     tensorboard: bool = True
@@ -487,6 +506,8 @@ class ResourceConfig:
     """Resource management configuration with hardware optimization"""
     # Worker settings
     num_workers: int = 4  # Number of parallel workers
+    max_cpu_workers: int = 4  # Maximum CPU workers
+    num_data_workers: int = 2  # Number of data loading workers
     num_actors: int = 8  # Number of self-play actors
     num_evaluators: int = 2  # Number of neural network evaluators
     
@@ -496,8 +517,11 @@ class ResourceConfig:
     
     # Memory settings
     memory_limit_gb: Optional[float] = None  # None = auto-detect
+    max_gpu_memory_gb: float = 8.0  # Maximum GPU memory to use
     tree_memory_fraction: float = 0.4  # Fraction of memory for MCTS trees
     buffer_memory_fraction: float = 0.3  # Fraction for replay buffers
+    pin_memory: bool = True  # Pin memory for faster GPU transfer
+    cache_size: int = 1000  # Cache size for frequently accessed data
     
     # GPU settings
     num_gpus: int = 1  # Number of GPUs to use
@@ -508,13 +532,14 @@ class ResourceConfig:
     # Batch settings
     inference_batch_size: int = 256  # Batch size for NN inference
     training_batch_queue_size: int = 10  # Queue size for training batches
+    batch_queue_size: int = 10  # Alias for training_batch_queue_size
     
     # Queue settings
     self_play_queue_size: int = 100  # Max games in self-play queue
     training_queue_size: int = 50  # Max samples in training queue
     
     # Performance settings
-    enable_profiling: bool = False
+    enable_profiling: bool = False  # Enable performance profiling
     profile_kernel_launches: bool = False
     
     # Resource limits
@@ -591,7 +616,10 @@ class AlphaZeroConfig:
         self.arena = ArenaFullConfig()
         self.log = LogConfig()
         self.resources = ResourceConfig()
-        self.experiment_name = "alphazero_experiment"
+        self.experiment_name = "default"
+        self.checkpoint_dir = "checkpoints"
+        self.tensorboard_dir = "runs"
+        self.save_interval = 10
         self.seed = 42
         self.log_level = "INFO"
         self.num_iterations = 1000
@@ -626,10 +654,30 @@ class AlphaZeroConfig:
             'log': self.log.to_dict(),
             'resources': self.resources.to_dict(),
             'experiment_name': self.experiment_name,
+            'checkpoint_dir': self.checkpoint_dir,
+            'tensorboard_dir': self.tensorboard_dir,
+            'save_interval': self.save_interval,
             'seed': self.seed,
             'log_level': self.log_level,
             'num_iterations': self.num_iterations
         }
+    
+    def __str__(self) -> str:
+        """String representation of configuration"""
+        lines = [
+            "AlphaZeroConfig(",
+            f"  game_type: {self.game.game_type}",
+            f"  board_size: {self.game.board_size}",
+            f"  num_res_blocks: {self.network.num_res_blocks}",
+            f"  num_filters: {self.network.num_filters}",
+            f"  batch_size: {self.training.batch_size}",
+            f"  learning_rate: {self.training.learning_rate}",
+            f"  num_simulations: {self.mcts.num_simulations}",
+            f"  c_puct: {self.mcts.c_puct}",
+            f"  experiment_name: {self.experiment_name}",
+            ")"
+        ]
+        return "\n".join(lines)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AlphaZeroConfig':
@@ -640,7 +688,10 @@ class AlphaZeroConfig:
             network=NeuralNetworkConfig.from_dict(data.get('network', {})),
             training=TrainingFullConfig.from_dict(data.get('training', {})),
             arena=ArenaFullConfig.from_dict(data.get('arena', {})),
-            experiment_name=data.get('experiment_name', 'alphazero_experiment'),
+            experiment_name=data.get('experiment_name', 'default'),
+            checkpoint_dir=data.get('checkpoint_dir', 'checkpoints'),
+            tensorboard_dir=data.get('tensorboard_dir', 'runs'),
+            save_interval=data.get('save_interval', 10),
             seed=data.get('seed', 42),
             log_level=data.get('log_level', 'INFO'),
             num_iterations=data.get('num_iterations', 1000)
@@ -692,11 +743,38 @@ class AlphaZeroConfig:
         """Validate configuration and return list of warnings"""
         warnings = []
         
+        # Critical validation errors - raise ValueError immediately
+        
+        # Game validation - critical errors
+        if self.game.game_type == "gomoku" and self.game.board_size > 25:
+            raise ValueError(f"Invalid board size {self.game.board_size} for gomoku - maximum is 25")
+        
+        if self.game.board_size <= 0:
+            raise ValueError(f"Invalid board size {self.game.board_size} - must be positive")
+        
+        # Network validation - critical errors  
+        if self.network.num_res_blocks <= 0:
+            raise ValueError(f"Invalid number of res blocks {self.network.num_res_blocks} - must be positive")
+        
+        # Training validation - critical errors
+        if self.training.batch_size <= 0:
+            raise ValueError(f"Invalid batch size {self.training.batch_size} - must be positive")
+        
+        if self.training.learning_rate <= 0:
+            raise ValueError(f"Invalid learning rate {self.training.learning_rate} - must be positive")
+        
+        # MCTS validation - critical errors
+        if self.mcts.num_simulations <= 0:
+            raise ValueError(f"Invalid number of simulations {self.mcts.num_simulations} - must be positive")
+        
+        if self.mcts.c_puct <= 0:
+            raise ValueError(f"Invalid c_puct {self.mcts.c_puct} - must be positive")
+        
+        # Non-critical validation - warnings only
+        
         # MCTS validation
         if self.mcts.max_wave_size < self.mcts.min_wave_size:
             warnings.append("MCTS max_wave_size < min_wave_size")
-        
-        # Quantum validation removed
         
         # Training validation
         if self.training.num_workers > self.training.num_games_per_iteration:
@@ -712,7 +790,7 @@ class AlphaZeroConfig:
         if self.arena.win_threshold < 0.5:
             warnings.append("Win threshold below 50% - new models will always be rejected")
         
-        # Game validation
+        # Game validation - warnings only
         if self.game.game_type == "go" and self.game.board_size not in [9, 13, 19]:
             warnings.append(f"Non-standard Go board size: {self.game.board_size}")
         
@@ -915,18 +993,21 @@ def create_default_config(game_type: str = "gomoku") -> AlphaZeroConfig:
     return config
 
 
-def merge_configs(base: AlphaZeroConfig, override: Dict[str, Any]) -> AlphaZeroConfig:
+def merge_configs(base: Union[AlphaZeroConfig, Dict[str, Any]], override: Dict[str, Any]) -> Dict[str, Any]:
     """Merge override dictionary into base configuration
     
     Args:
-        base: Base configuration
+        base: Base configuration (can be AlphaZeroConfig object or dict)
         override: Dictionary with overrides (can be nested)
         
     Returns:
-        Merged configuration
+        Merged configuration as dictionary
     """
-    # Convert base to dict, merge, and recreate
-    base_dict = base.to_dict()
+    # Convert base to dict if it's an AlphaZeroConfig object
+    if hasattr(base, 'to_dict'):
+        base_dict = base.to_dict()
+    else:
+        base_dict = base
     
     def deep_merge(d1: Dict, d2: Dict) -> Dict:
         """Recursively merge dictionaries"""
@@ -939,10 +1020,5 @@ def merge_configs(base: AlphaZeroConfig, override: Dict[str, Any]) -> AlphaZeroC
         return result
     
     merged_dict = deep_merge(base_dict, override)
-    config = AlphaZeroConfig.from_dict(merged_dict)
     
-    # Re-adjust for hardware if auto-detect is enabled
-    if config.auto_detect_hardware:
-        config.adjust_for_hardware()
-    
-    return config
+    return merged_dict

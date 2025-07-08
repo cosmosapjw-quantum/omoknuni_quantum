@@ -43,7 +43,12 @@ class UCBSelector:
         if len(child_visits) == 0:
             return -1
             
-        c_puct = c_puct or self.config.c_puct
+        c_puct = c_puct if c_puct is not None else self.config.c_puct
+        
+        # Ensure tensors are on the correct device
+        child_visits = child_visits.to(self.device)
+        child_values = child_values.to(self.device)
+        child_priors = child_priors.to(self.device)
         
         # Calculate Q-values
         q_values = torch.where(
@@ -85,8 +90,8 @@ class UCBSelector:
             ucb_scores: (batch_size,) UCB scores of selected children
         """
         batch_size = len(parent_visits)
-        c_puct = c_puct or self.config.c_puct
-        temperature = temperature or self.config.temperature
+        c_puct = c_puct if c_puct is not None else self.config.c_puct
+        temperature = temperature if temperature is not None else self.config.temperature
         
         # Initialize outputs
         selected_indices = torch.full((batch_size,), -1, dtype=torch.int32, device=self.device)

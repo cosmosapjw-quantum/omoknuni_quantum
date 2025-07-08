@@ -523,7 +523,7 @@ class MCTS:
             action: Action taken
             new_state: New game state
         """
-        if self.config.enable_subtree_reuse:
+        if getattr(self.config, 'tree_reuse', True):
             # Apply subtree reuse
             mapping = self.tree_ops.apply_subtree_reuse(action)
             if mapping:
@@ -544,9 +544,10 @@ class MCTS:
                 if new_state is not None:
                     self._initialize_root(new_state)
         else:
-            # No tree reuse - ensure root is initialized
+            # No tree reuse - reset tree for new search
+            self._reset_for_new_search()
             if new_state is not None:
-                self._ensure_root_initialized(new_state)
+                self._initialize_root(new_state)
             
     def clear(self):
         """Clear tree and reset state"""

@@ -153,7 +153,7 @@ class ResNetEvaluator(BaseNeuralEvaluator):
             log_policies, values = self.model(states)
         
         # Convert log probabilities to probabilities
-        policies = F.softmax(log_policies, dim=1)
+        policies = torch.exp(log_policies)
         
         return policies, values.squeeze(-1)
     
@@ -195,12 +195,18 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         with safe_autocast(device=self.device, enabled=self.use_amp):
             log_policies, values = self.model(states_tensor)
         
-        # Apply temperature BEFORE converting to probabilities (more efficient)
+        # Apply temperature BEFORE converting to probabilities
         if temperature != 1.0:
             log_policies = log_policies / temperature
         
-        # Convert to probabilities using softmax (not just exp)
-        policies = F.softmax(log_policies, dim=1)
+        # Convert log probabilities to probabilities
+        # When temperature is applied, we need to renormalize
+        if temperature != 1.0:
+            # For numerical stability with temperature, use softmax on the scaled log probs
+            policies = F.softmax(log_policies, dim=1)
+        else:
+            # Without temperature, just exp is sufficient since log_softmax was already applied
+            policies = torch.exp(log_policies)
         
         # Apply legal move masking if provided
         if legal_mask_tensor is not None:

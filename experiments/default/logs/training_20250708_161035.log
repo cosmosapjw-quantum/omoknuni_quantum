@@ -1,0 +1,7 @@
+2025-07-08 16:10:35 - INFO - Logging configured - Console: INFO, File: /home/cosmosapjw/omoknuni_quantum/experiments/default/logs/training_20250708_161035.log
+2025-07-08 16:10:35 - INFO - Experiment directory: /home/cosmosapjw/omoknuni_quantum/experiments/default
+2025-07-08 16:10:35 - INFO - Configuration saved to /home/cosmosapjw/omoknuni_quantum/experiments/default/config.yaml
+2025-07-08 16:10:35 - DEBUG - [GAME_INTERFACE DEBUG] Action space size: 225 (board: 15x15)
+2025-07-08 16:10:35 - DEBUG - Model device: cpu
+2025-07-08 16:10:35 - DEBUG - Target device: cpu
+2025-07-08 16:10:35 - INFO - Starting fresh training

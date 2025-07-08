@@ -326,9 +326,10 @@ class TestBatchProcessing:
         # Process batch
         coordinator._process_request_batch(requests)
         
-        # Check mega-batch was created
-        gpu_queue.put.assert_called_once()
-        mega_request = gpu_queue.put.call_args[0][0]
+        # Check mega-batch was created - it uses the first worker's queue
+        first_gpu_queue = requests[0][3]  # Get the first request's gpu_queue
+        first_gpu_queue.put.assert_called_once()
+        mega_request = first_gpu_queue.put.call_args[0][0]
         assert isinstance(mega_request, BatchEvaluationRequest)
         assert mega_request.states.shape[0] == 12  # 3 x 4
         
@@ -527,9 +528,10 @@ class TestStatistics:
             request_queue = queue.Queue()
             response_queue = queue.Queue()
             
-            # Mock GPU service
+            # Mock GPU service with proper synchronization
+            stop_event = threading.Event()
             def mock_gpu_service():
-                while True:
+                while not stop_event.is_set():
                     try:
                         req = request_queue.get(timeout=0.1)
                         resp = BatchEvaluationResponse(
@@ -541,20 +543,22 @@ class TestStatistics:
                         )
                         response_queue.put(resp)
                     except queue.Empty:
-                        break
+                        continue
                         
             gpu_thread = threading.Thread(target=mock_gpu_service)
             gpu_thread.start()
             
-            # Process immediate batch
-            states = np.random.rand(20, 3, 15, 15).astype(np.float32)
+            # Process a large batch that should trigger fallback_to_direct
+            states = np.random.rand(65, 3, 15, 15).astype(np.float32)  # 65 > max_batch_size (64)
             coordinator.coordinate_evaluation_batch(
                 states, worker_id=0,
                 gpu_service_request_queue=request_queue,
                 response_queue=response_queue
             )
             
-            gpu_thread.join()
+            # Stop GPU service and wait
+            stop_event.set()
+            gpu_thread.join(timeout=1.0)
             
             # Check statistics
             stats = coordinator.get_statistics()

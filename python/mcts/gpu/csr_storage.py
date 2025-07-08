@@ -114,6 +114,10 @@ class CSRStorage:
         
     def _grow_edge_storage(self, min_required: int):
         """Grow edge storage when capacity is exceeded"""
+        # Check if minimum required exceeds max edges
+        if self.config.max_edges > 0 and min_required > self.config.max_edges:
+            raise RuntimeError(f"Cannot grow edge storage beyond {self.config.max_edges}")
+            
         new_capacity = max(min_required, int(self.edge_capacity * self.config.growth_factor))
         
         if self.config.max_edges > 0:

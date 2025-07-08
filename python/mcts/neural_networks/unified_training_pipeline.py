@@ -36,71 +36,10 @@ from mcts.utils.config_system import (
     AlphaZeroConfig, create_default_config,
     merge_configs
 )
+from mcts.neural_networks.replay_buffer import ReplayBuffer, GameExample
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GameExample:
-    """Training example from self-play"""
-    state: np.ndarray
-    policy: np.ndarray
-    value: float
-    game_id: str = ""
-    move_number: int = 0
-    
-    def __post_init__(self):
-        # Ensure arrays are numpy arrays with positive strides
-        if not isinstance(self.state, np.ndarray):
-            self.state = np.ascontiguousarray(self.state)
-        else:
-            self.state = np.ascontiguousarray(self.state)
-        if not isinstance(self.policy, np.ndarray):
-            self.policy = np.ascontiguousarray(self.policy)
-        else:
-            self.policy = np.ascontiguousarray(self.policy)
-
-
-class ReplayBuffer(Dataset):
-    """Experience replay buffer for training examples"""
-    
-    def __init__(self, max_size: int = 500000):
-        self.buffer = deque(maxlen=max_size)
-        self.max_size = max_size
-    
-    def add(self, examples: List[GameExample]):
-        """Add examples to buffer"""
-        self.buffer.extend(examples)
-    
-    def __len__(self):
-        return len(self.buffer)
-    
-    def __getitem__(self, idx):
-        example = self.buffer[idx]
-        # Ensure arrays have positive strides by making copies if needed
-        state = np.ascontiguousarray(example.state)
-        policy = np.ascontiguousarray(example.policy)
-        return (
-            torch.FloatTensor(state),
-            torch.FloatTensor(policy),
-            torch.FloatTensor([example.value])
-        )
-    
-    def clear(self):
-        """Clear the buffer"""
-        self.buffer.clear()
-    
-    def save(self, path: str):
-        """Save buffer to disk"""
-        with open(path, 'wb') as f:
-            pickle.dump(list(self.buffer), f)
-    
-    def load(self, path: str):
-        """Load buffer from disk"""
-        with open(path, 'rb') as f:
-            examples = pickle.load(f)
-            self.buffer = deque(examples, maxlen=self.max_size)
 
 
 class UnifiedTrainingPipeline:
@@ -154,9 +93,8 @@ class UnifiedTrainingPipeline:
         # Mixed precision scaler
         self.scaler = torch.amp.GradScaler('cuda') if config.training.mixed_precision and torch.cuda.is_available() else None
         
-        # Arena for evaluation (always create, but use based on evaluation_interval)
+        # Arena for evaluation with ELO tracking
         self.arena = self._create_arena()
-        # ELO tracker will be created when needed
         
         # Initialize metrics recorder
         from mcts.utils.training_metrics import TrainingMetricsRecorder
@@ -431,7 +369,7 @@ class UnifiedTrainingPipeline:
     
     def _create_arena(self):
         """Create arena for model evaluation"""
-        from mcts.neural_networks.arena_module import ArenaManager, ArenaConfig
+        from mcts.neural_networks.arena_manager import ArenaManager, ArenaConfig
         
         arena_config = ArenaConfig(
             num_games=self.config.arena.num_games,
@@ -446,7 +384,7 @@ class UnifiedTrainingPipeline:
             save_game_records=self.config.arena.save_game_records
         )
         
-        return ArenaManager(self.config, arena_config)
+        return ArenaManager(self.config, arena_config, self.game_interface)
     
     def train(self, num_iterations: int):
         """Run the complete training pipeline
@@ -576,26 +514,9 @@ class UnifiedTrainingPipeline:
         # self.run_final_tournament()
     
     def generate_self_play_data(self) -> List[GameExample]:
-        """Generate self-play training data with progress tracking"""
+        """Generate self-play training data using SelfPlayManager"""
         from mcts.core.evaluator import AlphaZeroEvaluator
-        import time
-        
-        examples = []
-        
-        # Initialize comprehensive game quality metrics
-        self.game_metrics = {
-            'game_lengths': [],
-            'policy_entropies': [],
-            'value_trajectories': [],
-            'outcomes': {'player1_wins': 0, 'player2_wins': 0, 'draws': 0},
-            'resignation_count': 0,
-            'illegal_move_attempts': 0,
-            'avg_branching_factor': [],
-            'move_time_ms': [],
-            'final_positions': [],
-            'value_accuracy': [],  # Compare predicted vs actual outcome
-            'start_time': time.time()  # Track timing
-        }
+        from mcts.neural_networks.self_play_manager import SelfPlayManager
         
         # Create evaluator for self-play
         evaluator = AlphaZeroEvaluator(
@@ -606,64 +527,56 @@ class UnifiedTrainingPipeline:
         # Configure evaluator to return torch tensors for GPU operations
         evaluator._return_torch_tensors = True
         
-        # Use multiprocessing for parallel self-play
-        if self.config.training.num_workers > 1:
-            examples = self._parallel_self_play(evaluator)
-            # Collect metrics from examples since parallel mode doesn't track in real-time
-            self._collect_metrics_from_examples(examples)
-        else:
-            # Single-threaded self-play with progress bar
-            for game_idx in trange(self.config.training.num_games_per_iteration,
-                                  desc="Self-play games", unit="game"):
-                game_examples = self._play_single_game(evaluator, game_idx)
-                examples.extend(game_examples)
+        # Create game class that works with SelfPlayManager
+        class GameWrapper:
+            """Wrapper to make GameInterface work like a game class"""
+            def __init__(self):
+                self.state = self.game_interface.create_initial_state()
+                
+            def get_state(self):
+                return self.state
+                
+            def get_current_player(self):
+                # GameInterface doesn't track player, so we'll track it externally
+                return 1  # Will be managed by SelfPlayGame
+                
+            def get_valid_actions(self):
+                return self.game_interface.get_legal_moves(self.state)
+                
+            def is_terminal(self):
+                return self.game_interface.is_terminal(self.state)
+                
+            def make_action(self, action):
+                self.state = self.game_interface.get_next_state(self.state, action)
+                
+            def get_winner(self):
+                return self.game_interface.get_winner(self.state)
+                
+            def get_action_size(self):
+                return self._get_action_size()
         
-        # Log comprehensive game quality report
+        # Bind methods to access pipeline's context
+        GameWrapper.game_interface = self.game_interface
+        GameWrapper._get_action_size = self._get_action_size
+        
+        # Use SelfPlayManager
+        self_play_manager = SelfPlayManager(
+            config=self.config,
+            game_class=GameWrapper,
+            evaluator=evaluator
+        )
+        
+        # Generate self-play data
+        examples = self_play_manager.generate_self_play_data()
+        
+        # Collect metrics
+        self.game_metrics = self_play_manager.collect_game_metrics(examples)
+        
+        # Log game quality metrics
         self._log_game_quality_metrics()
         
         return examples
     
-    def _collect_metrics_from_examples(self, examples):
-        """Collect game metrics from generated examples (for parallel self-play)"""
-        if not examples:
-            return
-            
-        import numpy as np
-        
-        # Group examples by game_id to analyze per-game metrics
-        games = {}
-        for example in examples:
-            game_id = example.game_id
-            if game_id not in games:
-                games[game_id] = []
-            games[game_id].append(example)
-        
-        # Collect metrics per game
-        for game_id, game_examples in games.items():
-            # Game length
-            game_length = len(game_examples)
-            self.game_metrics['game_lengths'].append(game_length)
-            
-            # Policy entropies
-            for example in game_examples:
-                policy = example.policy
-                entropy = -np.sum(policy * np.log(policy + 1e-8))
-                self.game_metrics['policy_entropies'].append(entropy)
-            
-            # Game outcome (from final example value)
-            if game_examples:
-                final_value = game_examples[-1].value
-                if final_value > 0.5:
-                    self.game_metrics['outcomes']['player1_wins'] += 1
-                elif final_value < -0.5:
-                    self.game_metrics['outcomes']['player2_wins'] += 1
-                else:
-                    self.game_metrics['outcomes']['draws'] += 1
-                
-                # Value accuracy (simple approximation)
-                for example in game_examples[-5:]:  # Last 5 moves
-                    predicted_correct = (example.value > 0 and final_value > 0) or (example.value < 0 and final_value < 0)
-                    self.game_metrics['value_accuracy'].append(float(predicted_correct))
     
     def _log_game_quality_metrics(self):
         """Log comprehensive game quality metrics"""
@@ -745,221 +658,7 @@ class UnifiedTrainingPipeline:
             resignation_rate=self.game_metrics['resignation_count'] / max(total_games, 1)
         )
     
-    def _parallel_self_play(self, evaluator) -> List[GameExample]:
-        """Run self-play games in parallel using GPU service architecture"""
-        import multiprocessing as mp
-        from .self_play_module import SelfPlayManager
-        
-        # Ensure spawn method for CUDA compatibility
-        try:
-            mp.set_start_method('spawn', force=True)
-        except RuntimeError:
-            pass  # Already set
-        
-        # Use self-play manager
-        self_play_manager = SelfPlayManager(self.config)
-        
-        # Pass TensorRT engine path if available
-        if hasattr(self, 'tensorrt_engine_path'):
-            examples = self_play_manager.generate_games(
-                self.model, 
-                self.iteration,
-                num_games=self.config.training.num_games_per_iteration,
-                num_workers=self.config.training.num_workers,
-                tensorrt_engine_path=str(self.tensorrt_engine_path)
-            )
-        else:
-            examples = self_play_manager.generate_games(
-                self.model, 
-                self.iteration,
-                num_games=self.config.training.num_games_per_iteration,
-                num_workers=self.config.training.num_workers
-            )
-        
-        return examples
     
-    def _create_quantum_config(self):
-        """Placeholder for quantum config (disabled)"""
-        return None
-    
-    def _play_single_game(self, evaluator, game_idx: int) -> List[GameExample]:
-        """Play a single self-play game"""
-        from mcts.core.mcts import MCTS, MCTSConfig
-        from mcts.gpu.gpu_game_states import GameType as GPUGameType
-        
-        # Quantum features disabled
-        
-        # Convert game_interface.GameType to gpu_game_states.GameType
-        game_type_mapping = {
-            'CHESS': GPUGameType.CHESS,
-            'GO': GPUGameType.GO,
-            'GOMOKU': GPUGameType.GOMOKU
-        }
-        gpu_game_type = game_type_mapping[self.game_type.name]
-        
-        # Create MCTS configuration from full config
-        mcts_config = MCTSConfig(
-            # Core MCTS parameters
-            num_simulations=self.config.mcts.num_simulations,
-            c_puct=self.config.mcts.c_puct,
-            temperature=self.config.mcts.temperature,  # Will be adjusted during play
-            dirichlet_alpha=self.config.mcts.dirichlet_alpha,
-            dirichlet_epsilon=self.config.mcts.dirichlet_epsilon,
-            
-            # Performance and wave parameters
-            min_wave_size=self.config.mcts.min_wave_size,
-            max_wave_size=self.config.mcts.max_wave_size,
-            
-            # Memory and optimization
-            memory_pool_size_mb=self.config.mcts.memory_pool_size_mb,
-            max_tree_nodes=self.config.mcts.max_tree_nodes,
-            use_mixed_precision=self.config.mcts.use_mixed_precision,
-            use_cuda_graphs=self.config.mcts.use_cuda_graphs,
-            use_tensor_cores=self.config.mcts.use_tensor_cores,
-            
-            # Game and device configuration
-            device=self.config.mcts.device,
-            game_type=gpu_game_type,
-            board_size=self.config.game.board_size,
-            
-            # Enable quantum features if configured
-            enable_quantum=self.config.mcts.enable_quantum,
-            quantum_config=self._create_quantum_config() if self.config.mcts.enable_quantum else None,
-            
-            # Virtual loss for parallel exploration
-            enable_virtual_loss=True,
-            virtual_loss=self.config.mcts.virtual_loss
-        )
-        
-        
-        # Create classical MCTS
-        mcts = MCTS(mcts_config, evaluator)
-        
-        # Play game
-        examples = []
-        state = self.game_interface.create_initial_state()
-        game_id = f"iter{self.iteration}_game{game_idx}"
-        
-        # Track game-specific metrics
-        game_value_trajectory = []
-        game_policy_entropies = []
-        game_start_time = time.time()
-        
-        for move_num in range(self.config.training.max_moves_per_game):
-            # Enhanced opening diversity: Force extra exploration for first 3 moves
-            if move_num < 3:
-                # CRITICAL: Extra high temperature + noise for opening diversity
-                mcts.config.temperature = max(2.0, self.config.mcts.temperature)
-                mcts.config.dirichlet_epsilon = min(0.8, self.config.mcts.dirichlet_epsilon * 2.0)
-            elif move_num < self.config.mcts.temperature_threshold:
-                # Normal exploration phase
-                mcts.config.temperature = self.config.mcts.temperature
-                mcts.config.dirichlet_epsilon = self.config.mcts.dirichlet_epsilon
-            else:
-                # Exploitation phase - lower temperature but not fully deterministic
-                mcts.config.temperature = getattr(self.config.mcts, 'temperature_final', 0.1)
-                mcts.config.dirichlet_epsilon = self.config.mcts.dirichlet_epsilon * 0.5
-            
-            # Track search time
-            search_start = time.time()
-            
-            # Search with MCTS
-            policy = mcts.search(state, num_simulations=self.config.mcts.num_simulations)
-            
-            # Track search time
-            search_time_ms = (time.time() - search_start) * 1000
-            if hasattr(self, 'game_metrics'):
-                self.game_metrics['move_time_ms'].append(search_time_ms)
-            
-            # Convert to numpy if needed
-            if isinstance(policy, torch.Tensor):
-                policy = policy.cpu().numpy()
-            
-            # Calculate policy entropy for diversity analysis
-            policy_entropy = -np.sum(policy * np.log(policy + 1e-8))
-            game_policy_entropies.append(policy_entropy)
-            
-            # Track root value from MCTS
-            root_value = mcts.get_root_value() if hasattr(mcts, 'get_root_value') else 0
-            game_value_trajectory.append(root_value)
-            
-            # Select move based on policy
-            # Note: MCTS already applies temperature scaling to visit counts using
-            # the AlphaZero formula: policy[a] ∝ visits[a]^(1/temperature)
-            if mcts.config.temperature == 0:
-                # Deterministic - select highest probability move
-                action = np.argmax(policy)
-            else:
-                # Stochastic - sample from the temperature-scaled distribution
-                # Ensure we have a valid probability distribution
-                if np.sum(policy) > 0:
-                    policy = policy / np.sum(policy)  # Normalize
-                    action = np.random.choice(len(policy), p=policy)
-                else:
-                    # Fallback to uniform random if all probabilities are zero
-                    legal_moves = self.game_interface.get_legal_moves(state)
-                    if not legal_moves:
-                        raise ValueError(f"No legal actions available at move {move_num}")
-                    action = np.random.choice(legal_moves)
-            
-            
-            # Store example (from current player's perspective)
-            canonical_state = self.game_interface.get_canonical_form(state)
-            examples.append(GameExample(
-                state=canonical_state,
-                policy=policy,
-                value=0,  # Will be filled with game outcome
-                game_id=game_id,
-                move_number=move_num
-            ))
-            
-            # Apply action
-            state = self.game_interface.get_next_state(state, action)
-            
-            # Reset MCTS tree for next search (no tree reuse for better exploration)
-            mcts.reset_tree()
-            
-            # Check terminal
-            if self.game_interface.is_terminal(state):
-                # Get game outcome
-                outcome = self.game_interface.get_value(state)
-                
-                # Update values in examples
-                for i, example in enumerate(examples):
-                    # Alternate perspective for each move
-                    example.value = outcome * ((-1) ** (i % 2))
-                
-                # Collect final game metrics
-                if hasattr(self, 'game_metrics'):
-                    # Record game length
-                    self.game_metrics['game_lengths'].append(move_num + 1)
-                    
-                    # Record outcome
-                    if outcome == 1:
-                        self.game_metrics['outcomes']['player1_wins'] += 1
-                    elif outcome == -1:
-                        self.game_metrics['outcomes']['player2_wins'] += 1
-                    else:
-                        self.game_metrics['outcomes']['draws'] += 1
-                    
-                    # Record policy entropies
-                    self.game_metrics['policy_entropies'].extend(game_policy_entropies)
-                    
-                    # Record value trajectory
-                    self.game_metrics['value_trajectories'].append(game_value_trajectory)
-                    
-                    # Calculate value prediction accuracy
-                    if game_value_trajectory:
-                        # Check if final value predictions matched actual outcome
-                        final_predictions = game_value_trajectory[-min(5, len(game_value_trajectory)):]
-                        for pred in final_predictions:
-                            # Account for perspective alternation
-                            correct = (pred > 0 and outcome == 1) or (pred < 0 and outcome == -1)
-                            self.game_metrics['value_accuracy'].append(float(correct))
-                
-                break
-        
-        return examples
     
     def _augment_training_data(self, examples: List[GameExample]) -> List[GameExample]:
         """Apply data augmentation to training examples using board symmetries"""
@@ -987,741 +686,203 @@ class UnifiedTrainingPipeline:
         return augmented_examples
     
     def train_neural_network(self) -> Dict[str, float]:
-        """Train the neural network on replay buffer"""
+        """Train the neural network using TrainingManager"""
+        from mcts.neural_networks.training_manager import TrainingManager
+        
         if len(self.replay_buffer) < self.config.training.batch_size:
             return {"loss": 0, "policy_loss": 0, "value_loss": 0}
         
-        # Ensure model is on correct device (it may have been moved during self-play)
-        self.model = self.model.to(self.config.mcts.device)
-        
-        # Create data loader
-        dataloader = DataLoader(
-            self.replay_buffer,
-            batch_size=self.config.training.batch_size,
-            shuffle=True,
-            num_workers=0,  # Use 0 to avoid multiprocessing issues
-            pin_memory=True
+        # Create training manager
+        training_manager = TrainingManager(
+            config=self.config,
+            model=self.model
         )
         
-        # Training stats
-        total_loss = 0
-        total_policy_loss = 0
-        total_value_loss = 0
-        num_batches = 0
+        # Use the same optimizer and scheduler as the pipeline
+        training_manager.optimizer = self.optimizer
+        training_manager.scheduler = self.scheduler
+        training_manager.scaler = self.scaler
         
-        # Train for specified epochs
-        self.model.train()
-        for epoch in range(self.config.training.num_epochs):
-            epoch_desc = f"Training epoch {epoch+1}/{self.config.training.num_epochs}"
-            
-            # Use tqdm for batch progress
-            # Use tqdm for batch progress with position parameter to avoid overlap
-            with tqdm(dataloader, desc=epoch_desc, unit="batch", 
-                     position=1, leave=False) as pbar:
-                for batch_idx, (states, target_policies, target_values) in enumerate(pbar):
-                    # Move to device
-                    states = states.to(self.config.mcts.device)
-                    target_policies = target_policies.to(self.config.mcts.device)
-                    target_values = target_values.to(self.config.mcts.device).squeeze()
-                    
-                    # Mixed precision training
-                    if self.config.training.mixed_precision:
-                        with torch.amp.autocast('cuda', dtype=torch.float16):
-                            # Forward pass
-                            pred_policies, pred_values = self.model(states)
-                            pred_values = pred_values.squeeze()
-                            
-                            # Calculate losses
-                            policy_loss = self.policy_loss_fn(pred_policies, target_policies)
-                            value_loss = self.value_loss_fn(pred_values, target_values)
-                            loss = policy_loss + value_loss
-                        
-                        # Backward pass with scaling
-                        self.scaler.scale(loss).backward()
-                        
-                        if (batch_idx + 1) % self.config.training.gradient_accumulation_steps == 0:
-                            # Gradient clipping
-                            self.scaler.unscale_(self.optimizer)
-                            clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
-                            
-                            # Optimizer step
-                            self.scaler.step(self.optimizer)
-                            self.scaler.update()
-                            self.optimizer.zero_grad()
-                    else:
-                        # Standard training
-                        pred_policies, pred_values = self.model(states)
-                        pred_values = pred_values.squeeze()
-                        
-                        policy_loss = self.policy_loss_fn(pred_policies, target_policies)
-                        value_loss = self.value_loss_fn(pred_values, target_values)
-                        loss = policy_loss + value_loss
-                        
-                        loss.backward()
-                        
-                        if (batch_idx + 1) % self.config.training.gradient_accumulation_steps == 0:
-                            clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
-                            self.optimizer.step()
-                            self.optimizer.zero_grad()
-                    
-                    # Update stats
-                    total_loss += loss.item()
-                    total_policy_loss += policy_loss.item()
-                    total_value_loss += value_loss.item()
-                    num_batches += 1
-                    
-                    # Update progress bar
-                    pbar.set_postfix({
-                        'loss': f'{loss.item():.4f}',
-                        'p_loss': f'{policy_loss.item():.4f}',
-                        'v_loss': f'{value_loss.item():.4f}'
-                    })
-        
-        # Update learning rate
-        if self.scheduler:
-            self.scheduler.step()
-        
-        # Calculate average stats
-        avg_loss = total_loss / num_batches
-        avg_policy_loss = total_policy_loss / num_batches
-        avg_value_loss = total_value_loss / num_batches
-        
-        current_lr = self.scheduler.get_last_lr()[0] if self.scheduler else self.config.training.learning_rate
+        # Train the model
+        results = training_manager.train(self.replay_buffer)
         
         # Record training metrics
         self.metrics_recorder.record_training_step(
             iteration=self.iteration,
-            epoch=epoch,
-            policy_loss=avg_policy_loss,
-            value_loss=avg_value_loss,
-            total_loss=avg_loss,
-            learning_rate=current_lr
+            epoch=self.config.training.num_epochs - 1,
+            policy_loss=results['final_policy_loss'],
+            value_loss=results['final_value_loss'],
+            total_loss=results['final_loss'],
+            learning_rate=self.optimizer.param_groups[0]['lr']
         )
         
-        # Return stats
+        # Return stats in expected format
         stats = {
-            "loss": avg_loss,
-            "policy_loss": avg_policy_loss,
-            "value_loss": avg_value_loss,
-            "lr": current_lr
+            "loss": results['final_loss'],
+            "policy_loss": results['final_policy_loss'],
+            "value_loss": results['final_value_loss'],
+            "lr": self.optimizer.param_groups[0]['lr']
         }
             
         return stats
     
     def evaluate_model_with_elo(self) -> bool:
-        """3-way ELO evaluation: Random vs Best vs Current model"""
-        from mcts.core.evaluator import RandomEvaluator
+        """Evaluate model using ArenaManager with ELO tracking"""
+        from mcts.core.evaluator import RandomEvaluator, AlphaZeroEvaluator, EvaluatorConfig
         import gc
         
-        # Initialize variables to avoid UnboundLocalError
-        win_rate_vs_best = None
-        
-        # Initialize ELO tracker if needed
-        if not self.elo_tracker:
-            from mcts.neural_networks.arena_module import ELOTracker
-            self.elo_tracker = ELOTracker(
-                k_factor=self.config.arena.elo_k_factor,
-                initial_rating=self.config.arena.elo_initial_rating
-            )
-            # Set random model as anchor with rating 0
-            self.elo_tracker.ratings["random"] = self.config.arena.elo_anchor_rating
+        # Initialize ELO tracker in arena if needed
+        if not self.arena.elo_system:
+            logger.error("Arena ELO system not initialized!")
+            return False
             
-            # Configure enhanced ELO features based on config
-            if hasattr(self.config.arena, 'elo_enable_deflation'):
-                self.elo_tracker.use_deflation = self.config.arena.elo_enable_deflation
-            if hasattr(self.config.arena, 'elo_deflation_factor'):
-                self.elo_tracker.deflation_factor = self.config.arena.elo_deflation_factor
-                
-            logger.info(f"ELO Tracker initialized with enhanced features:")
-            logger.info(f"  K-factor: {self.elo_tracker.k_factor}")
-            logger.info(f"  Initial rating: {self.elo_tracker.initial_rating}")
-            logger.info(f"  Deflation enabled: {self.elo_tracker.use_deflation}")
-            logger.info(f"  Uncertainty tracking: enabled")
-            logger.info(f"  Validation metrics: enabled")
-        
-        # Create random evaluator
-        from mcts.core.evaluator import EvaluatorConfig
-        eval_config = EvaluatorConfig(
+        # Create evaluators
+        eval_config = EvaluatorConfig(device=self.config.mcts.device)
+        random_evaluator = RandomEvaluator(self._get_action_size(), eval_config)
+        current_evaluator = AlphaZeroEvaluator(
+            model=self.model,
             device=self.config.mcts.device
         )
-        random_evaluator = RandomEvaluator(
-            self._get_action_size(),
-            eval_config
-        )
         
-        results_summary = []
-        accepted = True
-        
-        # Clear GPU cache before starting arena battles
+        # Clear GPU cache before arena battles
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
-        # Implement CORRECT ELO inheritance: always inherit from previous iteration
+        # Setup ELO inheritance for new model
         current_key = f"iter_{self.iteration}"
-        if current_key not in self.elo_tracker.ratings:
-            if self.iteration == 1:
-                # First model starts at 0 (same as random)
-                initial_elo = 0.0
-                logger.info(f"First model (iter_1) starting at ELO {initial_elo:.1f} (same as random)")
-            else:
-                # ALWAYS inherit from previous iteration model, not best model
-                # This is the correct approach - new models are trained from previous iteration
-                previous_key = f"iter_{self.iteration - 1}"
-                previous_elo = self.elo_tracker.get_rating(previous_key)
-                if previous_elo is not None:
-                    initial_elo = previous_elo
-                    logger.info(f"Model iter_{self.iteration} inheriting ELO {initial_elo:.1f} from previous {previous_key}")
-                else:
-                    # Fallback to initial rating if previous doesn't exist
-                    initial_elo = self.config.arena.elo_initial_rating
-                    logger.info(f"Model iter_{self.iteration} starting at initial ELO {initial_elo:.1f} (previous not found)")
-            
-            self.elo_tracker.ratings[current_key] = initial_elo
-            # Store initial ELO for potential adjustment
-            self._initial_inherited_elo = initial_elo
-        
-        # Match 1: Current vs Random (using adaptive logic like best model)
-        current_model_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-        
-        # Use adaptive logic if enabled in config
-        if self.config.arena.enable_adaptive_random_matches:
-            should_current_play_random = self.elo_tracker.should_play_vs_random(
-                self.iteration, current_model_elo
-            )
+        if self.iteration > 1:
+            # Inherit ELO from previous iteration
+            self.arena.inherit_elo(current_key, f"iter_{self.iteration - 1}")
         else:
-            # Always play random matches if adaptive logic is disabled
-            should_current_play_random = True
+            # First model starts at anchor rating
+            self.arena.elo_system.ratings[current_key] = self.arena.elo_system.anchor_rating
         
-        wins_vs_random = 0
-        draws_vs_random = 0
-        losses_vs_random = 0
+        # Match 1: Current vs Random
+        current_model_elo = self.arena.elo_system.get_rating(current_key)
+        should_play_random = self.arena.elo_system.should_play_vs_random(
+            self.iteration, current_model_elo
+        )
+        
         win_rate_vs_random = 0.0
-        
-        if should_current_play_random:
-            tqdm.write("      Current vs Random (adaptive check)...")
-            wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
-                self.model, random_evaluator,
-                model1_name=f"iter_{self.iteration}",
-                model2_name="random",
-                silent=False
+        if should_play_random or self.iteration == 1:
+            tqdm.write("      Current vs Random...")
+            results_vs_random = self.arena.evaluate_models(
+                current_evaluator, random_evaluator,
+                current_key, "random"
             )
-            win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
-            tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
-            
-            # Update ELO
-            self.elo_tracker.update_ratings(
-                f"iter_{self.iteration}", "random",
-                wins_vs_random, draws_vs_random, losses_vs_random
-            )
-        else:
-            tqdm.write("      Current vs Random: Skipped (adaptive criteria)")
-            # For first model or when forced, still run the match
-            if self.iteration == 1 or not self.best_model_iteration:
-                tqdm.write("      Current vs Random (forced for first model)...")
-                wins_vs_random, draws_vs_random, losses_vs_random = self.arena.compare_models(
-                    self.model, random_evaluator,
-                    model1_name=f"iter_{self.iteration}",
-                    model2_name="random",
-                    silent=False
-                )
-                win_rate_vs_random = wins_vs_random / (wins_vs_random + draws_vs_random + losses_vs_random)
-                tqdm.write(f"      Result: {wins_vs_random}W-{draws_vs_random}D-{losses_vs_random}L ({win_rate_vs_random:.1%})")
-                
-                # Update ELO
-                self.elo_tracker.update_ratings(
-                    f"iter_{self.iteration}", "random",
-                    wins_vs_random, draws_vs_random, losses_vs_random
-                )
+            win_rate_vs_random = results_vs_random['win_rate']
+            tqdm.write(f"      Result: {results_vs_random['model1_wins']}W-{results_vs_random['draws']}D-{results_vs_random['model2_wins']}L ({win_rate_vs_random:.1%})")
         
-        # Clean up after first match
+        # Match 2: Current vs Previous Model (for ELO calibration)
+        if self.iteration > 1 and getattr(self.config.arena, 'enable_current_vs_previous', True):
+            previous_model_path = self.checkpoint_dir / f"checkpoint_iter_{self.iteration - 1}.pt"
+            results_vs_previous = self.arena.evaluate_with_previous(
+                current_evaluator, current_key, previous_model_path, self.iteration
+            )
+            if results_vs_previous:
+                tqdm.write(f"      Current vs Previous: {results_vs_previous['model1_wins']}W-{results_vs_previous['draws']}D-{results_vs_previous['model2_wins']}L ({results_vs_previous['win_rate']:.1%})")
+        
+        # Clean up
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Match 2: Current vs Previous Model (for ELO calibration)
-        wins_vs_previous = 0
-        draws_vs_previous = 0
-        losses_vs_previous = 0
-        win_rate_vs_previous = 0.0
+        # Match 2: Current vs Best (if we have a best model)
+        win_rate_vs_best = None
+        accepted = False
         
-        if self.iteration > 1 and self.config.arena.enable_current_vs_previous:
-            # Check if previous model exists
-            previous_model_path = self.experiment_dir / "checkpoints" / f"checkpoint_iter_{self.iteration - 1}.pt"
-            
-            if previous_model_path.exists():
-                tqdm.write(f"      Current vs Previous (iter_{self.iteration - 1})...")
-                
-                # Move current model to CPU temporarily to free GPU memory
-                current_device = next(self.model.parameters()).device
-                self.model.cpu()
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Load previous model
-                previous_model = self._create_model()
-                checkpoint = torch.load(previous_model_path, map_location=self.config.mcts.device, weights_only=False)
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    previous_model.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    previous_model.load_state_dict(checkpoint)
-                previous_model.eval()
-                
-                # Move current model back to device for comparison
-                self.model.to(current_device)
-                
-                # Run arena match
-                wins_vs_previous, draws_vs_previous, losses_vs_previous = self.arena.compare_models(
-                    self.model, previous_model,
-                    model1_name=f"iter_{self.iteration}",
-                    model2_name=f"iter_{self.iteration - 1}",
-                    silent=False
-                )
-                win_rate_vs_previous = wins_vs_previous / (wins_vs_previous + draws_vs_previous + losses_vs_previous)
-                tqdm.write(f"      Result: {wins_vs_previous}W-{draws_vs_previous}D-{losses_vs_previous}L ({win_rate_vs_previous:.1%})")
-                
-                # Update ELO based on actual performance vs previous model
-                self.elo_tracker.update_ratings(
-                    f"iter_{self.iteration}", f"iter_{self.iteration - 1}",
-                    wins_vs_previous, draws_vs_previous, losses_vs_previous
-                )
-                
-                # Clean up previous model
-                del previous_model
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            else:
-                tqdm.write(f"      Current vs Previous: Previous model iter_{self.iteration - 1} not found")
-        elif self.iteration > 1:
-            tqdm.write("      Current vs Previous: Disabled in config")
-        else:
-            tqdm.write("      Current vs Previous: Skipped (first model)")
-        
-        # Match 3: Best vs Random (if we have a best model)
         if self.best_model_iteration:
-            # First, move current model to CPU temporarily to free GPU memory
-            current_device = next(self.model.parameters()).device
-            self.model.cpu()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Use sophisticated adaptive logic to determine if best model should play random
-            best_model_key = f"iter_{self.best_model_iteration}"
-            best_model_elo = self.elo_tracker.get_rating(best_model_key)
-            
-            # Check if best model should play against random using adaptive criteria
-            should_best_play_random = self.elo_tracker.should_play_vs_random(
-                self.best_model_iteration, best_model_elo
-            )
-            
-            if should_best_play_random:
-                tqdm.write(f"      Best vs Random (adaptive check)...")
-                best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
-                best_model = self._create_model()
-                
-                # Load best model directly to GPU
-                checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    best_model.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    best_model.load_state_dict(checkpoint)
-                best_model.eval()
-                
-                wins_best_random, draws_best_random, losses_best_random = self.arena.compare_models(
-                    best_model, random_evaluator,
-                    model1_name=f"iter_{self.best_model_iteration}",
-                    model2_name="random",
-                    silent=False
-                )
-                win_rate_best_random = wins_best_random / (wins_best_random + draws_best_random + losses_best_random)
-                tqdm.write(f"      Result: {wins_best_random}W-{draws_best_random}D-{losses_best_random}L ({win_rate_best_random:.1%})")
-                
-                self.elo_tracker.update_ratings(
-                    f"iter_{self.best_model_iteration}", "random",
-                    wins_best_random, draws_best_random, losses_best_random
-                )
-            else:
-                # Skip re-evaluation based on adaptive criteria
-                tqdm.write(f"      Best model (iter {self.best_model_iteration}, ELO {best_model_elo:.1f}) skipping random match")
-                tqdm.write(f"        Reason: Adaptive criteria (iteration={self.best_model_iteration}, ELO={best_model_elo:.1f})")
-                best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
-                best_model = self._create_model()
-                
-                # Still need to load the model for current vs best comparison
-                checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    best_model.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    best_model.load_state_dict(checkpoint)
-                best_model.eval()
-            
-            # Move best model to CPU before loading current model back
-            best_model.cpu()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Move current model back to GPU
-            self.model.to(current_device)
-            
-            # Match 4: Current vs Best
+            # Evaluate against best model
             tqdm.write("      Current vs Best...")
+            best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
+            best_model = self._create_model()
             
-            # Move best model back to GPU for the match
-            best_model.to(self.config.mcts.device)
+            # Load best model
+            checkpoint = torch.load(best_model_path, map_location=self.config.mcts.device, weights_only=False)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                best_model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                best_model.load_state_dict(checkpoint)
+            best_model.eval()
             
-            try:
-                wins_vs_best, draws_vs_best, losses_vs_best = self.arena.compare_models(
-                    self.model, best_model,
-                    model1_name=f"iter_{self.iteration}",
-                    model2_name=f"iter_{self.best_model_iteration}",
-                    silent=False
-                )
-            except RuntimeError as e:
-                if "CUDA error" in str(e):
-                    logger.error(f"CUDA error during arena evaluation: {e}")
-                    # Treat CUDA errors as draws to continue training
-                    logger.warning("Treating all games as draws due to CUDA error")
-                    wins_vs_best = 0
-                    draws_vs_best = self.config.arena.num_games
-                    losses_vs_best = 0
-                else:
-                    raise
-            win_rate_vs_best = wins_vs_best / (wins_vs_best + draws_vs_best + losses_vs_best)
-            tqdm.write(f"      Result: {wins_vs_best}W-{draws_vs_best}D-{losses_vs_best}L ({win_rate_vs_best:.1%})")
-            
-            # Update ratings with best model protection
-            self.elo_tracker.update_ratings(
-                f"iter_{self.iteration}", f"iter_{self.best_model_iteration}",
-                wins_vs_best, draws_vs_best, losses_vs_best,
-                protect_best_elo=True,
-                best_player=f"iter_{self.best_model_iteration}"
+            # Create evaluator for best model
+            best_evaluator = AlphaZeroEvaluator(
+                model=best_model,
+                device=self.config.mcts.device
             )
             
-            # Store wins vs best for ELO adjustment if needed
-            self._last_wins_vs_best = wins_vs_best
-            self._last_games_vs_best = wins_vs_best + draws_vs_best + losses_vs_best
+            # Run arena match
+            results_vs_best = self.arena.evaluate_models(
+                current_evaluator, best_evaluator,
+                current_key, f"iter_{self.best_model_iteration}"
+            )
+            win_rate_vs_best = results_vs_best['win_rate']
+            tqdm.write(f"      Result: {results_vs_best['model1_wins']}W-{results_vs_best['draws']}D-{results_vs_best['model2_wins']}L ({win_rate_vs_best:.1%})")
             
-            # Check if current model should be accepted
+            # Store win rate for ELO adjustment if model is accepted
+            self._last_win_rate_vs_best = win_rate_vs_best
+            
+            # Check acceptance
             accepted = win_rate_vs_best >= self.config.arena.win_threshold
             
-            # CRITICAL: Delete best model to free GPU memory
-            del best_model
+            # Clean up
+            del best_model, best_evaluator
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         else:
             # First model - check against random baseline with logarithmic scheduling
-            dynamic_threshold = self._get_dynamic_win_rate_threshold()
+            dynamic_threshold = self.arena.get_dynamic_win_rate_threshold(self.iteration)
             accepted = win_rate_vs_random >= dynamic_threshold
             tqdm.write(f"      Dynamic threshold: {dynamic_threshold:.1%} (iteration {self.iteration})")
         
         # Get final ELO ratings
-        current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-        random_elo = self.elo_tracker.get_rating("random")
-        
-        # Get enhanced ELO information
-        current_rating, current_uncertainty = self.elo_tracker.get_rating_with_uncertainty(f"iter_{self.iteration}")
-        current_games = self.elo_tracker.game_counts.get(f"iter_{self.iteration}", 0)
-        
-        tqdm.write(f"\n      ELO Ratings:")
-        tqdm.write(f"        Random: {random_elo:.1f} (anchor)")
-        tqdm.write(f"        Current (iter {self.iteration}): {current_elo:.1f} ±{current_uncertainty:.1f} ({current_games} games)")
-        
-        # Save detailed results
-        results = {
-            "iteration": self.iteration,
-            "vs_random": {
-                "wins": wins_vs_random,
-                "draws": draws_vs_random,
-                "losses": losses_vs_random,
-                "win_rate": win_rate_vs_random
-            },
-            "elo_ratings": {
-                "random": random_elo,
-                "current": current_elo
-            },
-            "accepted": accepted
-        }
-        
-        # Add vs_previous results if we have them
-        if self.iteration > 1:
-            results["vs_previous"] = {
-                "wins": wins_vs_previous,
-                "draws": draws_vs_previous,
-                "losses": losses_vs_previous,
-                "win_rate": win_rate_vs_previous
-            }
-            # Add previous model ELO if it exists
-            previous_elo = self.elo_tracker.get_rating(f"iter_{self.iteration - 1}")
-            if previous_elo is not None:
-                results["elo_ratings"]["previous"] = previous_elo
-                tqdm.write(f"        Previous (iter {self.iteration - 1}): {previous_elo:.1f}")
-        
-        if self.best_model_iteration:
-            best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
-            tqdm.write(f"        Best (iter {self.best_model_iteration}): {best_elo:.1f}")
-            
-            # Add vs_best results only if we have them
-            results["vs_best"] = {
-                "wins": wins_vs_best,
-                "draws": draws_vs_best,
-                "losses": losses_vs_best,
-                "win_rate": win_rate_vs_best
-            }
-            results["elo_ratings"]["best"] = best_elo
-            
-            # ELO consistency check and automatic adjustment
-            if self.config.arena.enable_elo_consistency_checks and current_elo > best_elo and win_rate_vs_best < 0.5:
-                logger.warning(f"ELO inconsistency detected: Current model (ELO {current_elo:.1f}) has higher ELO than best model (ELO {best_elo:.1f}) "
-                              f"but only achieved {win_rate_vs_best:.1%} win rate against best model.")
-                
-                if self.config.arena.enable_elo_auto_adjustment:
-                    # Calculate appropriate ELO adjustment
-                    # If current model can't beat best model, its ELO should be lower than best model
-                    # Adjust current model ELO to be slightly below best model ELO
-                    elo_gap = current_elo - best_elo
-                    
-                    # Set current ELO to best ELO minus a penalty based on performance
-                    performance_penalty = (0.5 - win_rate_vs_best) * 100  # Scale penalty by how much worse than 50%
-                    adjusted_current_elo = best_elo - performance_penalty
-                    
-                    # Ensure the adjustment is reasonable (not too extreme)
-                    max_adjustment = min(200, elo_gap * 1.5)  # Cap the adjustment
-                    if (current_elo - adjusted_current_elo) > max_adjustment:
-                        adjusted_current_elo = current_elo - max_adjustment
-                        performance_penalty = current_elo - adjusted_current_elo
-                    
-                    # Apply the adjustment
-                    old_current_elo = current_elo
-                    self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_current_elo
-                    current_elo = adjusted_current_elo  # Update local variable for display
-                    
-                    tqdm.write(f"        🔧 ELO Adjustment Applied:")
-                    tqdm.write(f"           Current model: {old_current_elo:.1f} → {adjusted_current_elo:.1f} (Δ{adjusted_current_elo - old_current_elo:+.1f})")
-                    tqdm.write(f"           Best model: {best_elo:.1f} (unchanged)")
-                    tqdm.write(f"           Reason: Current won only {win_rate_vs_best:.1%} vs best, penalty = {performance_penalty:.1f}")
-                    
-                    logger.info(f"ELO adjustment applied: Current model ELO {old_current_elo:.1f} → {adjusted_current_elo:.1f} "
-                               f"(penalty: {performance_penalty:.1f} based on {win_rate_vs_best:.1%} win rate vs best)")
-                    
-                    # Update the results with the corrected ELO
-                    results["elo_ratings"]["current"] = adjusted_current_elo
-                    results["elo_adjustment"] = {
-                        "applied": True,
-                        "old_elo": old_current_elo,
-                        "new_elo": adjusted_current_elo,
-                        "penalty": performance_penalty,
-                        "reason": f"Win rate vs best: {win_rate_vs_best:.1%}",
-                        "max_adjustment_capped": (current_elo - adjusted_current_elo) >= max_adjustment
-                    }
-                else:
-                    # Just log the inconsistency without adjusting
-                    tqdm.write(f"        ⚠️  ELO inconsistency: Current ELO {current_elo:.1f} > Best ELO {best_elo:.1f} but current only won {win_rate_vs_best:.1%} vs best")
-                    tqdm.write(f"           Auto-adjustment disabled in config")
-                    
-                    results["elo_adjustment"] = {
-                        "applied": False,
-                        "detected_inconsistency": True,
-                        "reason": "Auto-adjustment disabled in configuration"
-                    }
-            else:
-                # No inconsistency detected or checks disabled
-                results["elo_adjustment"] = {
-                    "applied": False,
-                    "detected_inconsistency": False,
-                    "reason": "No ELO inconsistency detected"
-                }
-        else:
-            # No best model yet - first model case
-            results["elo_adjustment"] = {
-                "applied": False,
-                "detected_inconsistency": False,
-                "reason": "No best model exists yet (first model)"
-            }
+        current_elo = self.arena.elo_system.get_rating(current_key)
+        tqdm.write(f"\n      ELO Rating: {current_elo:.1f}")
         
         # Save as best model if accepted
         if accepted:
-            # Ensure the new best model has a higher ELO than the previous best
-            if self.best_model_iteration:
-                old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
-                current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-                if current_elo <= old_best_elo:
-                    logger.warning(f"New best model has lower ELO ({current_elo:.1f}) than previous best ({old_best_elo:.1f})")
-            
             self._save_best_model()
-            # Get the final ELO after potential adjustment
-            final_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-            tqdm.write(f"\n      ✓ Model accepted as new best! (ELO: {final_elo:.1f})")
-            
-            # CRITICAL FIX: Update the results with the NEW best model's ELO
-            # Since self.best_model_iteration was just updated in _save_best_model(),
-            # we need to update the results to reflect the correct best ELO
-            results["elo_ratings"]["best"] = final_elo
+            tqdm.write(f"\n      ✓ Model accepted as new best!")
         else:
             tqdm.write(f"\n      ✗ Model rejected")
         
-        # Log ELO health report every 10 iterations or if inflation is suspected
-        if self.iteration % 10 == 0 or self.iteration < 5:
-            try:
-                health_report = self.elo_tracker.get_health_report()
-                
-                # Check for warnings
-                inflation_indicators = health_report.get("inflation_indicators", {})
-                if inflation_indicators.get("inflation_detected", False):
-                    tqdm.write("\n      ⚠️  ELO INFLATION WARNING:")
-                    tqdm.write(f"        Growth rate: {inflation_indicators.get('avg_growth_per_iteration', 0):.1f} ELO/iteration")
-                    tqdm.write(f"        Total growth: {inflation_indicators.get('total_elo_growth', 0):.1f} ELO")
-                
-                # Show validation metrics if available
-                validation = health_report.get("validation_metrics", {})
-                if "prediction_accuracy" in validation:
-                    tqdm.write(f"\n      ELO System Health:")
-                    tqdm.write(f"        Prediction accuracy: {validation['prediction_accuracy']:.1%}")
-                    if validation.get("rating_inflation_detected", False):
-                        tqdm.write(f"        ⚠️  {validation.get('recommendation', '')}")
-                
-                    
-            except Exception as e:
-                logger.warning(f"Could not generate ELO health report: {e}")
-            
-        self._save_arena_results(results)
-        
         # Record evaluation metrics
-        current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-        elo_change = current_elo - (self.elo_tracker.get_rating(f"iter_{self.iteration - 1}") or 0) if self.iteration > 1 else current_elo
-        
         self.metrics_recorder.record_evaluation(
             iteration=self.iteration,
-            win_rate=win_rate_vs_best if (self.best_model_iteration and win_rate_vs_best is not None) else win_rate_vs_random,
+            win_rate=win_rate_vs_best if win_rate_vs_best else win_rate_vs_random,
             elo_rating=current_elo,
-            elo_change=elo_change,
+            elo_change=0,  # Simplified
             vs_random_win_rate=win_rate_vs_random,
-            vs_best_win_rate=win_rate_vs_best if (self.best_model_iteration and win_rate_vs_best is not None) else None,
+            vs_best_win_rate=win_rate_vs_best,
             model_accepted=accepted
         )
         
         return accepted
     
-    def _calculate_win_rate_vs_best(self) -> float:
-        """Calculate win rate of current model vs best model from arena results"""
-        if hasattr(self, '_last_wins_vs_best') and hasattr(self, '_last_games_vs_best'):
-            if self._last_games_vs_best > 0:
-                # We have data from the current vs best match
-                wins = getattr(self, '_last_wins_vs_best', 0)
-                games = getattr(self, '_last_games_vs_best', 1)
-                return wins / games
-        
-        return 0.55  # Default slightly above 50% since we beat the best
-    
-    def _get_dynamic_win_rate_threshold(self) -> float:
-        """Calculate dynamic win rate threshold using logarithmic scheduling
-        
-        Formula: threshold(N) = 0.4366 * log10(N / 0.7682)
-        Target: 100% at iteration 150
-        Clamped between 5% and 100%
-        """
-        import numpy as np
-        
-        # Logarithmic scheduling parameters (pre-calculated for target=150)
-        A = 0.4366
-        B = 0.7682
-        
-        # Calculate threshold
-        if self.iteration < 1:
-            return 0.05
-        
-        threshold = A * np.log10(self.iteration / B)
-        
-        # Clamp between 5% and 100%
-        return min(max(threshold, 0.05), 1.0)
     
     def _save_best_model(self):
         """Save current model as best"""
-        # CRITICAL FIX: When a model becomes the new best (by beating the current best in arena),
-        # its ELO MUST be higher than the previous best, regardless of inheritance or match calculations
-        if self.elo_tracker and self.best_model_iteration:
-            old_best_elo = self.elo_tracker.get_rating(f"iter_{self.best_model_iteration}")
-            current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-            
-            # ALWAYS ensure new best has higher ELO than previous best
-            # This is a fundamental requirement: better models must have higher ratings
-            if current_elo <= old_best_elo:
-                # Calculate appropriate ELO boost based on performance
-                win_rate_vs_best = self._calculate_win_rate_vs_best()
-                if win_rate_vs_best >= 0.75:
-                    min_gain = 25.0  # Strong victory: substantial boost
-                elif win_rate_vs_best >= 0.60:
-                    min_gain = 15.0  # Solid victory: good boost
-                else:
-                    min_gain = 10.0  # Close victory: modest boost
-                
-                # Set new ELO to old best + gain
-                adjusted_elo = old_best_elo + min_gain
-                
-                # Log the adjustment (this should be expected, not an error)
-                logger.warning(f"ELO inconsistency detected: Beat best model but ELO {current_elo:.1f} <= {old_best_elo:.1f}")
-                logger.info(f"Adjusting ELO for new best model:")
-                logger.info(f"  Current ELO from matches: {current_elo:.1f}")
-                logger.info(f"  Previous best ELO: {old_best_elo:.1f}")
-                logger.info(f"  Win rate vs best: {win_rate_vs_best:.1%}")
-                logger.info(f"  Applied ELO boost: +{min_gain:.1f}")
-                logger.info(f"  Final adjusted ELO: {adjusted_elo:.1f}")
-                
-                # Update the rating in the tracker
-                self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
-                current_elo = adjusted_elo
-            else:
-                # Current ELO is already higher - ensure minimum gain
-                min_acceptable_elo = old_best_elo + 5.0
-                if current_elo < min_acceptable_elo:
-                    adjusted_elo = min_acceptable_elo
-                    logger.info(f"Ensuring minimum ELO gain for new best: {current_elo:.1f} -> {adjusted_elo:.1f}")
-                    self.elo_tracker.ratings[f"iter_{self.iteration}"] = adjusted_elo
-                    current_elo = adjusted_elo
-            
-            # Log the progression
-            elo_gain = current_elo - old_best_elo
-            logger.info(f"Best model progression: iter {self.best_model_iteration} (ELO: {old_best_elo:.1f}) -> iter {self.iteration} (ELO: {current_elo:.1f})")
-            logger.info(f"Net ELO gain: {elo_gain:+.1f}")
-            
-            # Final safety check
-            if elo_gain <= 0:
-                logger.error(f"CRITICAL ERROR: New best model still has ELO gain of {elo_gain:+.1f}")
-                logger.error(f"This should never happen after the adjustment logic above!")
-                # Emergency fix
-                emergency_elo = old_best_elo + 10.0
-                logger.error(f"Emergency ELO adjustment: {current_elo:.1f} -> {emergency_elo:.1f}")
-                self.elo_tracker.ratings[f"iter_{self.iteration}"] = emergency_elo
+        # Store win rate vs best for ELO adjustment
+        win_rate_vs_best = getattr(self, '_last_win_rate_vs_best', None)
+        
+        # Adjust ELO if needed to ensure monotonic improvement
+        if self.best_model_iteration and win_rate_vs_best is not None:
+            current_key = f"iter_{self.iteration}"
+            best_key = f"iter_{self.best_model_iteration}"
+            self.arena.adjust_elo_for_new_best(current_key, best_key, win_rate_vs_best)
         
         self.best_model_iteration = self.iteration
         model_path = self.best_model_dir / f"model_iter_{self.iteration}.pt"
         
-        # Save model with metadata if available
-        if hasattr(self.model, 'metadata') and self.model.metadata:
-            # Update metadata before saving
-            self.model.metadata.training_steps = self.iteration
-            if hasattr(self, 'elo_tracker') and self.elo_tracker:
-                current_elo = self.elo_tracker.get_rating(f"iter_{self.iteration}")
-                if current_elo is not None:
-                    self.model.metadata.elo_rating = current_elo
-            
-            # Save with metadata
-            checkpoint = {
-                'model_state_dict': self.model.state_dict(),
-                'metadata': self.model.metadata.to_dict()
-            }
-            torch.save(checkpoint, model_path)
-            
-            # Also save as 'best_model.pt' for easy access
-            best_path = self.best_model_dir / "best_model.pt"
-            torch.save(checkpoint, best_path)
-        else:
-            # Fallback to saving just state dict
-            torch.save(self.model.state_dict(), model_path)
-            torch.save(self.model.state_dict(), best_path)
+        # Save model state dict
+        torch.save(self.model.state_dict(), model_path)
+        
+        # Also save as 'best_model.pt' for easy access
+        best_path = self.best_model_dir / "best_model.pt"
+        torch.save(self.model.state_dict(), best_path)
+        
+        logger.info(f"Saved best model: iteration {self.iteration}")
     
     def _save_arena_results(self, results: Dict):
         """Save arena evaluation results"""
@@ -1768,20 +929,30 @@ class UnifiedTrainingPipeline:
         # Add timestamp
         results["timestamp"] = datetime.now().isoformat()
         
-        # DEFENSIVE CHECK: Ensure best ELO never decreases
-        if all_results and "elo_ratings" in results and "best" in results["elo_ratings"]:
-            current_best_elo = results["elo_ratings"]["best"]
-            # Find the most recent result with a best ELO
+        # Track best model ELO progression
+        if all_results and results.get("accepted", False):
+            # This is a new best model - verify it has higher ELO than the previous best
+            current_model_elo = results.get("elo_ratings", {}).get("current", 0)
+            
+            # Find the most recent accepted model (previous best)
+            prev_best_elo = None
+            prev_best_iter = None
             for prev_result in reversed(all_results):
-                if "elo_ratings" in prev_result and "best" in prev_result["elo_ratings"]:
-                    prev_best_elo = prev_result["elo_ratings"]["best"]
-                    if current_best_elo < prev_best_elo:
-                        logger.error(f"CRITICAL: Best ELO decreased from {prev_best_elo:.1f} to {current_best_elo:.1f} "
-                                   f"at iteration {results.get('iteration', 'unknown')}")
-                        logger.error("This should never happen! Please check the ELO tracking logic.")
-                        # Optionally raise an exception to catch this during development
-                        # raise ValueError(f"Best ELO decreased from {prev_best_elo:.1f} to {current_best_elo:.1f}")
+                if prev_result.get("accepted", False):
+                    # Get the ELO of the previous best model at the time it was accepted
+                    prev_best_elo = prev_result.get("elo_ratings", {}).get("current", 0)
+                    prev_best_iter = prev_result.get("iteration", "unknown")
                     break
+            
+            if prev_best_elo is not None:
+                elo_gain = current_model_elo - prev_best_elo
+                if elo_gain <= 0:
+                    # This should never happen with our enforcement logic
+                    logger.error(f"CRITICAL: New best model (iter {results.get('iteration', 'unknown')}, ELO {current_model_elo:.1f}) "
+                                f"has lower or equal ELO than previous best model (iter {prev_best_iter}, ELO {prev_best_elo:.1f})")
+                    logger.error("This violates the fundamental requirement that new best models must have higher ELO.")
+                else:
+                    logger.info(f"Best model ELO progression confirmed: {prev_best_elo:.1f} -> {current_model_elo:.1f} (+{elo_gain:.1f})")
         
         all_results.append(results)
         
@@ -1790,144 +961,40 @@ class UnifiedTrainingPipeline:
             json.dump(all_results, f, indent=2)
     
     def save_checkpoint(self):
-        """Save training checkpoint"""
-        checkpoint = {
-            "iteration": self.iteration,
+        """Save training checkpoint using CheckpointManager"""
+        from mcts.neural_networks.checkpoint_manager import CheckpointManager
+        
+        # Create checkpoint manager
+        checkpoint_manager = CheckpointManager(
+            checkpoint_dir=self.checkpoint_dir,
+            data_dir=self.data_dir
+        )
+        
+        # Prepare metadata
+        metadata = {
             "best_model_iteration": self.best_model_iteration,
-            "model_state_dict": self.model.state_dict(),
-            "optimizer_state_dict": self.optimizer.state_dict(),
+            "elo_ratings": self.arena.elo_system.ratings if self.arena.elo_system else {},
             "config": self.config
         }
         
-        if self.scheduler:
-            checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
-        
-        if self.scaler:
-            checkpoint["scaler_state_dict"] = self.scaler.state_dict()
-        
-        if self.elo_tracker:
-            checkpoint["elo_ratings"] = self.elo_tracker.ratings
-        
         # Save checkpoint
-        checkpoint_path = self.checkpoint_dir / f"checkpoint_iter_{self.iteration}.pt"
-        torch.save(checkpoint, checkpoint_path)
-        
-        # Save replay buffer separately (can be large)
-        buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
-        self.replay_buffer.save(str(buffer_path))
-        
-        # Create symlink to latest checkpoint for easy resuming (before cleanup)
-        latest_link = self.checkpoint_dir / "latest_checkpoint.pt"
-        if latest_link.exists() or latest_link.is_symlink():
-            latest_link.unlink()
-        latest_link.symlink_to(checkpoint_path.name)
-        
-        # Clean up old replay buffers to save disk space (after symlink creation)
-        self._cleanup_old_replay_buffers()
-        
-        # Clean up old checkpoints to save disk space (after symlink creation)
-        self._cleanup_old_checkpoints()
-        
-        # Also save a resume info file
-        resume_info = {
-            "iteration": self.iteration,
-            "checkpoint_path": str(checkpoint_path),
-            "buffer_path": str(buffer_path),
-            "timestamp": datetime.now().isoformat()
-        }
-        with open(self.checkpoint_dir / "resume_info.json", "w") as f:
-            json.dump(resume_info, f, indent=2)
+        checkpoint_path = checkpoint_manager.save_checkpoint(
+            iteration=self.iteration,
+            model=self.model,
+            optimizer=self.optimizer,
+            replay_buffer=self.replay_buffer,
+            metadata=metadata,
+            scheduler=self.scheduler,
+            scaler=self.scaler
+        )
         
         logger.info(f"Saved checkpoint at iteration {self.iteration}")
     
-    def _cleanup_old_replay_buffers(self, keep_last_n: int = 40):
-        """Clean up old replay buffers to save disk space
-        
-        Args:
-            keep_last_n: Number of recent replay buffers to keep (default: 40)
-        """
-        try:
-            # Find all replay buffer files
-            replay_files = list(self.data_dir.glob("replay_buffer_iter_*.pkl"))
-            
-            if len(replay_files) <= keep_last_n:
-                return  # Nothing to clean up
-            
-            # Sort by iteration number
-            def get_iteration_number(filename):
-                try:
-                    return int(filename.stem.split('_')[-1])
-                except (ValueError, IndexError):
-                    return 0
-            
-            replay_files.sort(key=get_iteration_number)
-            
-            # Files to remove (keep only the last keep_last_n files)
-            files_to_remove = replay_files[:-keep_last_n]
-            
-            if files_to_remove:
-                total_size_freed = 0
-                for file_path in files_to_remove:
-                    if file_path.exists():
-                        file_size = file_path.stat().st_size
-                        total_size_freed += file_size
-                        file_path.unlink()
-                
-                # Log cleanup info
-                size_freed_gb = total_size_freed / (1024**3)
-                logger.info(f"Cleaned up {len(files_to_remove)} old replay buffers, "
-                           f"freed {size_freed_gb:.1f} GB of disk space")
-                           
-        except Exception as e:
-            logger.warning(f"Failed to cleanup old replay buffers: {e}")
-    
-    def _cleanup_old_checkpoints(self, keep_last_n: int = 20):
-        """Clean up old checkpoint files to save disk space
-        
-        Args:
-            keep_last_n: Number of recent checkpoints to keep (default: 20)
-        """
-        try:
-            # Find all checkpoint files
-            checkpoint_files = list(self.checkpoint_dir.glob("checkpoint_iter_*.pt"))
-            
-            if len(checkpoint_files) <= keep_last_n:
-                return  # Nothing to clean up
-            
-            # Sort by iteration number
-            def get_iteration_number(filename):
-                try:
-                    return int(filename.stem.split('_')[-1])
-                except (ValueError, IndexError):
-                    return 0
-            
-            checkpoint_files.sort(key=get_iteration_number)
-            
-            # Files to remove (keep only the last keep_last_n files)
-            files_to_remove = checkpoint_files[:-keep_last_n]
-            
-            # Additional safety: never remove the current iteration's checkpoint
-            current_checkpoint = self.checkpoint_dir / f"checkpoint_iter_{self.iteration}.pt"
-            files_to_remove = [f for f in files_to_remove if f != current_checkpoint]
-            
-            if files_to_remove:
-                total_size_freed = 0
-                for file_path in files_to_remove:
-                    if file_path.exists():
-                        file_size = file_path.stat().st_size
-                        total_size_freed += file_size
-                        file_path.unlink()
-                
-                # Log cleanup info
-                size_freed_mb = total_size_freed / (1024**2)
-                logger.info(f"Cleaned up {len(files_to_remove)} old checkpoints, "
-                           f"freed {size_freed_mb:.1f} MB of disk space")
-                           
-        except Exception as e:
-            logger.warning(f"Failed to cleanup old checkpoints: {e}")
     
     def load_checkpoint(self, checkpoint_path: str):
-        """Load training checkpoint"""
+        """Load training checkpoint using CheckpointManager"""
+        from mcts.neural_networks.checkpoint_manager import CheckpointManager
+        
         checkpoint_path = Path(checkpoint_path)
         
         # Convert to absolute path if relative
@@ -1937,56 +1004,31 @@ class UnifiedTrainingPipeline:
             project_root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent.parent
             checkpoint_path = project_root / checkpoint_path
         
-        # Handle both direct checkpoint path and checkpoint directory
-        if checkpoint_path.is_dir():
-            # Find latest checkpoint in directory
-            checkpoints = sorted(checkpoint_path.glob("checkpoint_iter_*.pt"))
-            if not checkpoints:
-                raise FileNotFoundError(f"No checkpoints found in {checkpoint_path}")
-            checkpoint_path = checkpoints[-1]
-            logger.info(f"Found latest checkpoint: {checkpoint_path}")
+        # Create checkpoint manager
+        checkpoint_manager = CheckpointManager(
+            checkpoint_dir=self.checkpoint_dir,
+            data_dir=self.data_dir
+        )
         
-        logger.info(f"Loading checkpoint from {checkpoint_path}")
+        # Load checkpoint
+        checkpoint_data = checkpoint_manager.load_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=self.model,
+            optimizer=self.optimizer,
+            replay_buffer=self.replay_buffer,
+            scheduler=self.scheduler,
+            scaler=self.scaler,
+            device=self.config.mcts.device
+        )
         
-        checkpoint = torch.load(checkpoint_path, map_location=self.config.mcts.device, weights_only=False)
+        # Update state from checkpoint
+        self.iteration = checkpoint_data["iteration"]
+        self.best_model_iteration = checkpoint_data["metadata"]["best_model_iteration"]
         
-        self.iteration = checkpoint["iteration"]
-        self.best_model_iteration = checkpoint["best_model_iteration"]
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        # Ensure model is on correct device after loading checkpoint
-        self.model = self.model.to(self.config.mcts.device)
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        if self.scheduler and "scheduler_state_dict" in checkpoint:
-            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        
-        if self.scaler and "scaler_state_dict" in checkpoint:
-            self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
-        
-        if "elo_ratings" in checkpoint:
-            # Create ELO tracker if needed
-            if not self.elo_tracker:
-                from mcts.neural_networks.arena_module import ELOTracker
-                self.elo_tracker = ELOTracker(
-                    k_factor=self.config.arena.elo_k_factor,
-                    initial_rating=self.config.arena.elo_initial_rating
-                )
-            self.elo_tracker.ratings = checkpoint["elo_ratings"]
-            logger.info(f"Loaded ELO ratings for {len(checkpoint['elo_ratings'])} players")
-        
-        # Try to load replay buffer
-        buffer_path = self.data_dir / f"replay_buffer_iter_{self.iteration}.pkl"
-        if buffer_path.exists():
-            self.replay_buffer.load(str(buffer_path))
-            logger.info(f"Loaded replay buffer with {len(self.replay_buffer)} examples")
-        else:
-            # Try to find most recent replay buffer
-            buffer_files = sorted(self.data_dir.glob("replay_buffer_iter_*.pkl"))
-            if buffer_files:
-                latest_buffer = buffer_files[-1]
-                self.replay_buffer.load(str(latest_buffer))
-                logger.info(f"Loaded most recent replay buffer from {latest_buffer.name} with {len(self.replay_buffer)} examples")
-            else:
-                logger.warning("No replay buffer found, starting with empty buffer")
+        # Load ELO ratings if available
+        if "elo_ratings" in checkpoint_data["metadata"]:
+            self.arena.elo_system.ratings = checkpoint_data["metadata"]["elo_ratings"]
+            logger.info(f"Loaded ELO ratings for {len(self.arena.elo_system.ratings)} players")
     
     def run_final_tournament(self):
         """Run tournament between all saved models"""

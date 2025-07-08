@@ -125,6 +125,8 @@ class GPUEvaluatorService:
                         # Load pre-compiled TensorRT engine
                         if not GPUEvaluatorService._tensorrt_logged:
                             logger.info(f"Loading pre-compiled TensorRT engine from: {tensorrt_engine_path}")
+                        else:
+                            logger.debug(f"Loading pre-compiled TensorRT engine from: {tensorrt_engine_path}")
                         
                         # Use TensorRT evaluator to load the pre-compiled engine
                         from ..neural_networks.tensorrt_evaluator import TensorRTEvaluator

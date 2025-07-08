@@ -450,8 +450,8 @@ class TestMetricsVisualizer:
         # Should create plot without errors
         visualizer.plot_training_curves(save_path=save_path, show=False)
         
-        # Check matplotlib was called
-        mock_figure.assert_called_once()
+        # Check matplotlib was called (plt.figure is called twice - once for the main figure and once for plt.tight_layout())
+        assert mock_figure.call_count == 2
         
     def test_plot_no_data(self, caplog):
         """Test plotting with no data"""
@@ -484,3 +484,43 @@ class TestMetricsVisualizer:
                 visualizer.plot_training_curves()
             
         assert "matplotlib not installed" in caplog.text
+    
+    def test_numpy_type_serialization(self, temp_metrics_dir):
+        """Test that numpy types are properly handled during JSON serialization"""
+        # Create recorder with numpy types in metrics
+        recorder = TrainingMetricsRecorder(save_dir=temp_metrics_dir)
+        
+        # Record data with numpy types
+        recorder.record_training_step(
+            iteration=1,
+            epoch=0,
+            policy_loss=np.float32(0.5),
+            value_loss=np.float64(0.3),
+            total_loss=np.float16(0.8),
+            learning_rate=np.float32(0.001),
+            gradient_norm=np.float32(1.2),
+            gradient_max=np.float64(5.0),
+            custom_bool=np.bool_(True),
+            custom_int=np.int32(42),
+            custom_array=np.array([1, 2, 3])
+        )
+        
+        # This should not raise any JSON serialization errors
+        recorder.save()
+        
+        # Verify the saved file exists and can be loaded
+        saved_files = list(temp_metrics_dir.glob("*.json"))
+        assert len(saved_files) == 1
+        
+        # Load and verify the data
+        with open(saved_files[0], 'r') as f:
+            data = json.load(f)
+        
+        # Check that numpy types were converted properly
+        snapshot = data['snapshots'][0]
+        assert isinstance(snapshot['policy_loss'], float)
+        assert isinstance(snapshot['value_loss'], float)
+        assert isinstance(snapshot['total_loss'], float)
+        assert isinstance(snapshot['custom_metrics']['custom_bool'], bool)
+        assert isinstance(snapshot['custom_metrics']['custom_int'], int)
+        assert isinstance(snapshot['custom_metrics']['custom_array'], list)

@@ -124,13 +124,16 @@ class ValueHead(nn.Module):
     
     def _initialize_value_weights(self):
         """Initialize value head to produce values near zero initially"""
-        # Standard initialization for fc1
-        nn.init.xavier_normal_(self.fc1.weight)
+        # Initialize conv layer with small weights
+        nn.init.normal_(self.conv.weight, mean=0.0, std=0.01)
+        
+        # Small initialization for fc1
+        nn.init.normal_(self.fc1.weight, mean=0.0, std=0.01)
         if self.fc1.bias is not None:
             nn.init.constant_(self.fc1.bias, 0)
         
-        # Small weights for fc2 to produce values near 0 initially
-        nn.init.normal_(self.fc2.weight, mean=0.0, std=0.1)
+        # Very small weights for fc2 to produce values near 0 initially
+        nn.init.normal_(self.fc2.weight, mean=0.0, std=0.01)
         if self.fc2.bias is not None:
             nn.init.constant_(self.fc2.bias, 0)
     

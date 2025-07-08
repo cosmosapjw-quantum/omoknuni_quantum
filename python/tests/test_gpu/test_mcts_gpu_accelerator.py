@@ -26,6 +26,12 @@ from mcts.gpu.mcts_gpu_accelerator import (
 from conftest import assert_tensor_equal
 
 
+def _get_accelerator_id_helper(device, queue):
+    """Helper function for multiprocessing test - must be at module level for pickling"""
+    acc = get_mcts_gpu_accelerator(device)
+    queue.put(id(acc))
+
+
 class TestMCTSGPUAcceleratorInitialization:
     """Test MCTSGPUAccelerator initialization"""
     
@@ -469,19 +475,13 @@ class TestGlobalInstance:
         
     def test_process_isolation(self, device):
         """Test that different processes get different instances"""
-        # This test uses multiprocessing to verify process isolation
-        def get_accelerator_id(queue):
-            """Get accelerator instance ID in subprocess"""
-            acc = get_mcts_gpu_accelerator(device)
-            queue.put(id(acc))
-            
         # Get ID in main process
         main_acc = get_mcts_gpu_accelerator(device)
         main_id = id(main_acc)
         
         # Get ID in subprocess
         queue = multiprocessing.Queue()
-        process = multiprocessing.Process(target=get_accelerator_id, args=(queue,))
+        process = multiprocessing.Process(target=_get_accelerator_id_helper, args=(device, queue))
         process.start()
         process.join()
         

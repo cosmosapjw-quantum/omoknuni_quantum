@@ -20,6 +20,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class NumpyJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles numpy types"""
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
+def convert_numpy_types(obj):
+    """Recursively convert numpy types to Python native types"""
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    return obj
+
+
 @dataclass
 class MetricSnapshot:
     """Single snapshot of training metrics at a point in time"""
@@ -201,7 +234,7 @@ class TrainingMetricsRecorder:
         
         Args:
             metric_name: Name of the metric
-            window: Window size (None uses default)
+            window: Window size (None uses default window_size)
             
         Returns:
             Moving average value
@@ -213,7 +246,12 @@ class TrainingMetricsRecorder:
         if not values:
             return 0.0
             
-        if window:
+        # Use default window size if not specified
+        if window is None:
+            window = self.window_size
+            
+        # Take last 'window' values
+        if len(values) > window:
             values = values[-window:]
             
         return np.mean(values)
@@ -302,6 +340,31 @@ class TrainingMetricsRecorder:
         
         return summary
     
+    def get_current_metrics(self) -> Dict[str, Any]:
+        """Get current metrics for backward compatibility
+        
+        Returns metrics in format expected by tests
+        """
+        if not self.snapshots:
+            return {'training_losses': []}
+            
+        # Collect all training losses
+        training_losses = []
+        for snapshot in self.snapshots:
+            if snapshot.total_loss is not None:
+                training_losses.append({
+                    'iteration': snapshot.iteration,
+                    'total_loss': snapshot.total_loss,
+                    'policy_loss': snapshot.policy_loss,
+                    'value_loss': snapshot.value_loss
+                })
+        
+        return {
+            'training_losses': training_losses,
+            'win_rates': [s.win_rate for s in self.snapshots if s.win_rate is not None],
+            'elo_ratings': [s.elo_rating for s in self.snapshots if s.elo_rating is not None]
+        }
+    
     def print_summary(self, detailed: bool = False):
         """Print formatted summary to console"""
         summary = self.get_summary()
@@ -319,11 +382,24 @@ class TrainingMetricsRecorder:
         
         current = summary['current_metrics']
         logger.info(f"\nCurrent Metrics:")
-        logger.info(f"  Loss: {current['total_loss']:.4f} "
-                   f"(P: {current['policy_loss']:.4f}, V: {current['value_loss']:.4f})")
-        logger.info(f"  Win Rate: {current['win_rate']:.1%} | "
-                   f"ELO: {current['elo_rating']:.0f}")
-        logger.info(f"  Learning Rate: {current['learning_rate']:.2e}")
+        
+        # Handle None values gracefully
+        if current['total_loss'] is not None:
+            logger.info(f"  Loss: {current['total_loss']:.4f} "
+                       f"(P: {current['policy_loss']:.4f}, V: {current['value_loss']:.4f})")
+        else:
+            logger.info("  Loss: N/A")
+            
+        if current['win_rate'] is not None:
+            logger.info(f"  Win Rate: {current['win_rate']:.1%} | "
+                       f"ELO: {current['elo_rating']:.0f}")
+        else:
+            logger.info("  Win Rate: N/A | ELO: N/A")
+            
+        if current['learning_rate'] is not None:
+            logger.info(f"  Learning Rate: {current['learning_rate']:.2e}")
+        else:
+            logger.info("  Learning Rate: N/A")
         
         trends = summary['trends']
         logger.info(f"\nTrends:")
@@ -334,15 +410,35 @@ class TrainingMetricsRecorder:
         if detailed:
             avgs = summary['moving_averages']
             logger.info(f"\nMoving Averages ({self.window_size} samples):")
-            logger.info(f"  Loss: {avgs['total_loss']:.4f} | "
-                       f"Win Rate: {avgs['win_rate']:.1%}")
-            logger.info(f"  Games/sec: {avgs['games_per_second']:.1f}")
+            
+            if avgs['total_loss'] is not None:
+                logger.info(f"  Loss: {avgs['total_loss']:.4f} | "
+                           f"Win Rate: {avgs['win_rate']:.1%}")
+            else:
+                logger.info("  Loss: N/A | Win Rate: N/A")
+                
+            if avgs['games_per_second'] is not None:
+                logger.info(f"  Games/sec: {avgs['games_per_second']:.1f}")
+            else:
+                logger.info("  Games/sec: N/A")
             
             best = summary['best_metrics']
             logger.info(f"\nBest Results:")
-            logger.info(f"  Min Loss: {best['min_loss']:.4f} (iter {best.get('min_loss_iteration', 'N/A')})")
-            logger.info(f"  Max Win Rate: {best['win_rate']:.1%} (iter {best.get('best_win_rate_iteration', 'N/A')})")
-            logger.info(f"  Max ELO: {best['elo_rating']:.0f} (iter {best.get('best_elo_iteration', 'N/A')})")
+            
+            if best.get('min_loss') is not None:
+                logger.info(f"  Min Loss: {best['min_loss']:.4f} (iter {best.get('min_loss_iteration', 'N/A')})")
+            else:
+                logger.info("  Min Loss: N/A")
+                
+            if best.get('win_rate') is not None:
+                logger.info(f"  Max Win Rate: {best['win_rate']:.1%} (iter {best.get('best_win_rate_iteration', 'N/A')})")
+            else:
+                logger.info("  Max Win Rate: N/A")
+                
+            if best.get('elo_rating') is not None:
+                logger.info(f"  Max ELO: {best['elo_rating']:.0f} (iter {best.get('best_elo_iteration', 'N/A')})")
+            else:
+                logger.info("  Max ELO: N/A")
         
         logger.info("="*80 + "\n")
     
@@ -363,6 +459,9 @@ class TrainingMetricsRecorder:
                 'save_time': time.time(),
             }
         }
+        
+        # Convert numpy types to native Python types
+        data = convert_numpy_types(data)
         
         with open(path, 'w') as f:
             json.dump(data, f, indent=2)

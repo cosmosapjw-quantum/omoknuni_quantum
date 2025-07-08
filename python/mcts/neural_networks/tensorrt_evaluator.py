@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 class TensorRTEvaluator(BaseNeuralEvaluator):
     """TensorRT-accelerated neural network evaluator for MCTS"""
     
+    # Class-level flag to track if messages have been logged
+    _engine_load_logged = False
+    
     def __init__(
         self,
         model: Optional[BaseGameModel] = None,
@@ -101,7 +104,11 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
         # Load or create TensorRT model
         if tensorrt_engine_path and Path(tensorrt_engine_path).exists():
             # Load pre-built engine
-            logger.info(f"Loading TensorRT engine from {tensorrt_engine_path}")
+            if not TensorRTEvaluator._engine_load_logged:
+                logger.info(f"Loading TensorRT engine from {tensorrt_engine_path}")
+                TensorRTEvaluator._engine_load_logged = True
+            else:
+                logger.debug(f"Loading TensorRT engine from {tensorrt_engine_path}")
             # TensorRTConverter.load_engine is a static method
             self.trt_model = TensorRTConverter.load_engine(
                 tensorrt_engine_path,
@@ -147,7 +154,11 @@ class TensorRTEvaluator(BaseNeuralEvaluator):
         if self.cache_engine and checkpoint_path:
             cache_path = self._get_engine_cache_path(checkpoint_path)
             if cache_path.exists():
-                logger.info(f"Loading cached TensorRT engine from {cache_path}")
+                if not TensorRTEvaluator._engine_load_logged:
+                    logger.info(f"Loading cached TensorRT engine from {cache_path}")
+                    TensorRTEvaluator._engine_load_logged = True
+                else:
+                    logger.debug(f"Loading cached TensorRT engine from {cache_path}")
                 try:
                     self.trt_model = TensorRTConverter.load_engine(
                         str(cache_path), 

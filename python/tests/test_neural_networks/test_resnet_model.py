@@ -48,7 +48,7 @@ def gomoku_model(resnet_config):
 def sample_input():
     """Create sample input tensor"""
     batch_size = 4
-    channels = 20
+    channels = 18
     board_size = 15
     return torch.randn(batch_size, channels, board_size, board_size)
 
@@ -265,7 +265,7 @@ class TestResNetModel:
         assert gomoku_model.metadata.game_type == 'gomoku'
         assert gomoku_model.metadata.board_size == 15
         assert gomoku_model.metadata.num_actions == 225
-        assert gomoku_model.metadata.input_channels == 20
+        assert gomoku_model.metadata.input_channels == 18
         assert gomoku_model.metadata.num_blocks == 3
         
     def test_layer_structure(self, gomoku_model):
@@ -460,7 +460,7 @@ class TestMemoryUsage:
         batch_sizes = [1, 8, 16, 32]
         
         for batch_size in batch_sizes:
-            x = torch.randn(batch_size, 20, 15, 15)
+            x = torch.randn(batch_size, 18, 15, 15)
             
             with torch.no_grad():
                 policy, value = gomoku_model(x)
@@ -487,7 +487,7 @@ class TestMemoryUsage:
         assert len(model.residual_blocks) == 19
         
         # Test forward pass with small batch
-        x = torch.randn(2, 20, 19, 19)
+        x = torch.randn(2, 18, 19, 19)
         policy, value = model(x)
         
         assert policy.shape == (2, 362)

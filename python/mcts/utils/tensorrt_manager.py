@@ -29,6 +29,10 @@ _TENSORRT_LOCK = threading.Lock()
 class TensorRTManager:
     """Manages TensorRT models for safe multiprocessing"""
     
+    # Class-level flags to track if messages have been logged
+    _cache_message_logged = False
+    _conversion_message_logged = False
+    
     def __init__(self, cache_dir: Optional[str] = None):
         """Initialize TensorRT manager
         
@@ -123,7 +127,11 @@ class TensorRTManager:
         # Check in-memory cache first
         with _TENSORRT_LOCK:
             if model_hash in _TENSORRT_MODELS:
-                logger.info(f"Worker {worker_id}: Using cached TensorRT model")
+                if not TensorRTManager._cache_message_logged:
+                    logger.info(f"Worker {worker_id}: Using cached TensorRT model")
+                    TensorRTManager._cache_message_logged = True
+                else:
+                    logger.debug(f"Worker {worker_id}: Using cached TensorRT model")
                 return _TENSORRT_MODELS[model_hash]
         
         # Check file cache
@@ -185,7 +193,11 @@ class TensorRTManager:
             else:
                 # Load existing engine
                 if engine_path.exists():
-                    logger.info(f"Worker {worker_id}: Loading TensorRT engine from cache...")
+                    if not TensorRTManager._cache_message_logged:
+                        logger.info(f"Worker {worker_id}: Loading TensorRT engine from cache...")
+                        TensorRTManager._cache_message_logged = True
+                    else:
+                        logger.debug(f"Worker {worker_id}: Loading TensorRT engine from cache...")
                     
                     try:
                         # Import here to avoid issues if TensorRT not installed
@@ -202,7 +214,7 @@ class TensorRTManager:
                         with _TENSORRT_LOCK:
                             _TENSORRT_MODELS[model_hash] = trt_model
                         
-                        logger.info(f"Worker {worker_id}: Successfully loaded TensorRT engine")
+                        logger.debug(f"Worker {worker_id}: Successfully loaded TensorRT engine")
                         return trt_model
                         
                     except Exception as e:

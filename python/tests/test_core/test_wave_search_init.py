@@ -30,7 +30,7 @@ class TestWaveSearchInitialization:
         
         # This should work when providing explicit parameters
         expanded_nodes = wave_search._expand_batch_vectorized(
-            torch.tensor([0]), 
+            torch.tensor([0], device=mcts.device), 
             node_to_state=mcts.node_to_state,
             state_pool_free_list=mcts.state_pool_free_list
         )
@@ -40,7 +40,7 @@ class TestWaveSearchInitialization:
         
         # Without parameters, it should still fail
         with pytest.raises(RuntimeError, match="node_to_state not initialized"):
-            wave_search._expand_batch_vectorized(torch.tensor([0]))
+            wave_search._expand_batch_vectorized(torch.tensor([0], device=mcts.device))
             
     def test_expand_batch_vectorized_with_manual_initialization(self, base_mcts_config, mock_evaluator, empty_gomoku_state):
         """Test that _expand_batch_vectorized works when manually initialized"""
@@ -56,7 +56,7 @@ class TestWaveSearchInitialization:
         wave_search.state_pool_free_list = mcts.state_pool_free_list
         
         # Now expansion should work
-        expanded_nodes = wave_search._expand_batch_vectorized(torch.tensor([0]))
+        expanded_nodes = wave_search._expand_batch_vectorized(torch.tensor([0], device=mcts.device))
         
         # Should return some result without crashing
         assert expanded_nodes is not None

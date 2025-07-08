@@ -2,7 +2,7 @@
 # Hardware: Ryzen 9 5900X (24 threads), 64GB RAM, RTX 3060 Ti (8GB VRAM)
 # Target: Maximum learning progress within time/compute constraints
 
-experiment_name: gomoku_3day_intensive
+experiment_name: gomoku_intensive
 seed: 42
 log_level: INFO
 num_iterations: 200  # Increased for 3-4 day training (est. 1 iter/hour = 72-96 total)
@@ -16,7 +16,7 @@ game:
 
 mcts:
   # Optimized for RTX 3060 Ti performance and quality balance
-  num_simulations: 500       # Increased for better play quality (within GPU limits)
+  num_simulations: 800       # Increased for better play quality (within GPU limits)
   c_puct: 1.4                # Balanced exploration-exploitation
   dirichlet_alpha: 0.3       # Standard for Gomoku
   dirichlet_epsilon: 0.25    # Good noise level
@@ -25,8 +25,8 @@ mcts:
   temperature_final: 0.05    # Nearly deterministic endgame
   
   # RTX 3060 Ti optimized performance (8GB VRAM with multi-worker constraints)
-  min_wave_size: 2048        # Reduced to leave memory for multiple workers
-  max_wave_size: 2048        # Conservative to avoid OOM with 8 workers
+  min_wave_size: 3072        # Reduced to leave memory for multiple workers
+  max_wave_size: 3072        # Conservative to avoid OOM with 8 workers
   batch_size: 512            # Optimal for TensorRT + 8GB VRAM
   virtual_loss: 0.5          # Parallel exploration
   enable_virtual_loss: true
@@ -111,7 +111,7 @@ network:
 
 training:
   # Optimized for 3-4 day intensive training
-  batch_size: 512            # Larger batches for better GPU utilization (64GB RAM allows this)
+  batch_size: 1024            # Larger batches for better GPU utilization (64GB RAM allows this)
   learning_rate: 0.002       # Slightly higher for faster initial learning
   learning_rate_schedule: cosine_with_restarts  # Better for long training
   lr_warmup_steps: 2000      # Longer warmup for stability
@@ -165,8 +165,8 @@ training:
 
 arena:
   # Optimized evaluation for intensive 3-4 day training
-  num_games: 60              # More games for better statistical confidence
-  num_workers: 8             # More workers for faster evaluation (leverage CPU)
+  num_games: 40              # More games for better statistical confidence
+  num_workers: 12            # More workers for faster evaluation (leverage CPU)
   win_threshold: 0.53        # Slightly more stringent for quality control
   statistical_significance: true
   confidence_level: 0.95
@@ -174,13 +174,13 @@ arena:
   # Game settings - match training configuration
   temperature: 0.0           # Deterministic for evaluation
   mcts_simulations: 100      # Match training simulations exactly
-  c_puct: 1.4               # Match training c_puct
+  c_puct: 1.4                # Match training c_puct
   max_moves: 225
   time_limit_seconds: null
   randomize_start_player: true
   
   # ELO settings optimized for frequent evaluation
-  elo_k_factor: 28.0         # Slightly lower for more stable ratings
+  elo_k_factor: 32.0  # Standard K-factor for ELO updates
   elo_initial_rating: 0.0
   elo_anchor_rating: 0.0
   update_elo: true
@@ -190,10 +190,6 @@ arena:
   elo_uncertainty_tracking: true
   elo_validation_enabled: true
   elo_health_monitoring: true
-  
-  # Performance expectations for strong play
-  # min_win_rate_vs_random: 0.88  # DEPRECATED - Now using dynamic logarithmic scheduling
-  # Dynamic threshold: starts at 5%, reaches 100% at iteration 150
   
   # Tournament settings
   tournament_rounds: 1

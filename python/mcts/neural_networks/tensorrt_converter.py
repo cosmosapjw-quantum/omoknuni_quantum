@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 class TensorRTConverter:
     """Converts PyTorch ResNet models to TensorRT format"""
     
+    # Class-level flag to track if messages have been logged
+    _load_message_logged = False
+    
     def __init__(self, 
                  workspace_size: int = 1 << 30,  # 1GB workspace
                  fp16_mode: bool = True,
@@ -245,8 +248,13 @@ class TensorRTConverter:
         else:
             input_shape = tuple(input_shape)
         
-        logger.info(f"Loaded TensorRT engine from {path} with input shape {input_shape}")
-        logger.info(f"Engine has {num_bindings} bindings: {binding_names}")
+        if not TensorRTConverter._load_message_logged:
+            logger.info(f"Loaded TensorRT engine from {path} with input shape {input_shape}")
+            logger.info(f"Engine has {num_bindings} bindings: {binding_names}")
+            TensorRTConverter._load_message_logged = True
+        else:
+            logger.debug(f"Loaded TensorRT engine from {path} with input shape {input_shape}")
+            logger.debug(f"Engine has {num_bindings} bindings: {binding_names}")
         
         # Log warning if binding names don't match expected format
         if binding_names and len(binding_names) >= 3:
@@ -356,7 +364,7 @@ class TensorRTModel:
     def _manual_inference(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Manual TensorRT inference for loaded engines"""
         batch_size = x.shape[0]
-        if batch_size > self.max_batch_size:
+        if self.max_batch_size is not None and batch_size > self.max_batch_size:
             raise ValueError(f"Batch size {batch_size} exceeds maximum {self.max_batch_size}")
         
         # Ensure input is contiguous

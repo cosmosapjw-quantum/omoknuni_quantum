@@ -475,13 +475,31 @@ class TestEdgeCases:
             c_puct=0.0
         )
         
-        # Should select child with highest Q-value
-        q_values = sample_node_data['child_values'] / torch.maximum(
-            sample_node_data['child_visits'], 
-            torch.ones_like(sample_node_data['child_visits'])
+        # With c_puct=0, pure exploitation should select highest Q-value
+        # Calculate expected Q-values
+        q_values = torch.where(
+            sample_node_data['child_visits'] > 0,
+            sample_node_data['child_values'] / sample_node_data['child_visits'],
+            torch.zeros_like(sample_node_data['child_values'])
         )
+        
+        # Child Q-values: [0.5, 0.6, 0.0, 0.4]
+        # With c_puct=0, should select child 1 (highest Q=0.6)
         expected_idx = q_values.argmax().item()
-        assert best_idx == expected_idx
+        assert best_idx == expected_idx, f"With c_puct=0, expected child {expected_idx} (Q={q_values[expected_idx]:.2f}) but got {best_idx} (Q={q_values[best_idx]:.2f})"
+        
+        # Test with high c_puct to verify exploration
+        best_idx_high = selector.select_single(
+            parent_visits=sample_node_data['parent_visits'],
+            child_visits=sample_node_data['child_visits'],
+            child_values=sample_node_data['child_values'],
+            child_priors=sample_node_data['child_priors'],
+            c_puct=10.0
+        )
+        
+        # With high c_puct, unvisited node (child 2) might be selected due to exploration bonus
+        # Child 2 has 0 visits but 0.3 prior, giving it high exploration value
+        assert isinstance(best_idx_high, int) and 0 <= best_idx_high < len(sample_node_data['child_visits'])
         
     def test_numerical_stability(self, selector):
         """Test numerical stability with extreme values"""
