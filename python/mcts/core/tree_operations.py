@@ -64,11 +64,30 @@ class TreeOperations:
             self.tree.reset()
             return {}
             
-        # Use shift_root to efficiently reuse the subtree
+                # Use shift_root to efficiently reuse the subtree
         mapping = self.tree.shift_root(child_idx)
         
-        # CRITICAL: The new root now has proper children from its subtree
-        # No need to clear children as shift_root handles the structure correctly
+        # CRITICAL FIX: Clear the new root's children
+        # The children from the old position are not valid in the new position
+        # MCTS will re-expand with correct legal moves
+        if mapping:
+            # Clear children of the new root (which is now node 0)
+            if hasattr(self.tree, 'children'):
+                # Reset the children table for root
+                self.tree.children[0, :] = -1
+            
+            # Also clear CSR storage for root
+            if hasattr(self.tree.csr_storage, 'row_ptr'):
+                # Set root to have no children in CSR format
+                self.tree.csr_storage.row_ptr[0] = 0
+                self.tree.csr_storage.row_ptr[1] = 0
+                
+            # Keep the visit count but ensure root will be expanded
+            # Don't reset visit count - it represents the value estimates we want to preserve
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Tree reuse: Shifted to child {child_idx}, cleared root children for re-expansion")
         
         return mapping
         

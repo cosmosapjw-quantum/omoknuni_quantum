@@ -54,19 +54,15 @@ class WaveSearch:
         if gpu_ops is None:
             try:
                 self.gpu_ops = get_mcts_gpu_accelerator(device)
-                logger.debug("Loaded GPU accelerator for wave search")
             except Exception as e:
-                logger.debug(f"GPU accelerator not available: {e}")
                 self.gpu_ops = None
         
         # Also try to get direct kernel access for wave search optimizations
         self.cuda_kernels = None
         try:
             self.cuda_kernels = detect_cuda_kernels()
-            if self.cuda_kernels:
-                pass  # CUDA kernels available
         except Exception as e:
-            logger.debug(f"Direct CUDA kernels not available: {e}")
+            self.cuda_kernels = None
         
         # Buffers will be allocated on first use
         self._buffers_allocated = False
@@ -82,10 +78,6 @@ class WaveSearch:
         # Cache for batched Dirichlet noise generation
         self._dirichlet_cache = {}
         
-        # Progressive widening parameters
-        self.pw_alpha = getattr(config, 'progressive_widening_alpha', 0.5)  # k = alpha * sqrt(n)
-        self.pw_base = getattr(config, 'progressive_widening_base', 10.0)   # Minimum children
-        
         # Initialize tactical detector based on game type if enabled
         self._tactical_detector = None
         if config.enable_tactical_boost:
@@ -93,15 +85,12 @@ class WaveSearch:
                 if config.game_type == GameType.GO:
                     from ..utils.go_tactical_detector import GoTacticalMoveDetector
                     self._tactical_detector = GoTacticalMoveDetector(config.board_size, config)
-                    logger.debug("Initialized tactical move detector for Go")
                 elif config.game_type == GameType.CHESS:
                     from ..utils.chess_tactical_detector import ChessTacticalMoveDetector
                     self._tactical_detector = ChessTacticalMoveDetector(config)
-                    logger.debug("Initialized tactical move detector for Chess")
                 elif config.game_type == GameType.GOMOKU:
                     from ..utils.gomoku_tactical_detector import GomokuTacticalMoveDetector
                     self._tactical_detector = GomokuTacticalMoveDetector(config.board_size, config)
-                    logger.debug("Initialized tactical move detector for Gomoku")
             except ImportError as e:
                 logger.warning(f"Tactical move detector not available: {e}")
                 self._tactical_detector = None
@@ -116,16 +105,8 @@ class WaveSearch:
         Returns:
             Maximum number of children to expand
         """
-        # Progressive widening: expand more children as parent gets more visits
-        # Formula: min(num_legal_moves, base + alpha * sqrt(parent_visits))
-        import math
-        max_children = int(self.pw_base + self.pw_alpha * math.sqrt(max(1, parent_visits)))
-        
-        # For root node on first expansion, be more aggressive
-        if parent_visits == 0:
-            max_children = min(int(self.pw_base * 2), num_legal_moves)
-        
-        return min(max_children, num_legal_moves)
+        # Always expand all legal moves (no progressive widening)
+        return num_legal_moves
         
     def allocate_buffers(self, wave_size: int, max_depth: int = 100):
         """Allocate work buffers for wave operations
@@ -255,6 +236,10 @@ class WaveSearch:
             return priors.unsqueeze(0).expand(len(sim_indices), -1)
         
         return noised_priors
+    
+    def reset_search_state(self):
+        """Reset search state for a new search"""
+        self._global_noise_cache = None
         
     def run_wave(self, wave_size: int, node_to_state: torch.Tensor, state_pool_free_list: List[int]) -> int:
         """Run one wave of parallel MCTS simulations
@@ -293,6 +278,9 @@ class WaveSearch:
         # Phase 4: Backup - propagate values up the tree
         self._backup_batch_vectorized(updated_paths, updated_lengths, values)
         
+        # Phase 5: Remove virtual losses from all paths
+        self._remove_virtual_losses_from_paths(updated_paths, updated_lengths)
+        
         return wave_size
         
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -330,106 +318,28 @@ class WaveSearch:
             # Create masks for valid children
             valid_children_mask = batch_children >= 0
             
-            # Vectorized computation of UCB scores
-            with torch.no_grad():
-                # Get visits and values for all children in batch
-                flat_children = batch_children[valid_children_mask]
-                if len(flat_children) > 0:
-                    child_visits_flat = self.tree.node_data.visit_counts[flat_children].float()
-                    child_values_flat = self.tree.node_data.value_sums[flat_children]
+            # Optimized parallel selection with proper virtual loss synchronization
+            selected_children_all = self._parallel_select_with_virtual_loss(
+                active_indices, active_nodes, batch_children, batch_priors, valid_children_mask, depth
+            )
+            
+            # Update paths and next nodes for successful selections
+            if selected_children_all is not None:
+                has_children = selected_children_all >= 0
+                nodes_with_children = active_indices[has_children]
+                children_to_select = selected_children_all[has_children]
+                
+                # Update paths and next nodes
+                self.paths_buffer[nodes_with_children, depth] = children_to_select
+                self.path_lengths[nodes_with_children] = depth + 1
+                self.next_nodes[nodes_with_children] = children_to_select
                     
-                    # Reshape back to batch format
-                    child_visits = torch.zeros_like(batch_children, dtype=torch.float32)
-                    child_values = torch.zeros_like(batch_children, dtype=torch.float32)
-                    child_visits[valid_children_mask] = child_visits_flat
-                    child_values[valid_children_mask] = child_values_flat
-                    
-                    # Calculate Q-values
-                    q_values = torch.where(
-                        child_visits > 0,
-                        child_values / child_visits,
-                        torch.zeros_like(child_values)
-                    )
-                    
-                    # Get parent visits
-                    parent_visits = self.tree.node_data.visit_counts[active_nodes].float()
-                    parent_visits_sqrt = torch.sqrt(torch.maximum(parent_visits, torch.ones(1, device=self.device)))
-                    
-                    # Apply per-simulation Dirichlet noise for root
-                    noised_priors = torch.zeros_like(batch_priors)
-                    for i, node in enumerate(active_nodes):
-                        if node == 0 and self.config.dirichlet_epsilon > 0:  # Root node
-                            node_children = batch_children[i][valid_children_mask[i]]
-                            node_priors = batch_priors[i][valid_children_mask[i]]
-                            sim_idx = active_indices[i:i+1]
-                            
-                            noise_priors = self.apply_per_simulation_dirichlet_noise(
-                                0, sim_idx, node_children, node_priors
-                            )[0]
-                            noised_priors[i][valid_children_mask[i]] = noise_priors
-                        else:
-                            noised_priors[i] = batch_priors[i]
-                    
-                    # Try fused UCB computation with CUDA kernel
-                    if (node == 0 and self.cuda_kernels and 
-                        hasattr(self.cuda_kernels, 'fused_ucb_with_noise')):
-                        try:
-                            # Use fused kernel for root node with Dirichlet noise
-                            noise = self.apply_dirichlet_noise_batched(
-                                len(active_indices), len(node_children),
-                                self.config.dirichlet_alpha, 
-                                self.config.dirichlet_epsilon
-                            )
-                            selected_indices = self.cuda_kernels.fused_ucb_with_noise(
-                                child_values[valid_children_mask],
-                                child_visits[valid_children_mask],
-                                batch_priors[valid_children_mask],
-                                noise,
-                                parent_visits_sqrt[0].item(),
-                                self.config.c_puct,
-                                self.config.dirichlet_epsilon
-                            )
-                            # Map back to batch indices
-                            best_indices = selected_indices
-                            selected_children = batch_children[torch.arange(len(batch_children)), best_indices]
-                        except Exception as e:
-                            # Standard computation
-                            exploration = (self.config.c_puct * noised_priors * 
-                                         parent_visits_sqrt.unsqueeze(1) / (1 + child_visits))
-                            ucb_scores = q_values + exploration
-                    else:
-                        # Standard vectorized UCB calculation
-                        exploration = (self.config.c_puct * noised_priors * 
-                                     parent_visits_sqrt.unsqueeze(1) / (1 + child_visits))
-                        ucb_scores = q_values + exploration
-                    
-                    # Mask out invalid children
-                    ucb_scores = torch.where(
-                        valid_children_mask,
-                        ucb_scores,
-                        torch.full_like(ucb_scores, -float('inf'))
-                    )
-                    
-                    # Select best children
-                    best_indices = ucb_scores.argmax(dim=1)
-                    selected_children = batch_children.gather(1, best_indices.unsqueeze(1)).squeeze(1)
-                    
-                    # Update only nodes that have children
-                    has_children = valid_children_mask.any(dim=1)
-                    nodes_with_children = active_indices[has_children]
-                    children_to_select = selected_children[has_children]
-                    
-                    # Update paths and next nodes
-                    self.paths_buffer[nodes_with_children, depth] = children_to_select
-                    self.path_lengths[nodes_with_children] = depth + 1
-                    self.next_nodes[nodes_with_children] = children_to_select
-                    
-                    # Mark nodes without children as inactive
-                    nodes_without_children = active_indices[~has_children]
-                    self.active_mask[nodes_without_children] = False
-                else:
-                    # No valid children for any active node
-                    self.active_mask[active_indices] = False
+                # Mark nodes without children as inactive
+                nodes_without_children = active_indices[~has_children]
+                self.active_mask[nodes_without_children] = False
+            else:
+                # No valid children for any active node
+                self.active_mask[active_indices] = False
             
             # Move to next nodes
             self.current_nodes[:wave_size] = self.next_nodes[:wave_size]
@@ -489,10 +399,6 @@ class WaveSearch:
             node_idx_val = node_idx.item()
             children, _, _ = self.tree.get_children(node_idx_val)
             
-            # DEBUG: Log expansion check
-            if node_idx_val == 0:  # Root node
-                logger.debug(f"Checking root expansion: has {len(children)} children")
-            
             if len(children) == 0:
                 state_idx = current_node_to_state[node_idx].item()
                 if state_idx >= 0:
@@ -502,7 +408,7 @@ class WaveSearch:
                         needs_expansion[i] = True
                         state_indices[i] = state_idx
                     else:
-                        logger.debug(f"Skipping expansion of terminal node {node_idx_val} (state {state_idx})")
+                        continue  # Skip terminal node expansion
         
         nodes_to_expand = valid_unique_nodes[needs_expansion]
         states_to_expand = state_indices[needs_expansion]
@@ -532,6 +438,10 @@ class WaveSearch:
                 for feat in state_features:
                     feat_np = feat.cpu().numpy()
                     policy, _ = self.evaluator.evaluate(feat_np)
+                    # Handle batch dimension - evaluator returns (batch_size, action_size)
+                    # but we need just (action_size) for each state
+                    if isinstance(policy, np.ndarray) and policy.ndim == 2 and policy.shape[0] == 1:
+                        policy = policy[0]  # Remove batch dimension if batch_size=1
                     policies_list.append(torch.from_numpy(policy).to(self.device))
                 policies = torch.stack(policies_list)
             
@@ -552,23 +462,11 @@ class WaveSearch:
                         self._tactical_detector is not None):
                         # Get board state
                         board = self.game_states.boards[state_idx]
+                        # GPUGameStates already uses 1-based players (1, 2)
                         current_player = self.game_states.current_player[state_idx].item()
                         
                         # Debug: log board state
-                        if node_idx.item() == 0:
-                            logger.debug(f"Board state for tactical detection:")
-                            logger.debug(f"Current player: {current_player}")
-                            for y in range(min(5, board.shape[0])):  # Show first 5 rows
-                                row = []
-                                for x in range(min(5, board.shape[1])):  # First 5 cols
-                                    val = board[y, x].item()
-                                    if val == 0:
-                                        row.append('.')
-                                    elif val == 1:
-                                        row.append('B')
-                                    else:
-                                        row.append('W')
-                                logger.debug(f"  {' '.join(row)}")
+                        # Board state ready for tactical detection
                         
                         # Create full prior vector for boosting
                         if self.config.game_type == GameType.CHESS:
@@ -607,11 +505,11 @@ class WaveSearch:
                         
                         # Debug logging
                         if node_idx.item() == 0:  # Root node
-                            logger.debug(f"Board shape: {board.shape}, current player: {current_player}")
+                            pass  # Board shape checked
                             
                             # Check boost values
                             boost_values = self._tactical_detector.detect_tactical_moves(board, current_player)
-                            logger.debug(f"Max boost value: {boost_values.max():.4f}")
+                            pass  # Boost values computed
                             
                             # Log the actual boost calculation
                             capture_idx = 29  # Capture move at (3,2)
@@ -619,109 +517,9 @@ class WaveSearch:
                                 idx_in_legal = (legal_actions == capture_idx).nonzero(as_tuple=True)[0]
                                 if len(idx_in_legal) > 0:
                                     idx = idx_in_legal[0]
-                                    logger.debug(f"Capture move boost: {boost_values[capture_idx]:.4f}")
-                                    logger.debug(f"Capture move prior: {old_priors[idx]:.6f} -> {priors[idx]:.6f}")
-                                    logger.debug(f"Full priors before boost: min={full_priors.min():.6f}, max={full_priors.max():.6f}, mean={full_priors.mean():.6f}")
-                                    logger.debug(f"Boosted priors: min={boosted_priors.min():.6f}, max={boosted_priors.max():.6f}, mean={boosted_priors.mean():.6f}")
+                                    pass  # Capture move boosted
                     
-                    # CRITICAL: Implement progressive widening to avoid eager expansion
-                    # Only expand a subset of moves based on visit count
-                    parent_visits = self.tree.node_data.visit_counts[node_idx].item()
-                    
-                    # Progressive widening formula: k * sqrt(n) where n is parent visits
-                    # Start with a small number and grow
-                    max_children = self._get_max_children_for_expansion(parent_visits, len(legal_actions))
-                    
-                    if max_children < len(legal_actions):
-                        # Select moves for progressive widening
-                        logger.debug(f"Progressive widening: Node {node_idx} with {parent_visits} visits, "
-                                   f"expanding {max_children}/{len(legal_actions)} children")
-                        
-                        # For games with tactical boost, ensure tactical moves are included
-                        if (self.config.enable_tactical_boost and
-                            hasattr(self, '_tactical_detector') and
-                            self._tactical_detector is not None):
-                            # Get tactical boost values for all legal actions
-                            board = self.game_states.boards[state_idx]
-                            current_player = self.game_states.current_player[state_idx].item()
-                            
-                            if self.config.game_type == GameType.CHESS:
-                                # Chess needs legal moves list
-                                boost_values = self._tactical_detector.detect_tactical_moves(
-                                    board, current_player, legal_actions.cpu().tolist()
-                                )
-                            else:
-                                # Go and Gomoku work with board positions
-                                boost_values = self._tactical_detector.detect_tactical_moves(board, current_player)
-                            
-                            # Get boost values for legal actions
-                            # Ensure both tensors are on same device (CPU) for indexing
-                            legal_actions_cpu = legal_actions.cpu() if legal_actions.is_cuda else legal_actions
-                            legal_boost = boost_values[legal_actions_cpu]
-                            
-                            # Convert to tensor on same device as other tensors if needed
-                            if not isinstance(legal_boost, torch.Tensor):
-                                legal_boost = torch.tensor(legal_boost, device=legal_actions.device)
-                            elif legal_boost.device != legal_actions.device:
-                                legal_boost = legal_boost.to(legal_actions.device)
-                            
-                            # Find high-value tactical moves (boost > threshold)
-                            tactical_threshold = 5.0  # Captures typically have boost > 10
-                            tactical_mask = legal_boost > tactical_threshold
-                            num_tactical = tactical_mask.sum().item()
-                            
-                            if num_tactical > 0:
-                                # Ensure all tactical moves are included
-                                tactical_indices = torch.where(tactical_mask)[0]
-                                non_tactical_indices = torch.where(~tactical_mask)[0]
-                                
-                                # How many non-tactical moves can we include?
-                                remaining_slots = max(0, max_children - num_tactical)
-                                
-                                if remaining_slots > 0 and len(non_tactical_indices) > 0:
-                                    # Select from non-tactical moves
-                                    if remaining_slots < len(non_tactical_indices):
-                                        # Random selection for non-tactical moves
-                                        perm = torch.randperm(len(non_tactical_indices), device=priors.device)
-                                        selected_non_tactical = non_tactical_indices[perm[:remaining_slots]]
-                                    else:
-                                        selected_non_tactical = non_tactical_indices
-                                    
-                                    # Combine tactical and non-tactical
-                                    selected_indices = torch.cat([tactical_indices, selected_non_tactical])
-                                else:
-                                    # Only tactical moves (or all if we have space)
-                                    selected_indices = tactical_indices[:max_children]
-                                
-                                logger.debug(f"Including {num_tactical} tactical moves in progressive widening")
-                            else:
-                                # No tactical moves, use standard selection
-                                prior_std = priors.std()
-                                prior_mean = priors.mean()
-                                
-                                if prior_std < prior_mean * 0.01:  # 1% tolerance
-                                    # Use random selection for uniform priors
-                                    perm = torch.randperm(len(priors), device=priors.device)
-                                    selected_indices = perm[:max_children]
-                                else:
-                                    # Use topk for non-uniform priors
-                                    selected_indices = torch.topk(priors, min(max_children, len(priors))).indices
-                        else:
-                            # Standard progressive widening for non-Go games
-                            prior_std = priors.std()
-                            prior_mean = priors.mean()
-                            
-                            if prior_std < prior_mean * 0.01:  # 1% tolerance
-                                # Use random selection for uniform priors
-                                perm = torch.randperm(len(priors), device=priors.device)
-                                selected_indices = perm[:max_children]
-                            else:
-                                # Use topk for non-uniform priors
-                                selected_indices = torch.topk(priors, min(max_children, len(priors))).indices
-                        
-                        legal_actions = legal_actions[selected_indices]
-                        priors = priors[selected_indices]
-                        priors = priors / priors.sum()  # Re-normalize
+                    # Expand all legal moves (no progressive widening)
                     
                     # Prepare for batch operations
                     num_actions = len(legal_actions)
@@ -786,12 +584,53 @@ class WaveSearch:
                 continue
                 
             # Get children
-            children, _, priors = self.tree.get_children(node_idx_val)
+            children, actions, priors = self.tree.get_children(node_idx_val)
             
             if len(children) > 0:
-                # This node has children now
-                visits = self.tree.node_data.visit_counts[children]
-                values = self.tree.node_data.value_sums[children] / (visits + 1e-8)
+                # CRITICAL FIX: Filter out children whose actions are no longer legal
+                # This prevents illegal moves from being selected by UCB
+                state_idx = self.node_to_state[node_idx_val].item()
+                if state_idx >= 0:
+                    # Get current legal moves for this state
+                    legal_mask = self.game_states.get_legal_moves_mask(
+                        torch.tensor([state_idx], device=self.device)
+                    )[0]
+                    
+                    # Filter children to only those with legal actions
+                    legal_children_mask = torch.zeros(len(children), dtype=torch.bool, device=self.device)
+                    for i, child_idx in enumerate(children):
+                        action = self.tree.node_data.parent_actions[child_idx].item()
+                        if 0 <= action < len(legal_mask) and legal_mask[action]:
+                            legal_children_mask[i] = True
+                    
+                    # Only keep legal children
+                    if legal_children_mask.any():
+                        children = children[legal_children_mask]
+                        actions = actions[legal_children_mask] if actions is not None else None
+                        priors = priors[legal_children_mask]
+                        
+                        # Debug logging for illegal child filtering
+                        if not legal_children_mask.all():
+                            num_illegal = (~legal_children_mask).sum().item()
+                            pass  # Illegal children filtered
+                    else:
+                        # All children are illegal - treat as no children
+                        logger.warning(f"All children at node {node_idx_val} have illegal actions - treating as leaf")
+                        children = torch.tensor([], dtype=torch.int32, device=self.device)
+                        actions = torch.tensor([], dtype=torch.int32, device=self.device)
+                        priors = torch.tensor([], dtype=torch.float32, device=self.device)
+                
+                # This node has legal children now
+                # Use effective visits/values that include virtual losses
+                effective_visits = self.tree.node_data.get_effective_visits(children).float()
+                effective_values = self.tree.node_data.get_effective_values(children)
+                
+                # Calculate Q-values using effective visits
+                q_values = torch.where(
+                    effective_visits > 0,
+                    effective_values / effective_visits,
+                    torch.zeros_like(effective_values)
+                )
                 
                 # Apply per-simulation Dirichlet noise if at root
                 noised_priors = self.apply_per_simulation_dirichlet_noise(
@@ -802,46 +641,21 @@ class WaveSearch:
                 parent_visits = self.tree.node_data.visit_counts[node_idx_val]
                 parent_visits_sqrt = torch.sqrt(torch.maximum(parent_visits.float(), torch.ones(1, device=self.device)))
                 
-                # Expand visits and values to match simulation count
-                visits_expanded = visits.unsqueeze(0).expand(len(sim_indices), -1)
-                values_expanded = values.unsqueeze(0).expand(len(sim_indices), -1)
+                # Expand visits and q-values to match simulation count
+                visits_expanded = effective_visits.unsqueeze(0).expand(len(sim_indices), -1)
+                q_values_expanded = q_values.unsqueeze(0).expand(len(sim_indices), -1)
                 
                 # UCB formula with per-simulation priors
                 exploration = self.config.c_puct * noised_priors * parent_visits_sqrt / (1 + visits_expanded)
-                ucb = values_expanded + exploration
-                
-                # Add RAVE if enabled
-                if self.config.enable_rave and hasattr(self.tree.node_data, 'rave_visits'):
-                    # Get RAVE statistics for this node
-                    if node_idx_val in self.tree.node_data.rave_visits:
-                        # Get actions for children
-                        _, actions, _ = self.tree.get_children(node_idx_val)
-                        
-                        # Compute RAVE values
-                        rave_visits = torch.zeros(len(children), device=self.device)
-                        rave_values = torch.zeros(len(children), device=self.device)
-                        
-                        for i, action in enumerate(actions):
-                            action_idx = action.item()
-                            if action_idx < len(self.tree.node_data.rave_visits[node_idx_val]):
-                                rave_visits[i] = self.tree.node_data.rave_visits[node_idx_val][action_idx]
-                                rave_values[i] = self.tree.node_data.rave_values[node_idx_val][action_idx]
-                        
-                        # Compute RAVE Q-values
-                        rave_q = rave_values / (rave_visits + 1e-8)
-                        
-                        # Beta scheduling: β = sqrt(rave_c / (rave_c + n))
-                        beta = torch.sqrt(self.config.rave_c / (self.config.rave_c + parent_visits.float()))
-                        
-                        # Expand for simulations
-                        rave_q_expanded = rave_q.unsqueeze(0).expand(len(sim_indices), -1)
-                        
-                        # Combine UCB and RAVE
-                        ucb = (1 - beta) * ucb + beta * rave_q_expanded
+                ucb = q_values_expanded + exploration
                 
                 # Each simulation selects its best child based on its own UCB scores
                 best_indices = ucb.argmax(dim=1)
                 selected_children = children[best_indices]
+                
+                # Apply virtual losses to selected children
+                if len(selected_children) > 0:
+                    self.tree.node_data.apply_virtual_loss(selected_children)
                 
                 # Update final nodes and paths for these simulations
                 for i, (sim_idx, child) in enumerate(zip(sim_indices, selected_children)):
@@ -854,6 +668,136 @@ class WaveSearch:
                         updated_lengths[sim_idx] = current_length + 1
                 
         return final_nodes, updated_paths, updated_lengths
+    
+    def _parallel_select_with_virtual_loss(self, active_indices: torch.Tensor, active_nodes: torch.Tensor, 
+                                         batch_children: torch.Tensor, batch_priors: torch.Tensor,
+                                         valid_children_mask: torch.Tensor, depth: int) -> torch.Tensor:
+        """Perform parallel selection with proper virtual loss synchronization
+        
+        This method maintains GPU parallelization while ensuring virtual losses are applied
+        correctly when multiple simulations are at the same parent node.
+        
+        Args:
+            active_indices: Indices of active simulations
+            active_nodes: Current node for each active simulation
+            batch_children: Children for each active node
+            batch_priors: Priors for each child
+            valid_children_mask: Mask for valid children
+            depth: Current depth in the search
+            
+        Returns:
+            Selected children for each active simulation (-1 if no valid children)
+        """
+        if len(active_indices) == 0:
+            return None
+            
+        # Initialize result tensor
+        selected_children = torch.full_like(active_indices, -1, dtype=torch.int32)
+        
+        # Group simulations by parent node to handle virtual losses correctly
+        unique_nodes, node_indices = torch.unique(active_nodes, return_inverse=True)
+        
+        # Process each unique parent node
+        for node_idx, parent_node in enumerate(unique_nodes):
+            # Find simulations at this parent node
+            sims_at_node = active_indices[node_indices == node_idx]
+            
+            if len(sims_at_node) == 0:
+                continue
+                
+            # Get children and priors for this node
+            node_children = batch_children[node_indices == node_idx][0]  # All same for same parent
+            node_priors = batch_priors[node_indices == node_idx][0]
+            node_valid_mask = valid_children_mask[node_indices == node_idx][0]
+            
+            if not node_valid_mask.any():
+                continue
+                
+            # Get valid children for this node
+            valid_children = node_children[node_valid_mask]
+            valid_priors = node_priors[node_valid_mask]
+            
+            # CRITICAL FIX: Filter out children whose actions are no longer legal
+            # This prevents illegal moves from being selected by UCB
+            state_idx = self.node_to_state[parent_node].item()
+            if state_idx >= 0:
+                # Get current legal moves for this state
+                legal_mask = self.game_states.get_legal_moves_mask(
+                    torch.tensor([state_idx], device=self.device)
+                )[0]
+                
+                # Filter children to only those with legal actions
+                legal_children_mask = torch.zeros(len(valid_children), dtype=torch.bool, device=self.device)
+                for i, child_idx in enumerate(valid_children):
+                    action = self.tree.node_data.parent_actions[child_idx].item()
+                    if 0 <= action < len(legal_mask) and legal_mask[action]:
+                        legal_children_mask[i] = True
+                
+                # Only keep legal children
+                if legal_children_mask.any():
+                    valid_children = valid_children[legal_children_mask]
+                    valid_priors = valid_priors[legal_children_mask]
+                    
+                    # Debug logging for illegal child filtering
+                    if not legal_children_mask.all():
+                        num_illegal = (~legal_children_mask).sum().item()
+                        pass  # Illegal children filtered
+                else:
+                    # All children are illegal - skip this node
+                    logger.warning(f"All children at node {parent_node} have illegal actions - skipping parallel selection")
+                    continue
+            
+            # CRITICAL FIX: Apply virtual losses BETWEEN each simulation's selection
+            # This ensures proper exploration by preventing collision on same nodes
+            
+            # Get parent visits once for this node
+            parent_visits = self.tree.node_data.visit_counts[parent_node].float()
+            parent_visits_sqrt = torch.sqrt(torch.maximum(parent_visits, torch.ones(1, device=self.device)))
+            
+            # Process each simulation sequentially within this parent node
+            for sim_idx in sims_at_node:
+                # Get current effective visits/values (including virtual losses from previous selections)
+                effective_visits = self.tree.node_data.get_effective_visits(valid_children).float()
+                effective_values = self.tree.node_data.get_effective_values(valid_children)
+                
+                # Calculate Q-values with current virtual losses
+                q_values = torch.where(
+                    effective_visits > 0,
+                    effective_values / effective_visits,
+                    torch.zeros_like(effective_values)
+                )
+                
+                # Apply GLOBAL Dirichlet noise for root (standard AlphaZero approach)
+                if parent_node == 0 and self.config.dirichlet_epsilon > 0:
+                    # Use global noise shared by all simulations at this node
+                    if not hasattr(self, '_global_noise_cache') or self._global_noise_cache is None:
+                        # Generate global noise once for this root
+                        noise = torch.distributions.Dirichlet(
+                            torch.full((len(valid_children),), self.config.dirichlet_alpha, device=self.device)
+                        ).sample()
+                        self._global_noise_cache = (1 - self.config.dirichlet_epsilon) * valid_priors + self.config.dirichlet_epsilon * noise
+                    noised_priors = self._global_noise_cache
+                else:
+                    # No noise for non-root nodes
+                    noised_priors = valid_priors
+                
+                # Calculate UCB scores for this simulation
+                exploration = (self.config.c_puct * noised_priors * 
+                             parent_visits_sqrt / (1 + effective_visits))
+                ucb_scores = q_values + exploration
+                
+                # This simulation selects its best child
+                best_idx = ucb_scores.argmax().item()
+                selected_child = valid_children[best_idx]
+                
+                # CRITICAL: Apply virtual loss immediately after selection
+                # This affects the UCB calculation for the next simulation
+                self.tree.node_data.apply_virtual_loss(selected_child.unsqueeze(0))
+                
+                # Store selection
+                selected_children[active_indices == sim_idx] = selected_child
+        
+        return selected_children
         
     def _evaluate_batch_vectorized(self, nodes: torch.Tensor) -> torch.Tensor:
         """Evaluate nodes using neural network
@@ -910,6 +854,13 @@ class WaveSearch:
                 elif isinstance(value_preds, torch.Tensor):
                     value_preds = value_preds.float()  # Ensure float dtype
                 
+                # Squeeze to remove extra dimension if present (batch_size, 1) -> (batch_size,)
+                if value_preds.ndim == 2 and value_preds.shape[1] == 1:
+                    value_preds = value_preds.squeeze(1)
+                
+                # Debug logging
+                # Value predictions processed
+                
                 # Get the final indices where we should store values
                 # valid_mask tells us which nodes were valid
                 # valid_states_mask tells us which of those valid nodes had valid states
@@ -929,6 +880,13 @@ class WaveSearch:
                     else:
                         raise RuntimeError(f"Value predictions ({len(value_preds)}) don't match valid states ({len(final_indices)})")
                 
+                # Debug shapes before assignment
+                # Assign value predictions
+                
+                # Ensure value_preds is 1D for assignment
+                if value_preds.ndim == 2 and value_preds.shape[1] == 1:
+                    value_preds = value_preds.squeeze(1)
+                    
                 values[final_indices] = value_preds
                 
         return values
@@ -987,6 +945,37 @@ class WaveSearch:
         if self.config.enable_rave:
             self._update_rave_statistics(paths, path_lengths, values)
     
+    def _remove_virtual_losses_from_paths(self, paths: torch.Tensor, path_lengths: torch.Tensor):
+        """Remove virtual losses from nodes that were selected in this wave
+        
+        CRITICAL FIX: Only remove virtual losses from nodes that had selections applied,
+        and only remove the exact number of virtual losses that were applied.
+        
+        Args:
+            paths: Tensor of paths through the tree
+            path_lengths: Length of each path
+        """
+        if not self.config.enable_virtual_loss:
+            return
+            
+        # Track how many virtual losses to remove from each node
+        # Each path represents one simulation that applied virtual losses during selection
+        virtual_loss_counts = {}
+        
+        for i in range(paths.shape[0]):
+            path_len = path_lengths[i].item()
+            # Skip the root node (index 0) and only count selection nodes
+            for j in range(1, path_len):  # Start from 1 to skip root
+                node = paths[i, j].item()
+                if node >= 0 and node < self.tree.num_nodes:
+                    virtual_loss_counts[node] = virtual_loss_counts.get(node, 0) + 1
+        
+        # Remove the appropriate number of virtual losses from each node
+        for node, count in virtual_loss_counts.items():
+            node_tensor = torch.tensor([node], device=self.device)
+            for _ in range(count):
+                self.tree.node_data.remove_virtual_loss(node_tensor)
+    
     def _scatter_backup(self, paths: torch.Tensor, lengths: torch.Tensor, values: torch.Tensor):
         """Optimized backup using scatter operations"""
         batch_size = paths.shape[0]
@@ -1027,87 +1016,3 @@ class WaveSearch:
             valid_values
         )
         
-        # RAVE updates if enabled
-        if self.config.enable_rave:
-            self._update_rave_statistics(paths, lengths, values)
-    
-    def _update_rave_statistics(self, paths: torch.Tensor, path_lengths: torch.Tensor, values: torch.Tensor):
-        """Update RAVE statistics using All-Moves-As-First (AMAF) logic
-        
-        For each node in the path, update RAVE statistics for all actions
-        that were played later in the simulation.
-        
-        Args:
-            paths: Tensor of paths through tree [batch_size, max_path_length]
-            path_lengths: Length of each path [batch_size]
-            values: Value estimates to backup [batch_size]
-        """
-        batch_size = paths.shape[0]
-        
-        # Process each simulation path
-        for i in range(batch_size):
-            path_len = path_lengths[i].item()
-            if path_len <= 1:  # Need at least 2 nodes for RAVE
-                continue
-                
-            value = values[i].item()
-            
-            # Get the path for this simulation
-            path = paths[i, :path_len]
-            
-            # For each node in the path (except the last one)
-            for j in range(path_len - 1):
-                node_idx = path[j].item()
-                if node_idx < 0 or node_idx >= self.tree.num_nodes:
-                    continue
-                
-                # Get the action taken from this node (the next node in path)
-                next_node_idx = path[j + 1].item()
-                if next_node_idx < 0 or next_node_idx >= self.tree.num_nodes:
-                    continue
-                
-                # Find the action that leads to next_node_idx
-                action = self._get_action_for_child(node_idx, next_node_idx)
-                if action is None:
-                    continue
-                
-                # Initialize RAVE statistics for this node if needed
-                if hasattr(self.tree.node_data, 'initialize_rave_for_node'):
-                    # Get action space size from the game state
-                    try:
-                        if self.node_to_state is not None and node_idx < len(self.node_to_state):
-                            state_idx = self.node_to_state[node_idx]
-                            if state_idx >= 0:
-                                action_space_size = self.game_states.get_action_space_size(state_idx)
-                                self.tree.node_data.initialize_rave_for_node(node_idx, action_space_size)
-                    except:
-                        # Fallback to default action space size
-                        action_space_size = 64 * 64 + 1  # Go-style board + pass
-                        self.tree.node_data.initialize_rave_for_node(node_idx, action_space_size)
-                
-                # Update RAVE statistics for this action
-                # Value should be from the perspective of the player to move at this node
-                # Calculate the perspective adjustment based on depth
-                perspective_value = value if (path_len - 1 - j) % 2 == 0 else -value
-                
-                if hasattr(self.tree.node_data, 'update_rave'):
-                    self.tree.node_data.update_rave(node_idx, action, perspective_value)
-    
-    def _get_action_for_child(self, parent_idx: int, child_idx: int) -> Optional[int]:
-        """Get the action that leads from parent to child node
-        
-        Args:
-            parent_idx: Index of parent node
-            child_idx: Index of child node
-            
-        Returns:
-            Action index if found, None otherwise
-        """
-        # This requires access to the tree structure to map child nodes back to actions
-        # For now, we'll use the parent_actions field in node_data if available
-        if hasattr(self.tree.node_data, 'parent_actions'):
-            try:
-                return self.tree.node_data.parent_actions[child_idx].item()
-            except:
-                return None
-        return None

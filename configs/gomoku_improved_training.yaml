@@ -10,19 +10,17 @@ num_iterations: 200  # Increased for 3-4 day training (est. 1 iter/hour = 72-96 
 game:
   game_type: gomoku
   board_size: 15
-  gomoku_use_renju: false            # Pure freestyle Gomoku
-  gomoku_use_omok: false             # Pure freestyle Gomoku
-  gomoku_use_pro_long_opening: false # No opening restrictions
+  # Game settings use default Gomoku rules
 
 mcts:
   # Optimized for RTX 3060 Ti performance and quality balance
-  num_simulations: 800       # Increased for better play quality (within GPU limits)
+  num_simulations: 400       # Increased for better exploration and play quality
   c_puct: 1.4                # Balanced exploration-exploitation
   dirichlet_alpha: 0.3       # Standard for Gomoku
-  dirichlet_epsilon: 0.25    # Good noise level
+  dirichlet_epsilon: 0.5     # Increased for better exploration with untrained network
   temperature: 1.0
   temperature_threshold: 30   # Extended exploration for stronger play
-  temperature_final: 0.05    # Nearly deterministic endgame
+  # temperature_final is calculated from temperature at runtime
   
   # RTX 3060 Ti optimized performance (8GB VRAM with multi-worker constraints)
   min_wave_size: 3072        # Reduced to leave memory for multiple workers
@@ -31,63 +29,33 @@ mcts:
   virtual_loss: 0.5          # Parallel exploration
   enable_virtual_loss: true
   
-  # Enhanced tree reuse for efficiency - RE-ENABLED after root mapping fixes
-  tree_reuse: true          # Critical for training speed
+  # Tree reuse for better performance
+  enable_subtree_reuse: true
   
-  # Memory optimization for 64GB RAM + 8GB VRAM (multi-worker constrained)
-  memory_pool_size_mb: 4096  # Reduced to fit 8 workers in GPU memory
-  max_tree_nodes: 600000     # Optimized for 8GB VRAM with 8 workers (~600MB per worker)
+  # Memory optimization for 64GB RAM + 8GB VRAM (single-GPU mode)
+  memory_pool_size_mb: 6144  # Increased for single-GPU mode
+  max_tree_nodes: 1000000    # Larger tree for single-GPU (uses more VRAM efficiently)
   
   # Maximum GPU optimization for RTX 3060 Ti
-  use_cuda_graphs: true
-  use_mixed_precision: true
-  use_tensor_cores: true     # Leverage Ampere architecture
+  # GPU optimizations handled automatically
   
   # Performance mode
-  enable_quantum: false
-  classical_only_mode: true     # Optimize for performance
   enable_fast_ucb: true
   
   # Ryzen 9 5900X optimization (24 threads available)
   device: cuda
-  num_threads: 22            # Increased since workers now use CPU efficiently
+  num_threads: 22            # CPU threads for MCTS tree operations
   
   # Production mode - disable debug overhead
   enable_debug_logging: false
   enable_state_pool_debug: false
-  
-  # Progressive widening parameters for lazy expansion
-  enable_progressive_widening: true
-  progressive_widening_alpha: 0.5  # k = alpha * sqrt(n) - controls expansion rate
-  progressive_widening_base: 10.0  # Minimum children to expand at each node
-  
-  # RAVE (Rapid Action Value Estimation) for faster learning
-  enable_rave: true
-  rave_c: 3000.0  # RAVE exploration constant
-  rave_threshold: 50  # Disable RAVE after this many training iterations
   
   # Tactical boost for finding important moves with untrained networks
   enable_tactical_boost: true
   tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
   tactical_boost_decay: 0.99        # Decay factor per iteration
   
-  # Gomoku tactical parameters
-  gomoku_win_boost: 100.0           # Immediate win move
-  gomoku_block_win_boost: 90.0      # Block opponent win
-  gomoku_open_four_boost: 50.0      # Create open four
-  gomoku_block_four_boost: 45.0     # Block opponent open four
-  gomoku_threat_base_boost: 40.0    # Base for multiple threats
-  gomoku_threat_multiplier: 5.0     # Per additional threat
-  gomoku_three_boost: 20.0          # Create three in a row
-  gomoku_block_three_boost: 18.0    # Block opponent three
-  gomoku_center_boost: 3.0          # Central position bonus
-  gomoku_connection_boost: 2.0      # Per connection bonus
-  
-  # TensorRT optimizations for RTX 3060 Ti
-  use_tensorrt: true
-  tensorrt_fp16: true
-  tensorrt_fallback: true
-  tensorrt_workspace_size: 2048  # 2GB workspace for complex optimizations
+  # TensorRT settings moved to training section
 
 network:
   # Optimized ResNet for RTX 3060 Ti (maximize learning within VRAM constraints)
@@ -106,15 +74,14 @@ network:
   l2_regularization: 0.0003  # Increased regularization
   
   # Activation optimized for Tensor Cores
-  activation: swish          # Better convergence than ReLU
+  activation: gelu           # Better convergence than ReLU
   weight_init: he_normal
 
 training:
   # Optimized for 3-4 day intensive training
   batch_size: 1024            # Larger batches for better GPU utilization (64GB RAM allows this)
   learning_rate: 0.002       # Slightly higher for faster initial learning
-  learning_rate_schedule: cosine_with_restarts  # Better for long training
-  lr_warmup_steps: 2000      # Longer warmup for stability
+  learning_rate_schedule: cosine  # Better for long training
   lr_decay_steps: 40         # More frequent decay steps
   lr_decay_rate: 0.85        # Slightly more aggressive decay
   min_learning_rate: 0.00005 # Lower floor for fine-tuning
@@ -136,9 +103,8 @@ training:
   early_stopping_patience: 15  # More patience for longer training
   early_stopping_min_delta: 0.0003
   
-  # Self-play settings optimized for CPU workers (no more VRAM constraints)
-  num_games_per_iteration: 120  # Adjusted for optimal worker count (12 workers × 10 games each)
-  num_workers: 12            # Optimal: match physical cores (12) for CPU-intensive MCTS
+  # Self-play settings optimized for single-GPU execution
+  num_games_per_iteration: 120  # Sequential games on single GPU
   max_moves_per_game: 225    # Full board
   resign_threshold: -0.92    # Slightly more conservative
   resign_check_moves: 18     # More moves to verify resignation
@@ -149,13 +115,13 @@ training:
   sample_weight_by_game_length: true
   augment_data: true
   shuffle_buffer_size: 15000 # Larger shuffle buffer
-  dataloader_workers: 12     # Increased for faster data loading during NN training (separate from self-play)
+  dataloader_workers: 12      # DataLoader workers for training (not self-play)
   pin_memory: true
-  persistent_workers: true
+  # Persistent workers not needed for single-GPU
   
   # Mixed precision optimized for Ampere architecture
   mixed_precision: true
-  amp_opt_level: O2          # More aggressive mixed precision
+  # Mixed precision handled by PyTorch native AMP
   loss_scale: dynamic
   
   # Paths for 3-day intensive training
@@ -166,7 +132,6 @@ training:
 arena:
   # Optimized evaluation for intensive 3-4 day training
   num_games: 40              # More games for better statistical confidence
-  num_workers: 12            # More workers for faster evaluation (leverage CPU)
   win_threshold: 0.53        # Slightly more stringent for quality control
   statistical_significance: true
   confidence_level: 0.95
@@ -185,11 +150,7 @@ arena:
   elo_anchor_rating: 0.0
   update_elo: true
   
-  # Enhanced ELO tracking for long training
-  elo_enable_deflation: true
-  elo_uncertainty_tracking: true
-  elo_validation_enabled: true
-  elo_health_monitoring: true
+  # ELO tracking enabled by update_elo flag
   
   # Tournament settings
   tournament_rounds: 1
@@ -205,19 +166,19 @@ arena:
 # 
 # Hardware Optimizations for Ryzen 9 5900X + RTX 3060 Ti + 64GB RAM:
 # 1. MCTS simulations: set to 100 (balanced for quality and speed)
-# 2. Wave size: 2048 → 2048 (balanced for multi-worker GPU memory)
-# 3. Workers: 16 → 8 (GPU memory constraint: 8 × ~600MB = ~4.8GB)
-# 4. Batch size: 256 → 384 (leverage abundant RAM)
-# 5. Memory pool: 4GB per worker (optimized for 8GB total VRAM)
+# 2. Wave size: 3072 → 3072 (optimized for single-GPU execution)
+# 3. Single GPU: No multiprocessing - direct GPU evaluation
+# 4. Batch size: 512 (optimal for TensorRT + single GPU)
+# 5. Memory pool: 4GB (optimized for single large tree)
 # 6. ResNet blocks: 10 → 12 (stronger pattern recognition)
 # 7. Window size: 30K → 50K (much larger replay buffer)
 # 8. Iterations: 100 → 200 (3-4 day training capacity)
 #
 # Resource Allocation (RTX 3060 Ti - 8GB + Ryzen 9 5900X 12 cores/24 threads):
-# - GPU: TensorRT model (~1.5GB) + evaluation service
-# - CPU: 12 MCTS workers (optimal: 1 per physical core) + 12 dataloader workers
-# - RAM: 12 × ~500MB per worker tree = ~6GB (out of 64GB available)
-# - Total GPU usage: ~2GB (well within 8GB capacity)
+# - GPU: TensorRT model (~1.5GB) + direct GPU evaluation + MCTS tree operations
+# - CPU: 22 threads for parallel MCTS tree operations
+# - RAM: Single large MCTS tree (optimized for memory efficiency)
+# - Total GPU usage: ~4-5GB (well within 8GB capacity)
 #
 # Performance Estimates:
 # - ~1-1.5 iterations/hour (with optimizations)

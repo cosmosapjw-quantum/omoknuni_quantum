@@ -1,0 +1,63 @@
+# Include documentation and configuration files
+include README.md
+include LICENSE
+include pyproject.toml
+include requirements.txt
+include CLAUDE.md
+
+# Include configuration files
+recursive-include configs *.yaml *.yml *.json
+recursive-include python/mcts *.yaml *.yml *.json
+
+# Include C++ source files
+recursive-include cpp *.cpp *.hpp *.h *.cc
+recursive-include cpp/src *.cpp *.hpp *.h
+recursive-include cpp/include *.hpp *.h
+recursive-include cpp/tests *.cpp *.hpp *.h
+
+# Include CUDA source files
+recursive-include cuda *.cu *.cuh *.h
+recursive-include cuda/kernels *.cu *.cuh
+recursive-include cuda/include *.cuh *.h
+
+# Include CMake files
+include CMakeLists.txt
+recursive-include cpp CMakeLists.txt
+recursive-include cuda CMakeLists.txt
+recursive-include cmake *.cmake
+
+# Include Python package data
+recursive-include python *.py *.pyi
+recursive-include python/mcts *.py *.pyi
+
+# Include test data
+recursive-include tests *.py *.yaml *.json
+recursive-include tests/data *
+
+# Include example scripts
+recursive-include examples *.py *.yaml *.md
+
+# Include build scripts
+include setup.py
+include setup.cfg
+
+# Exclude build artifacts and cache
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude *.dylib
+global-exclude *.dll
+global-exclude *.o
+global-exclude *.a
+prune build
+prune dist
+prune .pytest_cache
+prune .mypy_cache
+prune .tox
+prune .coverage
+prune htmlcov
+prune wheelhouse
+prune .eggs
+prune *.egg-info

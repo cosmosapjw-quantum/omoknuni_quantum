@@ -582,45 +582,9 @@ class GameInterface:
             
         # Check if move is legal
         if not state.is_legal_move(move):
-            # DEBUG: Detailed analysis of why move is illegal
             move_row = move // self.board_size
             move_col = move % self.board_size
-            logger.error(f"[GAME_INTERFACE ERROR] Illegal move detected: {move}")
-            logger.error(f"[GAME_INTERFACE ERROR] Move {move} -> coordinates ({move_row}, {move_col})")
-            logger.error(f"[GAME_INTERFACE ERROR] Board size: {self.board_size}x{self.board_size}")
-            logger.error(f"[GAME_INTERFACE ERROR] Coordinate bounds: row {move_row} < {self.board_size}: {move_row < self.board_size}")
-            logger.error(f"[GAME_INTERFACE ERROR] Coordinate bounds: col {move_col} < {self.board_size}: {move_col < self.board_size}")
-            
-            if hasattr(state, 'board') and hasattr(state.board, 'shape'):
-                try:
-                    logger.error(f"[GAME_INTERFACE ERROR] Board shape: {state.board.shape}")
-                    board_value = state.board[move_row, move_col] if move_row < state.board.shape[0] and move_col < state.board.shape[1] else 'OUT_OF_BOUNDS'
-                    logger.error(f"[GAME_INTERFACE ERROR] Board[{move_row}][{move_col}] = {board_value}")
-                    logger.error(f"[GAME_INTERFACE ERROR] Position occupied: {board_value != 0 if board_value != 'OUT_OF_BOUNDS' else 'UNKNOWN'}")
-                    
-                    # Show occupied positions
-                    occupied_positions = np.argwhere(state.board != 0)
-                    if len(occupied_positions) > 0:
-                        occupied_actions = [pos[0] * self.board_size + pos[1] for pos in occupied_positions]
-                        logger.error(f"[GAME_INTERFACE ERROR] Total occupied positions: {len(occupied_positions)}")
-                        logger.error(f"[GAME_INTERFACE ERROR] Occupied actions: {sorted(occupied_actions)}")
-                        logger.error(f"[GAME_INTERFACE ERROR] Move {move} in occupied: {move in occupied_actions}")
-                    else:
-                        logger.error(f"[GAME_INTERFACE ERROR] No occupied positions (empty board)")
-                except Exception as e:
-                    logger.error(f"[GAME_INTERFACE ERROR] Failed to analyze board: {e}")
-            
-            # Get and log legal moves
-            try:
-                legal_moves = self.get_legal_moves(state)
-                logger.error(f"[GAME_INTERFACE ERROR] Legal moves count: {len(legal_moves)}")
-                logger.error(f"[GAME_INTERFACE ERROR] Expected moves count: {self.board_size * self.board_size}")
-                if len(legal_moves) > 0:
-                    logger.error(f"[GAME_INTERFACE ERROR] Legal moves range: [{min(legal_moves)}, {max(legal_moves)}]")
-            except Exception as e:
-                logger.error(f"[GAME_INTERFACE ERROR] Failed to get legal moves: {e}")
-            
-            raise ValueError(f"Illegal move: {move}")
+            raise ValueError(f"Illegal move: {move} (row {move_row}, col {move_col})")
         new_state = state.clone()
         new_state.make_move(move)
         return new_state
@@ -662,7 +626,7 @@ class GameInterface:
             state: Game state
             
         Returns:
-            0 or 1 for current player
+            1 or 2 for current player (1=BLACK, 2=WHITE)
         """
         return state.get_current_player()
         
@@ -1120,7 +1084,7 @@ class GameInterface:
         """Create a deep copy of the state"""
         return state.clone()
     
-    def get_canonical_form(self, state: Any) -> np.ndarray:
+    def get_canonical_form(self, state: Any, player: int = None) -> np.ndarray:
         """Get canonical form of the state from current player's perspective
         
         For most games, the state is already from the current player's perspective.
@@ -1128,6 +1092,7 @@ class GameInterface:
         
         Args:
             state: Game state
+            player: Player perspective (optional, for compatibility)
             
         Returns:
             State tensor from current player's perspective

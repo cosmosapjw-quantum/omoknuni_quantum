@@ -311,7 +311,8 @@ class CSRTree:
         # Update row pointers for CSR format
         # This is needed to properly query children later
         if hasattr(self.csr_storage, 'rebuild_row_pointers'):
-            self.csr_storage.rebuild_row_pointers(self.children)
+            # OPTIMIZATION: Only process nodes that actually exist
+            self.csr_storage.rebuild_row_pointers(self.children, num_active_nodes=self.num_nodes)
         
         # Update counters
         self.node_counter[0] = self.num_nodes
@@ -610,7 +611,8 @@ class CSRTree:
         """Ensure CSR structure is consistent"""
         if force or self.csr_storage.needs_row_ptr_update():
             self.flush_batch()
-            self.csr_storage.rebuild_row_pointers(self.children)
+            # OPTIMIZATION: Only process nodes that actually exist
+            self.csr_storage.rebuild_row_pointers(self.children, num_active_nodes=self.num_nodes)
             
     def flush_batch(self):
         """Flush any pending batched operations"""

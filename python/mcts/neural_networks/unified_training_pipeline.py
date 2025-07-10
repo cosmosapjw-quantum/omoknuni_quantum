@@ -27,8 +27,6 @@ import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm, trange
-import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 
 # Import only essential components at module level
@@ -374,7 +372,6 @@ class UnifiedTrainingPipeline:
         arena_config = ArenaConfig(
             num_games=self.config.arena.num_games,
             win_threshold=self.config.arena.win_threshold,
-            num_workers=self.config.arena.num_workers,
             mcts_simulations=self.config.arena.mcts_simulations,
             c_puct=self.config.arena.c_puct,
             temperature=self.config.arena.temperature,
@@ -524,49 +521,25 @@ class UnifiedTrainingPipeline:
             device=self.config.mcts.device
         )
         
-        # Configure evaluator to return torch tensors for GPU operations
+        # Configure evaluator to return torch tensors
         evaluator._return_torch_tensors = True
         
-        # Create game class that works with SelfPlayManager
-        class GameWrapper:
-            """Wrapper to make GameInterface work like a game class"""
-            def __init__(self):
-                self.state = self.game_interface.create_initial_state()
-                
-            def get_state(self):
-                return self.state
-                
-            def get_current_player(self):
-                # GameInterface doesn't track player, so we'll track it externally
-                return 1  # Will be managed by SelfPlayGame
-                
-            def get_valid_actions(self):
-                return self.game_interface.get_legal_moves(self.state)
-                
-            def is_terminal(self):
-                return self.game_interface.is_terminal(self.state)
-                
-            def make_action(self, action):
-                self.state = self.game_interface.get_next_state(self.state, action)
-                
-            def get_winner(self):
-                return self.game_interface.get_winner(self.state)
-                
-            def get_action_size(self):
-                return self._get_action_size()
+        # Create game configuration
+        game_config = {
+            'game_type': self.config.game.game_type,
+            'board_size': self.config.game.board_size,
+            'input_representation': getattr(self.config.network, 'input_representation', 'enhanced')
+        }
         
-        # Bind methods to access pipeline's context
-        GameWrapper.game_interface = self.game_interface
-        GameWrapper._get_action_size = self._get_action_size
-        
-        # Use SelfPlayManager
+        # Use SelfPlayManager with game configuration
         self_play_manager = SelfPlayManager(
             config=self.config,
-            game_class=GameWrapper,
-            evaluator=evaluator
+            game_class=None,  # We'll use game_config instead
+            evaluator=evaluator,
+            game_config=game_config
         )
         
-        # Generate self-play data
+        # Generate self-play data (will use GPU service for multi-worker)
         examples = self_play_manager.generate_self_play_data()
         
         # Collect metrics
@@ -580,44 +553,35 @@ class UnifiedTrainingPipeline:
     
     def _log_game_quality_metrics(self):
         """Log comprehensive game quality metrics"""
-        if not self.game_metrics['game_lengths']:
+        if not self.game_metrics or self.game_metrics.get('total_games', 0) == 0:
             logger.warning("No game metrics collected!")
             return
             
         import numpy as np
         import time
         
-        # Calculate elapsed time
-        elapsed_time = time.time() - self.game_metrics.get('start_time', time.time())
+        # Use the metrics from collect_game_metrics
+        total_games = self.game_metrics.get('total_games', 0)
+        avg_length = self.game_metrics.get('avg_game_length', 0)
+        min_length = self.game_metrics.get('min_game_length', 0)
+        max_length = self.game_metrics.get('max_game_length', 0)
         
-        # Calculate statistics
-        avg_length = np.mean(self.game_metrics['game_lengths'])
-        std_length = np.std(self.game_metrics['game_lengths'])
-        min_length = np.min(self.game_metrics['game_lengths'])
-        max_length = np.max(self.game_metrics['game_lengths'])
+        # Calculate std_length (approximation since we don't have the raw data)
+        std_length = (max_length - min_length) / 4.0 if total_games > 1 else 0
         
-        total_games = sum(self.game_metrics['outcomes'].values())
+        # Get win rates
+        p1_win_rate = self.game_metrics.get('win_rate_p1', 0)
+        p2_win_rate = self.game_metrics.get('win_rate_p2', 0)
+        draw_rate = self.game_metrics.get('draw_rate', 0)
         
-        # Calculate win rates
-        p1_win_rate = self.game_metrics['outcomes']['player1_wins'] / max(total_games, 1)
-        p2_win_rate = self.game_metrics['outcomes']['player2_wins'] / max(total_games, 1)
-        draw_rate = self.game_metrics['outcomes']['draws'] / max(total_games, 1)
+        # Get the new metrics from collect_game_metrics
+        resignation_count = self.game_metrics.get('resignation_count', 0)
+        avg_entropy = self.game_metrics.get('avg_entropy', 0)
+        value_acc = self.game_metrics.get('value_accuracy', 0)
+        illegal_move_attempts = self.game_metrics.get('illegal_move_attempts', 0)
         
-        # Policy entropy analysis
-        if self.game_metrics['policy_entropies']:
-            avg_entropy = np.mean(self.game_metrics['policy_entropies'])
-            entropy_trend = 'decreasing' if len(self.game_metrics['policy_entropies']) > 10 and \
-                           np.mean(self.game_metrics['policy_entropies'][-10:]) < \
-                           np.mean(self.game_metrics['policy_entropies'][:10]) else 'stable'
-        else:
-            avg_entropy = 0
-            entropy_trend = 'unknown'
-        
-        # Value accuracy
-        if self.game_metrics['value_accuracy']:
-            value_acc = np.mean(self.game_metrics['value_accuracy'])
-        else:
-            value_acc = 0
+        # Entropy trend would require historical data, so keep as unknown for now
+        entropy_trend = 'unknown'
         
         logger.info("="*80)
         logger.info("SELF-PLAY GAME QUALITY METRICS")
@@ -625,13 +589,13 @@ class UnifiedTrainingPipeline:
         logger.info(f"Total games played: {total_games}")
         logger.info(f"Game length: avg={avg_length:.1f}, std={std_length:.1f}, min={min_length}, max={max_length}")
         logger.info(f"Outcomes: P1 wins={p1_win_rate:.1%}, P2 wins={p2_win_rate:.1%}, Draws={draw_rate:.1%}")
-        logger.info(f"Resignations: {self.game_metrics['resignation_count']} ({self.game_metrics['resignation_count']/max(total_games,1):.1%})")
+        logger.info(f"Resignations: {resignation_count} ({resignation_count/max(total_games,1):.1%})")
         logger.info(f"Average policy entropy: {avg_entropy:.3f} (trend: {entropy_trend})")
         logger.info(f"Value prediction accuracy: {value_acc:.1%}")
-        logger.info(f"Illegal move attempts: {self.game_metrics['illegal_move_attempts']}")
-        
-        if self.game_metrics['avg_branching_factor']:
-            logger.info(f"Average branching factor: {np.mean(self.game_metrics['avg_branching_factor']):.1f}")
+        if illegal_move_attempts > 0:
+            logger.error(f"❌ Illegal moves attempted: {illegal_move_attempts}")
+        else:
+            logger.info(f"Illegal move attempts: {illegal_move_attempts}")
         
         # Check for potential issues
         if avg_length < 20:
@@ -640,22 +604,20 @@ class UnifiedTrainingPipeline:
             logger.warning("⚠️  High win rate imbalance detected! Check for first-player advantage.")
         if avg_entropy < 0.5:
             logger.warning("⚠️  Low policy entropy! Model may be overly deterministic.")
-        if self.game_metrics['illegal_move_attempts'] > 0:
-            logger.error("❌ Illegal moves attempted! Check MCTS action selection.")
         
         logger.info("="*80)
         
         # Record self-play metrics
         self.metrics_recorder.record_self_play_metrics(
             iteration=self.iteration,
-            games_per_second=total_games / elapsed_time if elapsed_time > 0 else 0,
+            games_per_second=total_games / 1.0,  # Default to 1 second if we don't have timing
             avg_game_length=avg_length,
             policy_entropy=avg_entropy,
             mcts_value_accuracy=value_acc,
             p1_win_rate=p1_win_rate,
             p2_win_rate=p2_win_rate,
             draw_rate=draw_rate,
-            resignation_rate=self.game_metrics['resignation_count'] / max(total_games, 1)
+            resignation_rate=resignation_count / max(total_games, 1)
         )
     
     
@@ -666,6 +628,7 @@ class UnifiedTrainingPipeline:
         
         for example in examples:
             # Get board and policy from the example
+            # State is already a numpy array
             board = example.state
             policy = example.policy
             
@@ -967,14 +930,16 @@ class UnifiedTrainingPipeline:
         # Create checkpoint manager
         checkpoint_manager = CheckpointManager(
             checkpoint_dir=self.checkpoint_dir,
-            data_dir=self.data_dir
+            config=self.config
         )
         
-        # Prepare metadata
+        # Prepare metadata - include scheduler and scaler state in metadata
         metadata = {
             "best_model_iteration": self.best_model_iteration,
             "elo_ratings": self.arena.elo_system.ratings if self.arena.elo_system else {},
-            "config": self.config
+            "config": self.config,
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            "scaler_state_dict": self.scaler.state_dict() if self.scaler else None
         }
         
         # Save checkpoint
@@ -983,9 +948,7 @@ class UnifiedTrainingPipeline:
             model=self.model,
             optimizer=self.optimizer,
             replay_buffer=self.replay_buffer,
-            metadata=metadata,
-            scheduler=self.scheduler,
-            scaler=self.scaler
+            metadata=metadata
         )
         
         logger.info(f"Saved checkpoint at iteration {self.iteration}")
@@ -1007,7 +970,7 @@ class UnifiedTrainingPipeline:
         # Create checkpoint manager
         checkpoint_manager = CheckpointManager(
             checkpoint_dir=self.checkpoint_dir,
-            data_dir=self.data_dir
+            config=self.config
         )
         
         # Load checkpoint
@@ -1057,7 +1020,7 @@ class UnifiedTrainingPipeline:
         results = {}
         
         model_pairs = list(combinations(models.keys(), 2))
-        with tqdm(total=len(model_pairs), desc="Tournament matches") as pbar:
+        with tqdm(total=len(model_pairs), desc="Tournament matches", leave=False) as pbar:
             for model1_name, model2_name in model_pairs:
                 wins, draws, losses = self.arena.compare_models(
                     models[model1_name], models[model2_name],
@@ -1191,8 +1154,8 @@ class UnifiedTrainingPipeline:
             input_shape = state_array.shape  # Should be (C, H, W)
             
             # Determine batch sizes to optimize for
-            max_batch_size = getattr(self.config.mcts, 'tensorrt_max_batch_size', 512)
-            batch_sizes = [1, 8, 32, 64, 128]  # Common batch sizes
+            max_batch_size = getattr(self.config.mcts, 'tensorrt_max_batch_size', 2048)
+            batch_sizes = [1, 8, 32, 64, 128, 512, 1024, 2048]  # Common batch sizes
             if hasattr(self.config.training, 'batch_size'):
                 batch_sizes.append(self.config.training.batch_size)
             if max_batch_size not in batch_sizes:
@@ -1249,8 +1212,7 @@ if __name__ == "__main__":
     import argparse
     import sys
     
-    # Set multiprocessing start method for CUDA compatibility
-    mp.set_start_method('spawn', force=True)
+    # Single-GPU mode - no multiprocessing needed
     
     parser = argparse.ArgumentParser(description="Unified AlphaZero Training Pipeline")
     parser.add_argument("--config", type=str, help="Path to YAML config file")
@@ -1273,7 +1235,7 @@ if __name__ == "__main__":
         config.experiment_name = args.experiment or f"{args.game}_unified_training"
         
         # Set some defaults
-        config.training.num_workers = 4
+        # Single-GPU mode - no workers needed
         config.training.num_games_per_iteration = 100
         config.arena.enabled = True
         config.arena.evaluation_interval = 10

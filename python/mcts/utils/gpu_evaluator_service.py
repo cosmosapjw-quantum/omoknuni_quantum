@@ -789,14 +789,8 @@ class GPUEvaluatorService:
                 self._batch_count = 0
             self._batch_count += 1
             
-            # Log timing for first few batches and periodically
-            if self._batch_count <= 5 or self._batch_count % 1000 == 0:
-                logger.debug(f"Batch {self._batch_count} - Size: {batch_size}, "
-                            f"Total: {elapsed*1000:.1f}ms ({batch_size/elapsed:.1f} req/s)")
+            # Update batch statistics
             self.stats['avg_latency'] = elapsed / batch_size
-            
-            if self.stats['total_batches'] % 100 == 0:
-                logger.debug(f"GPUEvaluatorService stats: {self.stats}")
             
         except Exception as e:
             logger.error(f"Error processing batch: {e}")

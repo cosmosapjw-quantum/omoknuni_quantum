@@ -106,10 +106,16 @@ class MCTSFullConfig:
     min_wave_size: int = 256
     max_wave_size: int = 3072
     batch_size: int = 256
+    tree_batch_size: int = 8  # Batch size for tree operations
     virtual_loss: float = 1.0
     enable_virtual_loss: bool = True
     enable_fast_ucb: bool = True
     classical_only_mode: bool = True
+    
+    # Timeout parameters (in seconds)
+    gpu_batch_timeout: float = 0.020
+    worker_batch_timeout: float = 0.050
+    max_coordination_batch_size: int = 128
     
     # Memory and optimization
     memory_pool_size_mb: int = 2048
@@ -127,7 +133,7 @@ class MCTSFullConfig:
     tensorrt_fallback: bool = True
     tensorrt_workspace_size: int = 2048  # MB - workspace size for optimization
     tensorrt_int8: bool = False  # INT8 quantization (requires calibration)
-    tensorrt_max_batch_size: int = 512  # Maximum batch size to optimize for
+    tensorrt_max_batch_size: int = 2048  # Maximum batch size to optimize for
     tensorrt_engine_cache_dir: Optional[str] = None  # Custom cache directory
     
     # Quantum features disabled

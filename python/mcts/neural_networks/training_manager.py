@@ -124,7 +124,7 @@ class TrainingManager:
         self.scheduler = self._create_scheduler()
         
         # Initialize loss functions
-        self.policy_loss_fn = nn.KLDivLoss(reduction='mean')
+        self.policy_loss_fn = nn.KLDivLoss(reduction='batchmean')
         self.value_loss_fn = nn.MSELoss()
         
         # Mixed precision setup
@@ -134,7 +134,7 @@ class TrainingManager:
             torch.cuda.is_available()
         )
         if self.use_mixed_precision:
-            self.scaler = torch.cuda.amp.GradScaler()
+            self.scaler = torch.amp.GradScaler('cuda')
         
         # Metrics tracking
         self.metrics = TrainingMetrics()
@@ -247,7 +247,7 @@ class TrainingManager:
             
             # Mixed precision training
             if self.use_mixed_precision:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     total_loss, policy_loss, value_loss = self.compute_loss(
                         states, target_policies, target_values
                     )

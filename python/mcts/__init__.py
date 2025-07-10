@@ -36,8 +36,8 @@ from .neural_networks import (
 # GPU acceleration components
 from .gpu import (
     CSRTree, CSRTreeConfig,
-    CSRBatchOperations,
-    GPUTreeKernels
+    MCTSGPUAccelerator,
+    get_mcts_gpu_accelerator
 )
 
 # Quantum components removed
@@ -74,13 +74,12 @@ __all__ = [
     
     # GPU
     "CSRTree", "CSRTreeConfig",
-    "CSRBatchOperations",
-    "GPUTreeKernels",
+    "MCTSGPUAccelerator",
+    "get_mcts_gpu_accelerator",
     
     # Utils
     "AlphaZeroConfig",
     "MCTSFullConfig",
-    "QuantumLevel",
     "HardwareInfo",
     "create_default_config",
     "merge_configs",

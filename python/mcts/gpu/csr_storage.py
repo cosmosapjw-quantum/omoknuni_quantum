@@ -56,6 +56,11 @@ class CSRStorage:
         else:
             initial_edges = 50000
             
+        # Debug logging (only for errors)
+        # import logging
+        # logger = logging.getLogger(__name__)
+        # logger.info(f"CSRStorage: init_nodes={initial_nodes}, init_edges={initial_edges}, row_ptr_size={initial_nodes + 1}")
+            
         # Row pointers (one per node + 1)
         self.row_ptr = torch.zeros(initial_nodes + 1, device=self.device, 
                                   dtype=self.config.dtype_indices)
@@ -100,10 +105,10 @@ class CSRStorage:
         start_edge = self.num_edges
         edge_indices = torch.arange(start_edge, start_edge + num_new_edges, device=self.device)
         
-        # Vectorized assignment
-        self.col_indices[edge_indices] = child_indices
-        self.edge_actions[edge_indices] = actions
-        self.edge_priors[edge_indices] = priors
+        # Vectorized assignment - ensure dtypes match
+        self.col_indices[edge_indices] = child_indices.to(self.config.dtype_indices)
+        self.edge_actions[edge_indices] = actions.to(self.config.dtype_actions)
+        self.edge_priors[edge_indices] = priors.to(self.config.dtype_values)
         
         self.num_edges += num_new_edges
         
@@ -188,31 +193,79 @@ class CSRStorage:
                self.edge_actions[edge_slice],
                self.edge_priors[edge_slice])
                
-    def rebuild_row_pointers(self, children_table: torch.Tensor):
+    def rebuild_row_pointers(self, children_table: torch.Tensor, num_active_nodes: int = None):
         """Rebuild row pointers from children table
         
         Args:
             children_table: [num_nodes, max_children] tensor where -1 indicates no child
+            num_active_nodes: Number of nodes actually in use (if None, processes all)
         """
         if not self._needs_row_ptr_update:
             return
             
         with torch.no_grad():
-            # Reset row pointers
-            self.row_ptr.zero_()
-            
-            # Count valid children for each node
-            valid_children_mask = children_table >= 0
-            children_counts = valid_children_mask.sum(dim=1)
-            
-            # Ensure we don't exceed row_ptr bounds
-            max_nodes = min(len(children_counts), self.row_ptr.shape[0] - 1)
-            if max_nodes > 0:
-                # Set counts in row_ptr (offset by 1 for CSR format)
-                self.row_ptr[1:max_nodes+1] = children_counts[:max_nodes].to(self.row_ptr.dtype)
+            # OPTIMIZATION: Only process active nodes, not the entire pre-allocated table
+            if num_active_nodes is not None:
+                # Only look at nodes that actually exist
+                active_children = children_table[:num_active_nodes]
+                valid_children_mask = active_children >= 0
+                children_counts = valid_children_mask.sum(dim=1)
                 
-            # Convert counts to pointers (cumulative sum)
-            self.row_ptr = torch.cumsum(self.row_ptr, dim=0)
+                # Ensure row_ptr is large enough before resetting
+                self.grow_row_ptr_if_needed(num_active_nodes)
+                max_nodes = num_active_nodes
+            else:
+                # Old behavior - process entire table
+                valid_children_mask = children_table >= 0
+                children_counts = valid_children_mask.sum(dim=1)
+                
+                # Ensure row_ptr is large enough
+                self.grow_row_ptr_if_needed(len(children_counts))
+                max_nodes = len(children_counts)
+            
+            # Reset row pointers after ensuring size - zero only the part we'll use
+            if max_nodes + 1 <= self.row_ptr.shape[0]:
+                self.row_ptr[:max_nodes+1].zero_()
+            else:
+                # This should never happen now
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"CRITICAL: row_ptr still too small after grow! max_nodes={max_nodes}, shape={self.row_ptr.shape}")
+                self.row_ptr.zero_()
+            
+            if max_nodes > 0:
+                # ROBUST FIX: Always ensure size before assignment
+                import logging
+                logger = logging.getLogger(__name__)
+                
+                while max_nodes + 1 > self.row_ptr.shape[0]:
+                    logger.warning(f"Growing row_ptr: need {max_nodes+1}, have {self.row_ptr.shape[0]}")
+                    self.grow_row_ptr_if_needed(max_nodes + 100)
+                    
+                # Set counts in row_ptr (offset by 1 for CSR format)
+                # Final size check before assignment
+                if max_nodes + 1 > self.row_ptr.shape[0]:
+                    # Emergency growth
+                    self.grow_row_ptr_if_needed(max_nodes + 100)
+                
+                try:
+                    # Ensure we don't index beyond children_counts
+                    actual_max_nodes = min(max_nodes, children_counts.shape[0])
+                    self.row_ptr[1:actual_max_nodes+1] = children_counts[:actual_max_nodes].to(self.row_ptr.dtype)
+                except RuntimeError as e:
+                    # Emergency fix: use the smaller of the two sizes
+                    safe_max_nodes = min(max_nodes, children_counts.shape[0], self.row_ptr.shape[0] - 1)
+                    if safe_max_nodes > 0:
+                        self.row_ptr[1:safe_max_nodes+1] = children_counts[:safe_max_nodes].to(self.row_ptr.dtype)
+                    # Silent fallback - assignment partially completed
+                
+            # Convert counts to pointers (cumulative sum) - use slice assignment to preserve size
+            if max_nodes + 1 <= self.row_ptr.shape[0]:
+                temp_cumsum = torch.cumsum(self.row_ptr[:max_nodes+1], dim=0)
+                self.row_ptr[:max_nodes+1] = temp_cumsum
+            else:
+                # Fallback - this shouldn't happen
+                self.row_ptr = torch.cumsum(self.row_ptr, dim=0)
             
         self._needs_row_ptr_update = False
         

@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Type, Any
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
@@ -21,6 +20,7 @@ from mcts.core.mcts import MCTS
 from mcts.core.mcts_config import MCTSConfig
 from mcts.core.game_interface import GameInterface
 from mcts.utils.config_system import AlphaZeroConfig
+from mcts.utils.direct_gpu_evaluator import DirectGPUEvaluator
 
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ class ArenaConfig:
     """Configuration for arena battles"""
     num_games: int = 40
     win_threshold: float = 0.55
-    num_workers: int = 4
     mcts_simulations: int = 200  # Reduced for faster arena matches
     c_puct: float = 1.0
     temperature: float = 0.0
@@ -285,12 +284,12 @@ class ArenaMatch:
         mcts2 = MCTS(config=mcts_config, evaluator=self.evaluator2,
                      game_interface=self.game_interface)
         
-        # Map player to MCTS
-        player_mcts = {1: mcts1, -1: mcts2}
+        # Map player to MCTS (use 0-based indexing to match game interface)
+        player_mcts = {0: mcts1, 1: mcts2}
         
         # Play game
         move_count = 0
-        current_player = 1
+        current_player = 0  # Start with player 0 (game interface uses 0-based indexing)
         
         while not self.game_interface.is_terminal(state):
             # Get canonical form for current player
@@ -301,14 +300,23 @@ class ArenaMatch:
             action_probs = mcts.search(canonical_state)
             
             # Select best action (temperature=0 for arena)
-            action = np.argmax(action_probs)
+            # CRITICAL FIX: Ensure selected action is legal
+            # Note: get_legal_moves needs the original state, not the canonical numpy array
+            legal_moves = self.game_interface.get_legal_moves(state)
+            if len(legal_moves) == 0:
+                raise RuntimeError("No legal moves available")
+            
+            # Find the best legal action
+            legal_probs = action_probs[legal_moves]
+            best_legal_idx = np.argmax(legal_probs)
+            action = legal_moves[best_legal_idx]
             
             # Make move
             state = self.game_interface.get_next_state(state, action)
             move_count += 1
             
-            # Switch player
-            current_player = -current_player
+            # Switch player (toggle between 0 and 1)
+            current_player = 1 - current_player
             
             # Prevent infinite games
             if move_count > 500:
@@ -335,6 +343,14 @@ class ArenaMatch:
         model2_wins = 0
         draws = 0
         
+        # Add progress bar if enabled
+        if self.config.use_progress_bar:
+            pbar = tqdm(
+                total=self.config.num_games,
+                desc=f"Arena match {self.match_id}",
+                leave=False
+            )
+        
         for game_idx in range(self.config.num_games):
             # Alternate starting player
             if game_idx % 2 == 0:
@@ -351,6 +367,19 @@ class ArenaMatch:
                 model2_wins += 1
             else:
                 draws += 1
+            
+            # Update progress bar
+            if self.config.use_progress_bar:
+                pbar.update(1)
+                pbar.set_postfix({
+                    'M1': model1_wins,
+                    'M2': model2_wins,
+                    'D': draws
+                })
+        
+        # Close progress bar
+        if self.config.use_progress_bar:
+            pbar.close()
         
         total_games = model1_wins + model2_wins + draws
         win_rate = model1_wins / total_games if total_games > 0 else 0.5
@@ -423,13 +452,31 @@ class ArenaManager:
         Returns:
             Evaluation results including win rate and ELO updates
         """
-        logger.info(f"Arena: {model1_name} vs {model2_name} - {self.arena_config.num_games} games")
+        logger.info(f"Arena: {model1_name} vs {model2_name} - {self.arena_config.num_games} games (Single GPU)")
         
-        # Run matches
-        if self.arena_config.num_workers <= 1:
-            results = self._run_single_process_matches(evaluator1, evaluator2)
+        # Convert evaluators to DirectGPUEvaluator if needed
+        if hasattr(evaluator1, 'model'):
+            gpu_eval1 = DirectGPUEvaluator(
+                model=evaluator1.model,
+                device=self.arena_config.device,
+                action_size=self.config.game.board_size ** 2,
+                use_mixed_precision=getattr(self.config.mcts, 'use_mixed_precision', True)
+            )
         else:
-            results = self._run_parallel_matches(evaluator1, evaluator2)
+            gpu_eval1 = evaluator1
+            
+        if hasattr(evaluator2, 'model'):
+            gpu_eval2 = DirectGPUEvaluator(
+                model=evaluator2.model,
+                device=self.arena_config.device,
+                action_size=self.config.game.board_size ** 2,
+                use_mixed_precision=getattr(self.config.mcts, 'use_mixed_precision', True)
+            )
+        else:
+            gpu_eval2 = evaluator2
+        
+        # Always use single-process matches for single-GPU
+        results = self._run_single_gpu_matches(gpu_eval1, gpu_eval2)
         
         # Update ELO ratings using wins/draws/losses
         self.elo_system.update_ratings(
@@ -452,7 +499,7 @@ class ArenaManager:
         
         return results
     
-    def _run_single_process_matches(self, evaluator1, evaluator2) -> Dict[str, Any]:
+    def _run_single_gpu_matches(self, evaluator1, evaluator2) -> Dict[str, Any]:
         """Run matches in a single process"""
         # Create game interface if not provided
         if self.game_interface is None:
@@ -472,12 +519,12 @@ class ArenaManager:
             evaluator1=evaluator1,
             evaluator2=evaluator2,
             config=self.arena_config,
-            match_id="single_process"
+            match_id="single_gpu"
         )
         
         return match.play_match()
     
-    def _run_parallel_matches(self, evaluator1, evaluator2) -> Dict[str, Any]:
+    def _run_parallel_matches_deprecated(self, evaluator1, evaluator2) -> Dict[str, Any]:
         """Run matches in parallel"""
         # Divide games among workers
         games_per_worker = self.arena_config.num_games // self.arena_config.num_workers
@@ -527,7 +574,7 @@ class ArenaManager:
             'win_rate': model1_wins / total_games if total_games > 0 else 0.5
         }
     
-    def _worker_play_matches(self, worker_id: int, evaluator1, evaluator2,
+    def _worker_play_matches_deprecated(self, worker_id: int, evaluator1, evaluator2,
                            config: ArenaConfig) -> Dict[str, Any]:
         """Worker function for parallel match execution"""
         # Create game interface if not provided
@@ -776,7 +823,8 @@ class ArenaManager:
         logger.info(f"Best model progression: {best_model} (ELO: {best_elo:.1f}) -> {current_model} (ELO: {current_elo:.1f})")
         logger.info(f"Net ELO gain: {elo_gain:+.1f}")
         
-        # Validation - this should never trigger with the logic above
-        assert elo_gain > 0, f"New best model must have higher ELO than previous best (gain: {elo_gain:+.1f})"
+        # Validation
+        if elo_gain <= 0:
+            raise ValueError(f"New best model must have higher ELO than previous best (gain: {elo_gain:+.1f})")
         
         return current_elo

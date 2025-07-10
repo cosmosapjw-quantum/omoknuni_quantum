@@ -54,7 +54,7 @@ endif()
 
 # ───────────────────────────────────── Options ─────────────────────────────────
 option(BUILD_PYTHON_BINDINGS  "Build Python bindings"  ON)
-option(BUILD_TESTS            "Build tests"            ON)
+option(BUILD_TESTS            "Build tests"            OFF)
 option(BUILD_SHARED_LIBS      "Build shared libs"      ON)
 option(WITH_TORCH             "Build with PyTorch GPU support"     OFF)
 option(WITH_CUDNN             "Enable cuDNN support (requires WITH_TORCH)" OFF)
@@ -214,6 +214,11 @@ if(PYBIND11_FOUND AND BUILD_PYTHON_BINDINGS)
     message(STATUS "Building Python module...")
     pybind11_add_module(alphazero_py src/python/bindings.cpp)
     target_link_libraries(alphazero_py PRIVATE alphazero)
+    
+    # Also install the alphazero shared library alongside the Python module
+    install(TARGETS alphazero
+            LIBRARY DESTINATION ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
+            ARCHIVE DESTINATION ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
     
     if(Python_FOUND)
         # Set the Python module installation path

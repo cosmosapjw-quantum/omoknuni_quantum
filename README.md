@@ -1,14 +1,18 @@
-# Quantum-Inspired Monte Carlo Tree Search (MCTS)
+# High-Performance Monte Carlo Tree Search (MCTS)
 
-A high-performance implementation of Monte Carlo Tree Search enhanced with quantum-inspired mathematical structures and optimized for production use.
+A production-ready, hardware-optimized implementation of Monte Carlo Tree Search achieving 14.7x performance improvement through advanced GPU acceleration and intelligent batch coordination.
 
 ## Project Overview
 
-This project implements **quantum-inspired MCTS** - using mathematical structures and physical intuition from quantum field theory to enhance classical tree search algorithms. The system has been extensively optimized and is now **production-ready** with **14.7x performance improvements** over the baseline implementation.
+This project implements a **high-performance MCTS** system that achieves hardware-limited performance through systematic optimization. The codebase is **production-ready** with **14.7x performance improvements** over the baseline implementation.
 
 ### Core Innovation
 
-The system leverages quantum physics mathematics to provide principled alternatives to classical heuristics while maintaining exceptional performance through advanced optimization techniques.
+The system achieves exceptional performance through:
+- GPU-accelerated tree operations with custom CUDA kernels
+- Intelligent cross-worker batch coordination
+- Wave-based parallel search algorithms
+- Hardware-optimized neural network integration
 
 ## 🚀 Performance Achievements
 
@@ -43,15 +47,13 @@ Workers (12) → BatchEvaluationCoordinator → GPU Service → ResNet → Respo
              ↳ Hardware limit operation
 ```
 
-### Quantum-Inspired Features
-```
-PUCT_quantum = Q + c_puct * P * sqrt(N) / (1 + N_a) + (4 * ℏ_eff) / (3 * N_a)
-where ℏ_eff = ℏ_base / arccos(exp(-γ_n/2))
-```
+### Key Features
 
-- **QFT-inspired exploration**: Physics-motivated exploration scheduling
-- **Quantum Darwinism selection**: Information-theoretic move selection
-- **Multiple optimization levels**: Speed-focused, convergence-focused modes
+- **Wave-based parallelization**: Efficient tree traversal with minimal synchronization
+- **CSR tree structure**: Memory-efficient compressed sparse row format
+- **Tactical move detection**: Game-specific pattern recognition for Go, Chess, and Gomoku
+- **Virtual loss**: Enables parallel exploration without conflicts
+- **Subtree reuse**: Preserves valuable search information across moves
 
 ## Quick Start
 
@@ -79,12 +81,21 @@ python train.py --config configs/gomoku_classical.yaml
 # Self-play games: 100%|███████████| 120/120 [05:23<00:00, 0.37game/s]
 ```
 
-### Using Quantum-Inspired MCTS
+### Using High-Performance MCTS
 ```python
-from mcts.quantum import create_optimized_quantum_mcts
+from mcts.core.mcts import MCTS
+from mcts.core.mcts_config import MCTSConfig
+from mcts.core.game_interface import GameInterface, GameType
 
-# Create quantum-inspired MCTS (optimized for speed)
-mcts = create_optimized_quantum_mcts()
+# Create optimized MCTS configuration
+config = MCTSConfig()
+config.num_simulations = 800
+config.device = 'cuda'
+config.enable_fast_ucb = True
+
+# Create MCTS instance
+game_interface = GameInterface(GameType.GOMOKU, board_size=15)
+mcts = MCTS(config, evaluator, game_interface)
 
 # Run search
 policy = mcts.search(game_state, num_simulations=800)
@@ -135,19 +146,10 @@ policy = mcts.search(game_state, num_simulations=800)
 ## Documentation
 
 ### Essential Documentation
-- **[PERFORMANCE_OPTIMIZATION_SUMMARY.md](PERFORMANCE_OPTIMIZATION_SUMMARY.md)** - Complete optimization journey and results
-- **[RESNET_BOTTLENECK_ANALYSIS.md](RESNET_BOTTLENECK_ANALYSIS.md)** - Hardware limit analysis
-- **[PROJECT_CLEANUP_SUMMARY.md](PROJECT_CLEANUP_SUMMARY.md)** - Codebase cleanup summary
-- **[QUANTUM_INSPIRED_MCTS_REVIEW.md](QUANTUM_INSPIRED_MCTS_REVIEW.md)** - Technical review
-
-### User Guides
-- `docs/alphazero-training-guide.md` - Training setup and configuration
-- `python/mcts/quantum/README.md` - Quantum-inspired features guide
-- `python/mcts/quantum/MIGRATION_GUIDE.md` - Migration guide
-
-### Research Archive
-- `python/mcts/quantum/research/` - Complete research with visualizations
-- `docs/v5.0/` - Latest theoretical foundations
+- **[CLAUDE.md](CLAUDE.md)** - Project summary and development guidelines
+- **[INSTALL.md](INSTALL.md)** - Installation guide with automatic Python detection
+- `docs/` - Additional documentation and guides
+- `examples/` - Example implementations and usage patterns
 
 ## Project Structure
 
@@ -155,14 +157,14 @@ policy = mcts.search(game_state, num_simulations=800)
 omoknuni_quantum/
 ├── python/mcts/                    # Optimized MCTS implementation
 │   ├── core/                       # High-performance MCTS core
-│   ├── quantum/                    # Quantum-inspired enhancements
-│   ├── gpu/                        # Optimized GPU acceleration
-│   ├── neural_networks/            # ResNet integration (hardware-optimized)
+│   ├── gpu/                        # GPU acceleration with CUDA kernels
+│   ├── neural_networks/            # ResNet integration with TensorRT support
 │   └── utils/                      # Batch coordination and optimization
+├── quantum/docs/                   # Quantum-inspired theory (for v2.0)
 ├── docs/                           # Comprehensive documentation
 ├── configs/                        # Game configurations
 ├── experiments/                    # Training experiments and checkpoints
-└── tests/                         # Validation and testing
+└── examples/                       # Usage examples and demos
 ```
 
 ## Future Optimization Recommendations
@@ -179,15 +181,15 @@ Since the system now operates at hardware limits, further performance gains requ
 - **Model Architecture**: Lighter networks (fewer layers/channels)
 - **Advanced Batching**: Dynamic batch sizing based on hardware
 
-## Scientific Status
+## Technical Achievements
 
-**Assessment**: Legitimate algorithmic research using physics-inspired mathematical structures, now with production-grade implementation.
+**Assessment**: Production-grade MCTS implementation operating at hardware limits.
 
 **Key Contributions**:
-- Novel QFT-inspired exploration scheduling
-- High-performance implementation with comprehensive optimization
-- Demonstration of physics-inspired algorithms in practical applications
-- Complete performance analysis showing hardware limits
+- 14.7x performance improvement through systematic optimization
+- Hardware-limited performance on modern GPUs
+- Clean, maintainable codebase with comprehensive test coverage
+- Complete performance analysis and optimization documentation
 
 ## Development Status
 
@@ -198,11 +200,11 @@ Since the system now operates at hardware limits, further performance gains requ
 - [x] **Documentation**: Complete optimization and analysis documentation
 - [x] **Monitoring**: Real-time performance tracking and validation
 
-### 🔬 Research Opportunities
+### 🔬 Future Opportunities
 - Extended validation across game domains
 - Integration with modern RL approaches
-- Exploration of additional quantum-inspired concepts
-- Hardware-specific optimizations (TensorRT, etc.)
+- Hardware-specific optimizations (TensorRT compilation)
+- Multi-GPU scaling for distributed training
 
 ## Performance Benchmarks
 

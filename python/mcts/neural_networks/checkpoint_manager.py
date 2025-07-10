@@ -40,9 +40,9 @@ class CheckpointManager:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         # Extract relevant config
-        self.checkpoint_every_n_iterations = config.training.checkpoint_every_n_iterations
-        self.keep_last_n_checkpoints = config.training.keep_last_n_checkpoints
-        self.keep_last_n_replay_buffers = config.training.keep_last_n_replay_buffers
+        self.checkpoint_every_n_iterations = config.training.checkpoint_interval
+        self.keep_last_n_checkpoints = getattr(config.training, 'checkpoint_keep_last', 5)
+        self.keep_last_n_replay_buffers = getattr(config.training, 'checkpoint_keep_last', 5)
     
     def save_checkpoint(
         self,

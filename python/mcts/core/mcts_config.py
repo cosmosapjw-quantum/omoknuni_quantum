@@ -72,10 +72,6 @@ class MCTSConfig:
     max_children_per_node: int = 50
     progressive_expansion_threshold: int = 5
     
-    # Progressive widening parameters (for lazy expansion)
-    progressive_widening_alpha: float = 0.5  # k = alpha * sqrt(n)
-    progressive_widening_base: float = 10.0  # Minimum children to expand
-    
     # Legacy parameters (for compatibility)
     target_sims_per_second: int = 100000
     cache_legal_moves: bool = True
@@ -130,14 +126,6 @@ class MCTSConfig:
     go_connection_boost: float = 3.0     # Connect stones
     go_eye_boost: float = 7.0            # Eye formation
     go_corner_boost: float = 2.0         # Corner moves bonus
-    
-    # RAVE (Rapid Action Value Estimation) for faster learning
-    enable_rave: bool = True
-    rave_c: float = 3000.0  # RAVE exploration constant (beta = sqrt(rave_c / (rave_c + n)))
-    rave_threshold: int = 50  # Disable RAVE after this many training iterations
-    
-    # Progressive widening control
-    enable_progressive_widening: bool = True
     
     def get_or_create_quantum_config(self):
         """Placeholder for quantum config (disabled)"""

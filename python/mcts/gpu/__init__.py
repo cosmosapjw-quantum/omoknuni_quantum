@@ -30,18 +30,8 @@ try:
 except ImportError:
     REFACTORED_AVAILABLE = False
 
-# Import CSR operations (now using unified kernels)
-from .csr_gpu_kernels import (
-    CSRBatchOperations,
-    get_csr_batch_operations,
-    check_cuda_available,
-    csr_batch_ucb_torch,
-    csr_coalesced_children_gather
-)
+# CSR operations are now integrated into other modules
 
-# Note: GPU optimizers removed as they were not used in the codebase
-
-# Note: Legacy aliases removed in streamlined build
 
 # GPU tree kernels (if available)
 try:
@@ -63,7 +53,6 @@ except ImportError:
 import torch
 CUDA_AVAILABLE = torch.cuda.is_available()
 
-# Note: Triton support removed in streamlined build
 
 __all__ = [
     # MCTS GPU accelerator
@@ -74,13 +63,6 @@ __all__ = [
     "CSRTree",
     "CSRTreeConfig",
     
-    # CSR GPU operations
-    "CSRBatchOperations",
-    "get_csr_batch_operations",
-    "check_cuda_available",
-    "csr_batch_ucb_torch",
-    "csr_coalesced_children_gather",
-    
     
     # Status flags
     "CUDA_AVAILABLE",
@@ -89,7 +71,6 @@ __all__ = [
 if GPUTreeKernels is not None:
     __all__.append("GPUTreeKernels")
 
-# Note: Legacy quantum aliases removed in streamlined build
 
 if HAS_GPU_ATTACK_DEFENSE:
     __all__.append("gpu_compute_attack_defense_scores")

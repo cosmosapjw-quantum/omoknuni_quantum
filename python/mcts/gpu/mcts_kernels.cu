@@ -7,14 +7,14 @@
 // Sections:
 // 1. Core MCTS Operations (expansion, backup, tree management)
 // 2. UCB Selection (classical and optimized variants)  
-// 3. Quantum-Enhanced Operations (quantum UCB, phase calculations)
+// 3. Wave Search Optimizations
 // 4. Utility Functions (memory management, helper functions)
 //
 // Consolidated from:
 // - unified_cuda_kernels.cu (60KB - contained everything)
 // - mcts_core_kernels.cu (9KB - core operations)
 // - mcts_selection_kernels.cu (12KB - UCB selection)
-// - mcts_quantum_kernels.cu (12KB - quantum enhancements)
+// - (quantum features removed for performance)
 // =============================================================================
 
 #include <torch/extension.h>
@@ -265,112 +265,7 @@ __global__ void optimized_ucb_selection_kernel(
 }
 
 // =============================================================================
-// SECTION 3: QUANTUM-ENHANCED OPERATIONS
-// =============================================================================
-
-/**
- * Quantum-enhanced UCB selection with phase interference and uncertainty
- */
-__global__ void quantum_ucb_selection_kernel(
-    const float* __restrict__ q_values,
-    const int* __restrict__ visit_counts,
-    const int* __restrict__ parent_visits,
-    const float* __restrict__ priors,
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_indices,
-    const float* __restrict__ quantum_phases,     // Pre-computed phases [num_edges]
-    const float* __restrict__ uncertainty_table,  // Quantum uncertainty lookup [max_visits]
-    int* __restrict__ selected_actions,
-    float* __restrict__ selected_scores,
-    const int64_t num_nodes,
-    const float c_puct,
-    const int max_table_size,
-    const float hbar_eff,                         // Effective Planck constant
-    const float phase_kick_strength,              // Phase kick amplitude
-    const float interference_alpha                // Interference strength
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_nodes) return;
-    
-    int start = row_ptr[idx];
-    int end = row_ptr[idx + 1];
-    
-    if (start == end) {
-        selected_actions[idx] = -1;
-        selected_scores[idx] = 0.0f;
-        return;
-    }
-    
-    int parent_visit = parent_visits[idx];
-    float sqrt_parent = sqrtf(static_cast<float>(parent_visit + 1));
-    
-    float best_ucb = -1e10f;
-    int best_action = 0;
-    
-    // Quantum-enhanced UCB calculation
-    for (int i = start; i < end; i++) {
-        int child_idx = col_indices[i];
-        int child_visit = visit_counts[child_idx];
-        
-        float q_value = (child_visit > 0) ? q_values[child_idx] : 0.0f;
-        
-        // Classical UCB term
-        float exploration = c_puct * priors[child_idx] * sqrt_parent / (1.0f + child_visit);
-        float classical_ucb = q_value + exploration;
-        
-        // Quantum enhancements
-        float quantum_phase = quantum_phases[i];
-        float uncertainty = (child_visit < max_table_size) ? 
-            uncertainty_table[child_visit] : hbar_eff / sqrtf(child_visit + 1.0f);
-        
-        // Phase interference term
-        float phase_interference = phase_kick_strength * cosf(quantum_phase);
-        
-        // Uncertainty-based exploration boost
-        float quantum_exploration = interference_alpha * uncertainty;
-        
-        // Combined quantum UCB score
-        float quantum_ucb = classical_ucb + phase_interference + quantum_exploration;
-        
-        if (quantum_ucb > best_ucb) {
-            best_ucb = quantum_ucb;
-            best_action = i - start;
-        }
-    }
-    
-    selected_actions[idx] = best_action;
-    selected_scores[idx] = best_ucb;
-}
-
-/**
- * Compute quantum phases for interference effects
- */
-__global__ void compute_quantum_phases_kernel(
-    const float* __restrict__ q_values,
-    const int* __restrict__ visit_counts,
-    const float* __restrict__ priors,
-    float* __restrict__ phases,
-    const int num_edges,
-    const float hbar_eff,
-    const float time_step
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_edges) return;
-    
-    float q_val = q_values[idx];
-    int visits = visit_counts[idx];
-    float prior = priors[idx];
-    
-    // Quantum phase calculation based on action value and visit history
-    float energy = q_val + prior * logf(visits + 1.0f);
-    float phase = (energy * time_step) / hbar_eff;
-    
-    // Normalize phase to [0, 2π]
-    phases[idx] = fmodf(phase, 2.0f * M_PI);
-}
-
-// =============================================================================
-// SECTION 4: WAVE SEARCH OPTIMIZATIONS
+// SECTION 3: WAVE SEARCH OPTIMIZATIONS
 // =============================================================================
 
 /**
@@ -724,20 +619,7 @@ torch::Tensor batched_ucb_selection_cuda(
     float c_puct
 );
 
-torch::Tensor quantum_ucb_selection_cuda(
-    torch::Tensor q_values,
-    torch::Tensor visit_counts,
-    torch::Tensor parent_visits,
-    torch::Tensor priors,
-    torch::Tensor row_ptr,
-    torch::Tensor col_indices,
-    torch::Tensor quantum_phases,
-    torch::Tensor uncertainty_table,
-    float c_puct,
-    float hbar_eff,
-    float phase_kick_strength,
-    float interference_alpha
-);
+// Quantum function declaration removed
 
 void vectorized_backup_cuda(
     torch::Tensor paths,
@@ -874,51 +756,7 @@ torch::Tensor batched_ucb_selection_cuda(
     return selected_actions;
 }
 
-torch::Tensor quantum_ucb_selection_cuda(
-    torch::Tensor q_values,
-    torch::Tensor visit_counts,
-    torch::Tensor parent_visits,
-    torch::Tensor priors,
-    torch::Tensor row_ptr,
-    torch::Tensor col_indices,
-    torch::Tensor quantum_phases,
-    torch::Tensor uncertainty_table,
-    float c_puct,
-    float hbar_eff,
-    float phase_kick_strength,
-    float interference_alpha
-) {
-    auto device = q_values.device();
-    auto int_options = torch::TensorOptions().dtype(torch::kInt32).device(device);
-    auto float_options = torch::TensorOptions().dtype(torch::kFloat32).device(device);
-    
-    auto selected_actions = torch::zeros({q_values.size(0)}, int_options);
-    auto selected_scores = torch::zeros({q_values.size(0)}, float_options);
-    
-    const int threads = 256;
-    const int blocks = (q_values.size(0) + threads - 1) / threads;
-    
-    quantum_ucb_selection_kernel<<<blocks, threads>>>(
-        q_values.data_ptr<float>(),
-        visit_counts.data_ptr<int>(),
-        parent_visits.data_ptr<int>(),
-        priors.data_ptr<float>(),
-        row_ptr.data_ptr<int>(),
-        col_indices.data_ptr<int>(),
-        quantum_phases.data_ptr<float>(),
-        uncertainty_table.data_ptr<float>(),
-        selected_actions.data_ptr<int>(),
-        selected_scores.data_ptr<float>(),
-        q_values.size(0),
-        c_puct,
-        uncertainty_table.size(0),
-        hbar_eff,
-        phase_kick_strength,
-        interference_alpha
-    );
-    
-    return selected_actions;
-}
+// Quantum function implementation removed
 
 void vectorized_backup_cuda(
     torch::Tensor paths,
@@ -1174,8 +1012,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     // UCB selection operations
     m.def("batched_ucb_selection", &batched_ucb_selection_cuda, "Batched UCB selection");
     
-    // Quantum-enhanced operations
-    m.def("quantum_ucb_selection", &quantum_ucb_selection_cuda, "Quantum-enhanced UCB selection");
+    // Quantum operations removed for performance
     
     // Wave search optimizations
     m.def("batched_dirichlet_noise", &batched_dirichlet_noise_cuda, "Batched Dirichlet noise generation");

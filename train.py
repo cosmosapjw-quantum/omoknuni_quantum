@@ -7,14 +7,9 @@ Run from the project root directory.
 import sys
 import os
 import time
-import multiprocessing
 import warnings
 
-# Suppress multiprocessing resource tracker warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='multiprocessing.resource_tracker')
-
-# Set multiprocessing start method to 'spawn' for CUDA compatibility
-multiprocessing.set_start_method('spawn', force=True)
+# Single-GPU mode - no multiprocessing needed
 
 # Add python directory to path
 python_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'python')
@@ -101,7 +96,7 @@ def main():
     parser.add_argument("--iterations", type=int, help="Number of training iterations (overrides config)")
     parser.add_argument("--experiment", type=str, help="Experiment name")
     parser.add_argument("--resume", type=str, help="Resume from checkpoint")
-    parser.add_argument("--workers", type=int, help="Number of parallel workers")
+    parser.add_argument("--workers", type=int, help="Number of parallel workers (deprecated - single GPU mode only)")
     parser.add_argument("--games-per-iter", type=int, help="Self-play games per iteration")
     
     args = parser.parse_args()
@@ -120,7 +115,6 @@ def main():
         config.experiment_name = args.experiment or f"{args.game}_unified_training"
         
         # Set some defaults
-        config.training.num_workers = args.workers or 4
         config.training.num_games_per_iteration = args.games_per_iter or 100
         config.training.validation_interval = 10
         config.num_iterations = 100  # Default if not using config file
@@ -129,14 +123,13 @@ def main():
     if args.iterations is not None:
         config.num_iterations = args.iterations
     if args.workers:
-        config.training.num_workers = args.workers
-        config.arena.num_workers = args.workers
+        print("Warning: --workers flag is deprecated. Using single-GPU mode.")
     if args.games_per_iter:
         config.training.num_games_per_iteration = args.games_per_iter
     
     print(f"Starting training for {config.game.game_type}")
     print(f"Experiment: {config.experiment_name}")
-    print(f"Workers: {config.training.num_workers}")
+    print(f"Mode: Single-GPU")
     print(f"Games per iteration: {config.training.num_games_per_iteration}")
     print(f"Number of iterations: {config.num_iterations}")
     print(f"Device: {config.mcts.device}")

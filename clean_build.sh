@@ -36,6 +36,7 @@ rm -f Makefile
 echo "Removing CUDA kernel builds..."
 rm -rf python/mcts/gpu/build/
 rm -rf python/build_cuda/
+rm -rf build_cuda_shared/
 rm -f python/mcts/gpu/*.so
 rm -f python/mcts/gpu/*.pyd
 
@@ -47,11 +48,15 @@ rm -rf obj/
 
 echo "✅ Clean complete!"
 echo ""
-echo "To rebuild with CUDA support:"
+echo "To rebuild everything:"
 echo "  source ~/venv/bin/activate"
-echo "  python setup.py build_ext --inplace"
-echo "  python setup.py install"
+echo "  pip install -e ."
 echo ""
-echo "Or for development:"
-echo "  source ~/venv/bin/activate" 
-echo "  python setup.py develop"
+echo "This will automatically:"
+echo "  - Build C++ game backends (libalphazero.so and alphazero_py module)"
+echo "  - Compile CUDA kernels if CUDA is available (using fast nvcc)"
+echo ""
+echo "For manual builds:"
+echo "  - CUDA kernels: python build_cuda.py"
+echo "  - C++ only: python build_cpp.py"
+echo "  - Or: mkdir build && cd build && cmake .. && make -j$(nproc)"

@@ -9,9 +9,7 @@ num_iterations: 100  # Balanced for quality (8 min/iteration = 12 hours)
 game:
   game_type: gomoku
   board_size: 15
-  gomoku_use_renju: false
-  gomoku_use_omok: false
-  gomoku_use_pro_long_opening: false
+  # Standard Gomoku rules
 
 mcts:
   num_simulations: 150  # Increased for better tactical play (50ms per move)
@@ -20,7 +18,7 @@ mcts:
   dirichlet_epsilon: 0.3  # Slightly less noise for better quality
   temperature: 1.0
   temperature_threshold: 30
-  temperature_final: 0.1
+  # Temperature calculated at runtime
   
   # Performance optimization
   min_wave_size: 3072      # Balanced for quality vs speed
@@ -32,22 +30,15 @@ mcts:
   # Memory and optimization - Balanced settings
   memory_pool_size_mb: 4096   # Increased for deeper search
   max_tree_nodes: 400000      # Support deeper analysis
-  tree_reuse: false
+  enable_subtree_reuse: false
   
-  # GPU optimization - RTX 3060 Ti
-  use_cuda_graphs: true
-  use_mixed_precision: true   # FP16 for tensor cores
-  use_tensor_cores: true      # Utilize 4864 CUDA cores
+  # GPU optimizations handled automatically
   
-  # Quantum features - disabled for classical
-  enable_quantum: false
-  classical_only_mode: true
+  # Performance features
   enable_fast_ucb: true
   
   
-  # CSR Tree parameters
-  csr_max_actions: 225
-  csr_use_sparse_operations: true
+  # CSR tree parameters handled internally
   
   # Interference thresholds
   interference_threshold: 0.1

@@ -66,11 +66,6 @@ class NodeDataManager:
         # Virtual loss for parallelization
         self.virtual_loss_counts = torch.zeros(initial_size, device=self.device, dtype=torch.int32)
         
-        # RAVE statistics (for each node, we need stats for all possible actions)
-        # We'll use a dictionary to store RAVE data efficiently
-        self.rave_visits = {}  # node_idx -> tensor of action visit counts
-        self.rave_values = {}  # node_idx -> tensor of action value sums
-        
         # Node metadata
         self.flags = torch.zeros(initial_size, device=self.device, dtype=torch.uint8)
         self.phases = torch.zeros(initial_size, device=self.device, dtype=self.config.dtype_values)
@@ -112,30 +107,6 @@ class NodeDataManager:
         
         return idx
     
-    def initialize_rave_for_node(self, node_idx: int, action_space_size: int):
-        """Initialize RAVE statistics for a node"""
-        if node_idx not in self.rave_visits:
-            self.rave_visits[node_idx] = torch.zeros(
-                action_space_size, device=self.device, dtype=torch.int32
-            )
-            self.rave_values[node_idx] = torch.zeros(
-                action_space_size, device=self.device, dtype=self.config.dtype_values
-            )
-    
-    def update_rave(self, node_idx: int, action: int, value: float):
-        """Update RAVE statistics for a node-action pair"""
-        if node_idx in self.rave_visits:
-            self.rave_visits[node_idx][action] += 1
-            self.rave_values[node_idx][action] += value
-    
-    def get_rave_stats(self, node_idx: int, action: int) -> tuple:
-        """Get RAVE statistics for a node-action pair"""
-        if node_idx not in self.rave_visits:
-            return 0, 0.0
-        visits = self.rave_visits[node_idx][action].item()
-        value_sum = self.rave_values[node_idx][action].item()
-        return visits, value_sum
-        
     def allocate_nodes_batch(self, count: int, priors: torch.Tensor, 
                            parent_idx: int, parent_actions: torch.Tensor) -> torch.Tensor:
         """Allocate multiple nodes in batch"""

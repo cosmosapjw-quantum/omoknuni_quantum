@@ -254,7 +254,12 @@ class GPUGameStates:
         Returns:
             Tensor of clone indices
         """
-        total_clones = int(num_clones_per_parent.sum())
+        # OPTIMIZATION: Avoid expensive sum() on GPU tensor
+        if num_clones_per_parent.is_cuda:
+            total_clones = int(num_clones_per_parent.sum().item())
+        else:
+            # For CPU tensors, sum is already fast but use item() for consistency
+            total_clones = int(num_clones_per_parent.sum().item())
         clone_indices = self.allocate_states(total_clones)
         
         # Create mapping from clones to parents

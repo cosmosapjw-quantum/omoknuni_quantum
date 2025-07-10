@@ -80,7 +80,8 @@
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -m pytest tests/core/test_game_interface.py::TestGameInterface::test_game_interface_creation_gomoku -v)",
       "Bash(~/venv/bin/pip install -e python/ --quiet)",
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from mcts.utils.validation_helpers import validate_state; print(''Import successful'')\")",
-      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from mcts.utils.validation_helpers import validate_state; print(''Import successful'')\")"
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from mcts.utils.validation_helpers import validate_state; print(''Import successful'')\")",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   },

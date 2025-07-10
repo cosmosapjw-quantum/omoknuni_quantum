@@ -214,11 +214,9 @@ class MCTS:
             gpu_game_type = legacy_to_gpu_map.get(game_interface.game_type)
             if gpu_game_type is not None:
                 self.config.game_type = gpu_game_type
-                logger.debug(f"Updated game type to {gpu_game_type} from interface")
                 
         if hasattr(game_interface, 'board_size'):
             self.config.board_size = game_interface.board_size
-            logger.debug(f"Updated board size to {game_interface.board_size} from interface")
             
     def search(self, state: Any, num_simulations: Optional[int] = None) -> np.ndarray:
         """Run MCTS search from given state
@@ -237,6 +235,9 @@ class MCTS:
         # If subtree reuse is disabled, reset the tree for each search
         if not self.config.enable_subtree_reuse:
             self._reset_for_new_search()
+        
+        # Reset wave search state for new search (including global noise cache)
+        self.wave_search.reset_search_state()
         
         # Initialize root if needed
         self._ensure_root_initialized(state)
@@ -270,6 +271,14 @@ class MCTS:
             # Synchronize root state
             self._update_root_state(state)
             
+        # CRITICAL: If root has no children (e.g., after tree reuse), ensure it gets expanded
+        # Check if root needs expansion
+        children, _, _ = self.tree_ops.get_root_children_info()
+        if len(children) == 0 and self.tree.node_data.visit_counts[0].item() > 0:
+            # Root has visits but no children - this happens after tree reuse
+            # Force expand the root before search begins
+            self._force_expand_root()
+            
     def _run_search(self, num_simulations: int) -> np.ndarray:
         """Run the main search loop"""
         completed = 0
@@ -284,7 +293,7 @@ class MCTS:
                 self.state_pool_free_list
             )
             
-            # Debug: check if simulations are running
+            # Check if simulations are running
             if actual_completed == 0:
                 logger.warning(f"Wave returned 0 completions! Tree nodes: {self.tree.num_nodes}")
                 break
@@ -306,7 +315,7 @@ class MCTS:
         """Extract policy from node visit counts"""
         actions, visits, _ = self.tree_ops.get_root_children_info()
         
-        # CRITICAL FIX: Validate children against current legal moves when tree reuse is enabled
+        # NOTE: With fixed tree reuse, children are cleared and re-expanded, so validation is less critical
         if self.config.enable_subtree_reuse and len(actions) > 0:
             # Get current legal moves
             state_idx = self.node_to_state[node_idx].item()
@@ -321,16 +330,14 @@ class MCTS:
                 for i, action in enumerate(actions):
                     if action.item() in legal_moves_set:
                         valid_child_mask[i] = True
-                    else:
-                        logger.debug(f"Filtering out illegal child action {action.item()} from tree reuse")
                 
                 # Keep only valid children
                 if valid_child_mask.any():
                     actions = actions[valid_child_mask]
                     visits = visits[valid_child_mask]
                 else:
-                    # No valid children from tree reuse - treat as if no children
-                    logger.warning("All children from tree reuse are illegal - ignoring stale children")
+                    # No valid children from tree reuse - this shouldn't happen with our fix
+                    # that clears children after shift_root
                     actions = torch.tensor([], dtype=torch.int32, device=self.device)
                     visits = torch.tensor([], dtype=torch.int32, device=self.device)
         
@@ -347,10 +354,15 @@ class MCTS:
             legal_moves = np.array([])
         
         if len(actions) == 0:
-            # No children - this can happen if no simulations reached the root
-            # or if the root wasn't expanded during search
+            # No children - this can happen if:
+            # 1. Tree reuse just occurred and root hasn't been re-expanded yet
+            # 2. No simulations reached the root (shouldn't happen)
             # Return uniform policy over legal moves
-            logger.warning(f"Root node has no children after {self.config.num_simulations} simulations")
+            
+            # Only warn if this is unexpected (not after tree reuse)
+            root_visits = self.tree.node_data.visit_counts[0].item()
+            if root_visits <= 1 or not self.config.enable_subtree_reuse:
+                logger.warning(f"Root node has no children after {self.config.num_simulations} simulations")
             # For Go, include pass move in action space
             action_space_size = self.config.board_size ** 2
             if self.config.game_type == GameType.GO:
@@ -364,7 +376,6 @@ class MCTS:
         total_visits = visits.sum().item()
         if total_visits == 0:
             # No visits - return uniform over legal moves
-            logger.warning(f"Root has {len(actions)} children but zero visits")
             # For Go, include pass move in action space
             action_space_size = self.config.board_size ** 2
             if self.config.game_type == GameType.GO:
@@ -405,10 +416,6 @@ class MCTS:
                     illegal_with_prob.append((i, policy[i]))
                     policy[i] = 0.0
             
-            if illegal_with_prob:
-                logger.debug(f"Found {len(illegal_with_prob)} illegal moves with non-zero probability before filtering")
-                logger.debug(f"First few illegal moves: {illegal_with_prob[:5]}")
-                    
             # Renormalize
             policy_sum = policy.sum()
             if policy_sum > 0:
@@ -523,7 +530,7 @@ class MCTS:
             action: Action taken
             new_state: New game state
         """
-        if getattr(self.config, 'tree_reuse', True):
+        if self.config.enable_subtree_reuse:
             # Apply subtree reuse
             mapping = self.tree_ops.apply_subtree_reuse(action)
             if mapping:
@@ -676,9 +683,6 @@ class MCTS:
                         logger.error(f"Unexpected 3-channel format with {obs_3ch.shape[0]} channels")
                 
                 # Debug logging
-                logger.debug(f"Loading board from GameInterface to GPUGameStates")
-                logger.debug(f"Number of channels: {num_channels}")
-                logger.debug(f"board unique values after mapping: {torch.unique(board)}")
                 
                 # For non-square assignment, we need to handle different board sizes
                 if self.game_states.boards.shape[1:] == board.shape:
@@ -713,6 +717,28 @@ class MCTS:
         # Map root node to this state
         self.node_to_state[0] = state_idx
             
+    def _force_expand_root(self):
+        """Force expansion of the root node
+        
+        This is needed after tree reuse when the root's children have been cleared.
+        """
+        # Get root state
+        root_state_idx = self.node_to_state[0].item()
+        if root_state_idx < 0:
+            logger.error("Cannot expand root - no state assigned")
+            return
+            
+        # Use wave_search's expansion method directly
+        leaf_nodes = torch.tensor([0], device=self.device)
+        self.wave_search._expand_batch_vectorized(
+            leaf_nodes,
+            self.node_to_state,
+            self.state_pool_free_list
+        )
+        
+        # Verify expansion
+        children, _, _ = self.tree_ops.get_root_children_info()
+    
     def _update_root_state(self, new_root_state: Any):
         """Update root state"""
         # Get the current root state index
@@ -832,7 +858,6 @@ class MCTS:
         self.state_pool_free_list.sort()
         self.state_pool_free_count = len(self.state_pool_free_list)
         
-        logger.debug(f"After tree reuse: {len(states_in_use)} states in use, {self.state_pool_free_count} states free")
         
     def _get_evaluator_input_channels(self) -> int:
         """Get number of input channels expected by evaluator"""
@@ -861,7 +886,6 @@ class MCTS:
             if len(allocated_indices) > 0:
                 # Free all states
                 self.game_states.free_states(allocated_indices)
-                logger.debug(f"Freed {len(allocated_indices)} GPU states before tree reset")
             
             # Verify clean state
             remaining_allocated = self.game_states.allocated_mask.sum().item()
@@ -894,7 +918,6 @@ class MCTS:
         # This helps with debugging and optimization
         if hasattr(self, 'game_states'):
             allocated_count = self.game_states.allocated_mask.sum().item()
-            logger.debug(f"Search completed with {allocated_count} states allocated")
     
 
     def _cleanup_stale_children_after_reuse(self):
@@ -987,7 +1010,6 @@ class MCTS:
             for i, (child_idx, action) in enumerate(zip(children.cpu().numpy(), actions.cpu().numpy())):
                 if action not in node_legal_moves:
                     invalid_children.append(i)
-                    logger.debug(f"Node {node_idx}: child {child_idx} with action {action} is invalid")
                 else:
                     # Add valid children to queue for further validation
                     queue.append(child_idx)
