@@ -19,7 +19,7 @@ from mcts.core.mcts import MCTS
 from mcts.core.mcts_config import MCTSConfig
 from mcts.core.game_interface import GameInterface
 from mcts.utils.config_system import AlphaZeroConfig
-from mcts.utils.direct_gpu_evaluator import DirectGPUEvaluator
+from mcts.utils.single_gpu_evaluator import SingleGPUEvaluator
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,8 @@ class SelfPlayConfig:
     enable_progress_bar: bool = True
     batch_size: int = 512  # Optimized for GPU batching
     device: str = 'cuda'  # GPU device for single-GPU execution
+    num_workers: int = 4  # Number of parallel workers
+    cpu_threads_per_worker: int = 1  # CPU threads per worker
 
 
 class SelfPlayGame:
@@ -270,7 +272,7 @@ class SelfPlayManager:
         
         # Create direct GPU evaluator if evaluator is a model
         if hasattr(evaluator, 'model'):
-            self.gpu_evaluator = DirectGPUEvaluator(
+            self.gpu_evaluator = SingleGPUEvaluator(
                 model=evaluator.model,
                 device=self.self_play_config.device,
                 action_size=config.game.board_size ** 2,

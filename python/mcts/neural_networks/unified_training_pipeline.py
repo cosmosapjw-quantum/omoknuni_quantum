@@ -736,9 +736,19 @@ class UnifiedTrainingPipeline:
             win_rate_vs_random = results_vs_random['win_rate']
             tqdm.write(f"      Result: {results_vs_random['model1_wins']}W-{results_vs_random['draws']}D-{results_vs_random['model2_wins']}L ({win_rate_vs_random:.1%})")
         
+        # Check if previous iteration is the best model
+        # This avoids redundant matches and duplicate ELO updates
+        previous_is_best = (self.iteration > 1 and 
+                           self.best_model_iteration and 
+                           self.best_model_iteration == self.iteration - 1)
+        
         # Match 2: Current vs Previous Model (for ELO calibration)
-        if self.iteration > 1 and getattr(self.config.arena, 'enable_current_vs_previous', True):
-            previous_model_path = self.checkpoint_dir / f"checkpoint_iter_{self.iteration - 1}.pt"
+        # Skip if previous is best (will be handled in the best model match)
+        # When previous=best, ELO inheritance happens through the best model match
+        if (self.iteration > 1 and 
+            getattr(self.config.arena, 'enable_current_vs_previous', True) and 
+            not previous_is_best):
+            previous_model_path = self.checkpoint_dir / f"checkpoint_{self.iteration - 1}.pt"
             results_vs_previous = self.arena.evaluate_with_previous(
                 current_evaluator, current_key, previous_model_path, self.iteration
             )
@@ -750,13 +760,16 @@ class UnifiedTrainingPipeline:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Match 2: Current vs Best (if we have a best model)
+        # Match 3: Current vs Best (if we have a best model)
         win_rate_vs_best = None
         accepted = False
         
         if self.best_model_iteration:
             # Evaluate against best model
-            tqdm.write("      Current vs Best...")
+            if previous_is_best:
+                tqdm.write("      Current vs Best (Previous=Best)...")
+            else:
+                tqdm.write("      Current vs Best...")
             best_model_path = self.best_model_dir / f"model_iter_{self.best_model_iteration}.pt"
             best_model = self._create_model()
             

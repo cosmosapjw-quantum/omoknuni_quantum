@@ -36,18 +36,33 @@ class MCTS:
         self,
         config: MCTSConfig,
         evaluator: Any,
-        game_interface: Optional[GameInterface] = None
+        game_interface: Optional[GameInterface] = None,
+        single_gpu_mode: bool = False
     ):
         """Initialize MCTS
         
         Args:
             config: MCTS configuration
-            evaluator: Neural network evaluator
+            evaluator: Neural network evaluator (can be a model for single_gpu_mode)
             game_interface: Optional game interface
+            single_gpu_mode: Enable single-GPU optimizations (DirectMCTS mode)
         """
         self.config = config
         self.device = torch.device(config.device)
-        self.evaluator = evaluator
+        self.single_gpu_mode = single_gpu_mode
+        
+        # In single-GPU mode, create optimized evaluator from model
+        if single_gpu_mode and isinstance(evaluator, torch.nn.Module):
+            from ..utils.single_gpu_evaluator import SingleGPUEvaluator
+            self.evaluator = SingleGPUEvaluator(
+                model=evaluator,
+                device=config.device,
+                action_size=self._get_action_size_for_game(config),
+                use_mixed_precision=config.use_mixed_precision,
+                use_tensorrt=getattr(config, 'use_tensorrt', False)
+            )
+        else:
+            self.evaluator = evaluator
         
         # Configure evaluator for torch tensors
         if hasattr(self.evaluator, '_return_torch_tensors'):
@@ -68,6 +83,10 @@ class MCTS:
         
         # Initialize quantum features if enabled
         self._initialize_quantum()
+        
+        # Apply single-GPU optimizations if enabled
+        if self.single_gpu_mode:
+            self._apply_single_gpu_optimizations()
         
     def _initialize_components(self):
         """Initialize core components"""
@@ -111,6 +130,9 @@ class MCTS:
         }
         max_actions = max_actions_map.get(self.config.game_type, 512)
         
+        # Optimized initial capacity for single-GPU to avoid reallocations
+        initial_capacity = getattr(self.config, 'initial_capacity_factor', 0.5)
+        
         tree_config = CSRTreeConfig(
             max_nodes=self.config.max_tree_nodes,
             max_edges=self.config.max_tree_nodes * self.config.max_children_per_node,
@@ -119,7 +141,10 @@ class MCTS:
             enable_virtual_loss=self.config.enable_virtual_loss,
             virtual_loss_value=-abs(getattr(self.config, 'virtual_loss', 1.0)),
             batch_size=self.config.max_wave_size,
-            enable_batched_ops=True
+            enable_batched_ops=True,
+            initial_capacity_factor=initial_capacity,  # Increased from 0.1 to 0.5
+            growth_factor=1.5,
+            enable_memory_pooling=getattr(self.config, 'enable_memory_pooling', True)
         )
         self.tree = CSRTree(tree_config)
         
@@ -200,6 +225,109 @@ class MCTS:
         """Placeholder for quantum features (disabled)"""
         self.quantum_features = None
         self.quantum_total_simulations = 0
+    
+    def _get_action_size_for_game(self, config: MCTSConfig) -> int:
+        """Get action space size based on game type"""
+        if config.game_type == GameType.CHESS:
+            return 4096  # Max chess moves
+        elif config.game_type == GameType.GO:
+            return config.board_size ** 2 + 1  # +1 for pass
+        else:  # GOMOKU
+            return config.board_size ** 2
+    
+    def _apply_single_gpu_optimizations(self):
+        """Apply single-GPU specific optimizations"""
+        logger.info("Applying single-GPU optimizations")
+        
+        # Increase initial tree capacity to avoid reallocations
+        if hasattr(self.tree, 'config'):
+            self.tree.config.initial_capacity_factor = max(
+                self.tree.config.initial_capacity_factor, 0.5
+            )
+        
+        # Pre-allocate larger buffers in wave search
+        if hasattr(self.wave_search, 'allocate_buffers'):
+            self.wave_search.allocate_buffers(
+                self.config.max_wave_size,
+                max_depth=150  # Larger than default
+            )
+        
+        # Enable CUDA graphs if available
+        if self.config.use_cuda_graphs and self.device.type == 'cuda':
+            self._setup_cuda_graphs()
+    
+    def _setup_cuda_graphs(self):
+        """Setup CUDA graphs for wave execution"""
+        if not torch.cuda.is_available():
+            return
+            
+        try:
+            # Warmup the model first
+            if hasattr(self.evaluator, 'warmup'):
+                self.evaluator.warmup(warmup_steps=5)
+            
+            # Create CUDA graph for wave execution
+            self.cuda_graph = torch.cuda.CUDAGraph()
+            self.graph_captured = False
+            
+            # Allocate static tensors for graph capture
+            self.graph_batch_size = self.config.max_wave_size
+            self.graph_features = torch.zeros(
+                (self.graph_batch_size, 18, self.config.board_size, self.config.board_size),
+                device=self.device,
+                dtype=torch.float32
+            )
+            
+            logger.info("CUDA graphs initialized for wave execution")
+            
+        except Exception as e:
+            logger.warning(f"Failed to setup CUDA graphs: {e}")
+            self.cuda_graph = None
+            self.graph_captured = False
+    
+    def warmup(self, num_searches: int = 3, simulations_per_search: int = 100):
+        """Warmup the MCTS and GPU for optimal performance
+        
+        Args:
+            num_searches: Number of warmup searches
+            simulations_per_search: Simulations per warmup search
+        """
+        if not self.single_gpu_mode:
+            return  # Only needed for single-GPU mode
+            
+        logger.info(f"Warming up MCTS with {num_searches} searches...")
+        
+        # Create a dummy game state
+        if self.cached_game is not None:
+            dummy_state = self.cached_game.create_initial_state()
+        else:
+            # Create a simple dummy state
+            dummy_state = type('DummyState', (), {
+                'get_basic_tensor_representation': lambda: torch.zeros(3, self.config.board_size, self.config.board_size),
+                'get_current_player': lambda: 1,
+                'get_move_history': lambda: [],
+                'is_terminal': lambda: False,
+                'get_game_result': lambda: 0
+            })()
+        
+        # Store original num_simulations
+        original_sims = self.config.num_simulations
+        self.config.num_simulations = simulations_per_search
+        
+        # Run warmup searches
+        for i in range(num_searches):
+            _ = self.search(dummy_state)
+            if i == 0:
+                # Clear tree after first search to reset memory
+                self.clear()
+        
+        # Restore original settings
+        self.config.num_simulations = original_sims
+        
+        # Clear tree after warmup
+        self.clear()
+        
+        logger.info("MCTS warmup complete")
     
     def _update_config_from_game_interface(self, game_interface: GameInterface):
         """Update MCTS config to match the provided game interface"""
@@ -312,61 +440,27 @@ class MCTS:
         pass
                 
     def _extract_policy(self, node_idx: int) -> np.ndarray:
-        """Extract policy from node visit counts"""
+        """Extract policy from node visit counts (optimized version)"""
         actions, visits, _ = self.tree_ops.get_root_children_info()
         
-        # NOTE: With fixed tree reuse, children are cleared and re-expanded, so validation is less critical
-        if self.config.enable_subtree_reuse and len(actions) > 0:
-            # Get current legal moves
+        # Determine action space size
+        action_space_size = self.config.board_size ** 2
+        if self.config.game_type == GameType.GO:
+            action_space_size += 1
+            
+        # Handle empty tree case
+        if len(actions) == 0:
+            # No children - return uniform policy over legal moves
             state_idx = self.node_to_state[node_idx].item()
             if state_idx >= 0:
                 legal_mask = self.game_states.get_legal_moves_mask(
                     torch.tensor([state_idx], device=self.device)
                 )[0]
-                legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
+                legal_moves = torch.nonzero(legal_mask).squeeze(-1).cpu().numpy()
+            else:
+                logger.warning(f"No state found for node {node_idx}")
+                legal_moves = np.array([])
                 
-                # Filter out illegal children
-                valid_child_mask = torch.zeros(len(actions), dtype=torch.bool, device=self.device)
-                for i, action in enumerate(actions):
-                    if action.item() in legal_moves_set:
-                        valid_child_mask[i] = True
-                
-                # Keep only valid children
-                if valid_child_mask.any():
-                    actions = actions[valid_child_mask]
-                    visits = visits[valid_child_mask]
-                else:
-                    # No valid children from tree reuse - this shouldn't happen with our fix
-                    # that clears children after shift_root
-                    actions = torch.tensor([], dtype=torch.int32, device=self.device)
-                    visits = torch.tensor([], dtype=torch.int32, device=self.device)
-        
-        # Get legal moves for the current state
-        state_idx = self.node_to_state[node_idx].item()
-        if state_idx >= 0:
-            legal_mask = self.game_states.get_legal_moves_mask(
-                torch.tensor([state_idx], device=self.device)
-            )[0]
-            legal_moves = torch.nonzero(legal_mask).squeeze(-1).cpu().numpy()
-        else:
-            # Fallback - this should not happen in normal operation
-            logger.warning(f"No state found for node {node_idx}, cannot determine legal moves")
-            legal_moves = np.array([])
-        
-        if len(actions) == 0:
-            # No children - this can happen if:
-            # 1. Tree reuse just occurred and root hasn't been re-expanded yet
-            # 2. No simulations reached the root (shouldn't happen)
-            # Return uniform policy over legal moves
-            
-            # Only warn if this is unexpected (not after tree reuse)
-            root_visits = self.tree.node_data.visit_counts[0].item()
-            if root_visits <= 1 or not self.config.enable_subtree_reuse:
-                logger.warning(f"Root node has no children after {self.config.num_simulations} simulations")
-            # For Go, include pass move in action space
-            action_space_size = self.config.board_size ** 2
-            if self.config.game_type == GameType.GO:
-                action_space_size += 1
             policy = np.zeros(action_space_size)
             if len(legal_moves) > 0:
                 policy[legal_moves] = 1.0 / len(legal_moves)
@@ -375,96 +469,51 @@ class MCTS:
         # Convert visits to probabilities
         total_visits = visits.sum().item()
         if total_visits == 0:
-            # No visits - return uniform over legal moves
-            # For Go, include pass move in action space
-            action_space_size = self.config.board_size ** 2
-            if self.config.game_type == GameType.GO:
-                action_space_size += 1
+            # No visits - return uniform over children actions
             policy = np.zeros(action_space_size)
-            if len(legal_moves) > 0:
-                policy[legal_moves] = 1.0 / len(legal_moves)
+            actions_np = actions.cpu().numpy()
+            if len(actions_np) > 0:
+                policy[actions_np] = 1.0 / len(actions_np)
             return policy
             
-        # Create policy vector
-        # For Go, include pass move in action space
-        action_space_size = self.config.board_size ** 2
-        if self.config.game_type == GameType.GO:
-            action_space_size += 1
+        # Create policy vector efficiently
         policy = np.zeros(action_space_size)
+        
+        # Trust the tree structure - children are legal by construction
+        # This is the key optimization: we don't re-validate what we already know
+        if self.config.enable_subtree_reuse and self.config.enable_debug_logging:
+            # Only in debug mode, do a quick sanity check
+            state_idx = self.node_to_state[node_idx].item()
+            if state_idx >= 0:
+                legal_mask = self.game_states.get_legal_moves_mask(
+                    torch.tensor([state_idx], device=self.device)
+                )[0]
+                legal_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
+                
+                # Quick vectorized check
+                actions_np = actions.cpu().numpy()
+                if len(legal_set) > 0:
+                    illegal_mask = ~np.isin(actions_np, list(legal_set))
+                    if illegal_mask.any():
+                        logger.warning(f"Found {illegal_mask.sum()} illegal children in tree - this shouldn't happen")
+        
+        # Vectorized policy assignment
         actions_np = actions.cpu().numpy()
         visits_np = visits.cpu().numpy()
         
-        # Debug: check if any visited actions are illegal
-        illegal_visited = []
-        for action, visit_count in zip(actions_np, visits_np):
-            if 0 <= action < len(policy):
-                policy[action] = visit_count / total_visits
-                if len(legal_moves) > 0 and action not in legal_moves:
-                    illegal_visited.append((action, visit_count))
-                    logger.warning(f"MCTS visited illegal action {action} with {visit_count} visits!")
+        # Direct assignment - trust tree structure
+        valid_actions = (actions_np >= 0) & (actions_np < action_space_size)
+        policy[actions_np[valid_actions]] = visits_np[valid_actions] / total_visits
         
-                
-        # Ensure only legal moves have non-zero probability
-        # This handles cases where MCTS might have stale children from reuse
-        if len(legal_moves) > 0:
-            legal_set = set(legal_moves)
-            
-            # Debug: Check which illegal moves have probability
-            illegal_with_prob = []
-            for i in range(len(policy)):
-                if i not in legal_set and policy[i] > 0:
-                    illegal_with_prob.append((i, policy[i]))
-                    policy[i] = 0.0
-            
-            # Renormalize
-            policy_sum = policy.sum()
+        # Single normalization check
+        policy_sum = policy.sum()
+        if abs(policy_sum - 1.0) > 1e-6:
             if policy_sum > 0:
                 policy /= policy_sum
             else:
-                # All visited moves were illegal - this is a critical error
-                logger.error(f"CRITICAL: All visited moves are illegal! Tree has {self.tree.num_nodes} nodes")
-                logger.error(f"Root children actions: {actions.cpu().numpy()}")
-                logger.error(f"Legal moves: {legal_moves[:20]}...")
-                logger.error(f"Root state index: {state_idx}")
-                raise RuntimeError("MCTS visited only illegal moves - tree search is broken")
-            
-            # Double-check: ensure no illegal moves have probability after renormalization
-            for i in range(len(policy)):
-                if i not in legal_set and policy[i] > 1e-10:
-                    logger.error(f"ERROR: Illegal move {i} still has probability {policy[i]} after filtering!")
-                    policy[i] = 0.0
-            
-            # Final renormalization if needed
-            final_sum = policy.sum()
-            if abs(final_sum - 1.0) > 1e-6:
-                if final_sum > 0:
-                    policy /= final_sum
-                else:
-                    # Fallback to uniform over legal moves
-                    fallback_action_space_size = self.config.board_size ** 2
-                    if self.config.game_type == GameType.GO:
-                        fallback_action_space_size += 1
-                    policy = np.zeros(fallback_action_space_size)
-                    policy[list(legal_set)] = 1.0 / len(legal_set)
-        else:
-            # len(legal_moves) == 0 - This should not happen in a valid game state
-            logger.warning("No legal moves found - returning uniform policy")
-            # Don't filter anything if we don't know what's legal
-            
-        # Final validation before returning
-        if len(legal_moves) > 0:
-            legal_set_final = set(legal_moves)
-            for i in range(len(policy)):
-                if i not in legal_set_final and policy[i] > 1e-10:
-                    logger.error(f"FINAL CHECK FAILED: Illegal move {i} has probability {policy[i]}")
-                    logger.error(f"Legal moves: {sorted(list(legal_set_final))[:20]}...")
-                    logger.error(f"Policy shape: {policy.shape}, sum: {policy.sum()}")
-                    # Force it to zero as a last resort
-                    policy[i] = 0.0
-            
-            # One more renormalization if we had to zero anything
-            if policy.sum() > 0:
-                policy /= policy.sum()
+                # This should never happen with valid tree
+                logger.error("Policy sum is zero - tree may be corrupted")
+                return np.ones(action_space_size) / action_space_size
                     
         return policy
         
@@ -1038,3 +1087,74 @@ class MCTS:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
         return False
+
+
+def create_single_gpu_mcts(
+    config: MCTSConfig,
+    model: torch.nn.Module,
+    game_interface: Optional[GameInterface] = None,
+    use_tensorrt: bool = False
+) -> MCTS:
+    """Factory function to create optimized single-GPU MCTS
+    
+    This replaces the DirectMCTS class with a cleaner interface.
+    
+    Args:
+        config: MCTS configuration
+        model: Neural network model
+        game_interface: Optional game interface
+        use_tensorrt: Whether to use TensorRT
+        
+    Returns:
+        MCTS instance optimized for single-GPU
+    """
+    # Apply recommended optimizations to config
+    config = optimize_config_for_single_gpu(config)
+    
+    # Store TensorRT flag in config
+    config.use_tensorrt = use_tensorrt
+    
+    # Create MCTS with single-GPU mode enabled
+    return MCTS(
+        config=config,
+        evaluator=model,  # Will be converted to SingleGPUEvaluator internally
+        game_interface=game_interface,
+        single_gpu_mode=True
+    )
+
+
+def optimize_config_for_single_gpu(config: MCTSConfig) -> MCTSConfig:
+    """Apply recommended optimizations to MCTS config for single-GPU
+    
+    Args:
+        config: Original MCTS configuration
+        
+    Returns:
+        Optimized configuration
+    """
+    # Enable performance features
+    config.classical_only_mode = True  # Skip quantum features
+    config.enable_fast_ucb = True      # Use optimized UCB
+    config.use_mixed_precision = True  # FP16 for tensor cores
+    config.use_cuda_graphs = True      # Enable CUDA graphs
+    config.use_tensor_cores = True     # Leverage tensor cores
+    
+    # Memory optimizations
+    config.initial_capacity_factor = 0.5  # Pre-allocate more
+    config.enable_memory_pooling = True   # Use memory pools
+    
+    # Batch size optimization
+    if config.device == 'cuda' and torch.cuda.is_available():
+        # Adjust wave size based on GPU memory
+        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        if gpu_memory_gb >= 24:  # High-end GPU (3090, 4090)
+            config.max_wave_size = 4096
+        elif gpu_memory_gb >= 12:  # Mid-range GPU
+            config.max_wave_size = 3072
+        else:  # Lower-end GPU
+            config.max_wave_size = 2048
+    
+    logger.info(f"Optimized single-GPU config: wave_size={config.max_wave_size}, "
+               f"mixed_precision={config.use_mixed_precision}")
+    
+    return config

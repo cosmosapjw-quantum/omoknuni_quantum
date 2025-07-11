@@ -44,6 +44,15 @@ class MCTSConfig:
     wave_size: Optional[int] = None  # Auto-determine if None
     min_wave_size: int = 3072
     max_wave_size: int = 3072  # Fixed size for best performance
+    wave_min_size: int = 256  # Minimum wave size for adaptive sizing
+    wave_max_size: int = 2048  # Maximum wave size for adaptive sizing
+    wave_adaptive_sizing: bool = True
+    wave_target_sims_per_second: int = 100000
+    wave_target_gpu_utilization: float = 0.95
+    wave_num_pipelines: int = 3
+    wave_async_expansion: bool = True
+    wave_prefetch_evaluations: bool = True
+    wave_memory_pool_mb: int = 1024
     
     # Device configuration
     device: str = 'cuda'
@@ -63,21 +72,43 @@ class MCTSConfig:
     # Memory configuration
     memory_pool_size_mb: int = 2048
     max_tree_nodes: int = 500000
+    tree_memory_fraction: float = 0.4
+    buffer_memory_fraction: float = 0.3
+    max_tree_nodes_per_worker: int = 800000
     use_mixed_precision: bool = True
     use_cuda_graphs: bool = True
     use_tensor_cores: bool = True
+    enable_kernel_fusion: bool = True
+    gpu_memory_fraction: float = 0.9
+    initial_capacity_factor: float = 0.5  # Pre-allocate 50% to avoid reallocations
+    enable_memory_pooling: bool = True    # Use memory pools for efficiency
     
     # Progressive expansion
     initial_children_per_expansion: int = 8
     max_children_per_node: int = 50
     progressive_expansion_threshold: int = 5
     
+    # CSR and sparse operations
+    csr_max_actions: int = 10
+    csr_use_sparse_operations: bool = True
+    
+    # CPU thread configuration
+    cpu_threads_per_worker: int = 1
+    
+    # Batch and timing configuration
+    batch_size: int = 256  # MCTS batch size
+    inference_batch_size: int = 256  # NN inference batch size
+    tree_batch_size: int = 8  # Batch size for tree operations
+    gpu_batch_timeout: float = 0.020  # GPU batch timeout in seconds (20ms)
+    worker_batch_timeout: float = 0.050  # Worker batch timeout in seconds (50ms)
+    max_coordination_batch_size: int = 128
+    training_batch_queue_size: int = 10
+    
     # Legacy parameters (for compatibility)
     target_sims_per_second: int = 100000
     cache_legal_moves: bool = True
     cache_features: bool = True
     use_zobrist_hashing: bool = True
-    tree_batch_size: int = 1024
     
     # Subtree reuse configuration
     enable_subtree_reuse: bool = True  # Reuse search tree between moves

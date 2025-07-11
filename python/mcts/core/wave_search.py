@@ -260,11 +260,21 @@ class WaveSearch:
         if not self._buffers_allocated or self.paths_buffer.shape[0] < wave_size:
             self.allocate_buffers(wave_size)
             
-        # Phase 1: Selection - traverse tree in parallel
-        paths, path_lengths, leaf_nodes = self._select_batch_vectorized(wave_size)
-        
-        # Phase 2: Expansion - expand leaf nodes
-        expanded_nodes = self._expand_batch_vectorized(leaf_nodes)
+        # Try fused select+expand if available
+        if self.gpu_ops and hasattr(self.gpu_ops, 'fused_select_expand') and self.config.enable_kernel_fusion:
+            fused_result = self._try_fused_select_expand(wave_size)
+            if fused_result is not None:
+                paths, path_lengths, leaf_nodes, expanded_nodes = fused_result
+            else:
+                # Fallback to separate phases
+                paths, path_lengths, leaf_nodes = self._select_batch_vectorized(wave_size)
+                expanded_nodes = self._expand_batch_vectorized(leaf_nodes)
+        else:
+            # Phase 1: Selection - traverse tree in parallel
+            paths, path_lengths, leaf_nodes = self._select_batch_vectorized(wave_size)
+            
+            # Phase 2: Expansion - expand leaf nodes
+            expanded_nodes = self._expand_batch_vectorized(leaf_nodes)
         
         # Phase 2.5: If we expanded nodes, we need to select one of their children
         # This is critical for the root node case where it has no children initially
@@ -283,6 +293,50 @@ class WaveSearch:
         
         return wave_size
         
+    def _try_fused_select_expand(self, wave_size: int) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """Try to use fused select+expand kernel if available
+        
+        Returns:
+            Tuple of (paths, path_lengths, leaf_nodes, expanded_nodes) or None if not available
+        """
+        try:
+            # Prepare inputs for fused kernel
+            roots = torch.arange(wave_size, device=self.device, dtype=torch.int32)
+            
+            # Get tree data directly from node_data
+            children = self.tree.node_data.children  # Shape: [num_nodes, max_children]
+            visit_counts = self.tree.node_data.visit_counts
+            q_values = self.tree.node_data.q_values
+            prior_probs = self.tree.node_data.prior_probs
+            is_expanded = self.tree.node_data.is_expanded
+            
+            # Call fused kernel
+            result = self.gpu_ops.fused_select_expand(
+                roots=roots,
+                children=children,
+                visit_counts=visit_counts,
+                q_values=q_values,
+                prior_probs=prior_probs,
+                is_expanded=is_expanded,
+                max_depth=self.config.max_depth,
+                c_puct=self.config.c_puct
+            )
+            
+            if result is None:
+                return None
+                
+            paths, path_lengths, expand_nodes, needs_expansion = result
+            
+            # Process results to match expected format
+            leaf_nodes = expand_nodes[needs_expansion]
+            expanded_nodes = self._expand_nodes_batch(leaf_nodes)
+            
+            return paths, path_lengths, leaf_nodes, expanded_nodes
+            
+        except Exception as e:
+            logger.debug(f"Fused select+expand failed: {e}")
+            return None
+    
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Select paths through tree in parallel with full vectorization
         
@@ -596,12 +650,13 @@ class WaveSearch:
                         torch.tensor([state_idx], device=self.device)
                     )[0]
                     
-                    # Filter children to only those with legal actions
+                    # Vectorized legal action filtering
+                    child_actions = self.tree.node_data.parent_actions[children]
+                    valid_actions = (child_actions >= 0) & (child_actions < legal_mask.shape[0])
                     legal_children_mask = torch.zeros(len(children), dtype=torch.bool, device=self.device)
-                    for i, child_idx in enumerate(children):
-                        action = self.tree.node_data.parent_actions[child_idx].item()
-                        if 0 <= action < len(legal_mask) and legal_mask[action]:
-                            legal_children_mask[i] = True
+                    if valid_actions.any():
+                        # Use advanced indexing only for valid action indices
+                        legal_children_mask[valid_actions] = legal_mask[child_actions[valid_actions]]
                     
                     # Only keep legal children
                     if legal_children_mask.any():
@@ -726,12 +781,13 @@ class WaveSearch:
                     torch.tensor([state_idx], device=self.device)
                 )[0]
                 
-                # Filter children to only those with legal actions
+                # Vectorized legal action filtering
+                child_actions = self.tree.node_data.parent_actions[valid_children]
+                valid_actions = (child_actions >= 0) & (child_actions < legal_mask.shape[0])
                 legal_children_mask = torch.zeros(len(valid_children), dtype=torch.bool, device=self.device)
-                for i, child_idx in enumerate(valid_children):
-                    action = self.tree.node_data.parent_actions[child_idx].item()
-                    if 0 <= action < len(legal_mask) and legal_mask[action]:
-                        legal_children_mask[i] = True
+                if valid_actions.any():
+                    # Use advanced indexing only for valid action indices
+                    legal_children_mask[valid_actions] = legal_mask[child_actions[valid_actions]]
                 
                 # Only keep legal children
                 if legal_children_mask.any():
@@ -832,27 +888,51 @@ class WaveSearch:
                 
                 # Evaluate with neural network
                 with torch.no_grad():
-                    # Convert to numpy for evaluator
-                    features_np = features.cpu().numpy()
-                    # Use evaluate_batch since we may have multiple states
-                    if hasattr(self.evaluator, 'evaluate_batch'):
-                        policies, value_preds = self.evaluator.evaluate_batch(features_np)
+                    # Check if evaluator supports direct tensor evaluation
+                    if hasattr(self.evaluator, '_return_torch_tensors') and self.evaluator._return_torch_tensors:
+                        # Direct GPU evaluation - no CPU transfers
+                        if hasattr(self.evaluator, 'evaluate_batch'):
+                            policies, value_preds = self.evaluator.evaluate_batch(features)
+                        else:
+                            # This path should rarely be used with optimized evaluator
+                            logger.warning("Evaluator doesn't support batch evaluation with tensors")
+                            # Convert to numpy as fallback
+                            features_np = features.cpu().numpy()
+                            policies = []
+                            value_preds = []
+                            for feat in features_np:
+                                p, v = self.evaluator.evaluate(feat)
+                                policies.append(p)
+                                value_preds.append(v)
+                            policies = np.array(policies)
+                            value_preds = torch.from_numpy(np.array(value_preds)).to(self.device).float()
                     else:
-                        # Fallback for single state evaluation
-                        policies = []
-                        value_preds = []
-                        for feat in features_np:
-                            p, v = self.evaluator.evaluate(feat)
-                            policies.append(p)
-                            value_preds.append(v)
-                        policies = np.array(policies)
-                        value_preds = np.array(value_preds)
+                        # Legacy path: Convert to numpy for evaluator
+                        features_np = features.cpu().numpy()
+                        # Use evaluate_batch since we may have multiple states
+                        if hasattr(self.evaluator, 'evaluate_batch'):
+                            policies, value_preds = self.evaluator.evaluate_batch(features_np)
+                        else:
+                            # Fallback for single state evaluation
+                            policies = []
+                            value_preds = []
+                            for feat in features_np:
+                                p, v = self.evaluator.evaluate(feat)
+                                policies.append(p)
+                                value_preds.append(v)
+                            policies = np.array(policies)
+                            value_preds = np.array(value_preds)
+                        
+                        # Convert back to tensor
+                        value_preds = torch.from_numpy(value_preds).to(self.device).float()
                     
-                # Store values back
-                if isinstance(value_preds, np.ndarray):
-                    value_preds = torch.from_numpy(value_preds).to(self.device).float()
-                elif isinstance(value_preds, torch.Tensor):
+                # Ensure tensor format
+                if isinstance(value_preds, torch.Tensor):
                     value_preds = value_preds.float()  # Ensure float dtype
+                else:
+                    # Should not happen with properly configured evaluator
+                    logger.error("Value predictions are not tensors after evaluation")
+                    value_preds = torch.tensor(value_preds, device=self.device, dtype=torch.float32)
                 
                 # Squeeze to remove extra dimension if present (batch_size, 1) -> (batch_size,)
                 if value_preds.ndim == 2 and value_preds.shape[1] == 1:

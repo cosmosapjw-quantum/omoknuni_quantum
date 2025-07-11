@@ -269,6 +269,100 @@ __global__ void optimized_ucb_selection_kernel(
 // =============================================================================
 
 /**
+ * Fused select and expand kernel for wave search
+ * Combines selection and expansion into a single kernel to reduce memory transfers
+ */
+__global__ void fused_select_expand_kernel(
+    const int* __restrict__ roots,           // Root nodes for each wave
+    const int* __restrict__ children,        // Children lookup [num_nodes * max_children]
+    const int* __restrict__ visit_counts,    // Visit counts for all nodes
+    const float* __restrict__ q_values,      // Q-values for all nodes
+    const float* __restrict__ prior_probs,   // Prior probabilities
+    const bool* __restrict__ is_expanded,    // Whether node is expanded
+    const int num_waves,                     // Number of wave searches
+    const int max_children,                  // Maximum children per node
+    const int max_depth,                     // Maximum search depth
+    const float c_puct,                      // Exploration constant
+    int* __restrict__ selected_paths,        // Output: selected paths [num_waves * max_depth]
+    int* __restrict__ path_lengths,          // Output: actual path lengths
+    int* __restrict__ expand_nodes,          // Output: nodes to expand
+    bool* __restrict__ needs_expansion)      // Output: which waves need expansion
+{
+    const int wave_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (wave_idx >= num_waves) return;
+    
+    // Local path storage
+    extern __shared__ int shared_path[];
+    int* local_path = &shared_path[threadIdx.x * max_depth];
+    
+    int current = roots[wave_idx];
+    int depth = 0;
+    local_path[0] = current;
+    
+    // Combined selection and leaf detection
+    while (depth < max_depth - 1) {
+        // Check if current node is leaf
+        bool is_leaf = true;
+        int best_child = -1;
+        float best_ucb = -INFINITY;
+        
+        if (is_expanded[current]) {
+            // Node is expanded, select best child
+            const int child_offset = current * max_children;
+            int parent_visits = visit_counts[current];
+            float sqrt_parent = sqrtf((float)parent_visits);
+            
+            // Find best child using UCB
+            for (int i = 0; i < max_children; i++) {
+                int child = children[child_offset + i];
+                if (child < 0) break;  // No more children
+                
+                is_leaf = false;
+                int child_visits = visit_counts[child];
+                
+                float ucb_score;
+                if (child_visits == 0) {
+                    ucb_score = INFINITY;  // Unvisited nodes have highest priority
+                } else {
+                    float q = q_values[child];
+                    float prior = prior_probs[child];
+                    float exploration = c_puct * prior * sqrt_parent / (1.0f + child_visits);
+                    ucb_score = q + exploration;
+                }
+                
+                if (ucb_score > best_ucb) {
+                    best_ucb = ucb_score;
+                    best_child = child;
+                }
+            }
+        }
+        
+        if (is_leaf || best_child < 0) {
+            // Found leaf node for expansion
+            expand_nodes[wave_idx] = current;
+            needs_expansion[wave_idx] = true;
+            path_lengths[wave_idx] = depth + 1;
+            break;
+        }
+        
+        // Continue selection
+        depth++;
+        current = best_child;
+        local_path[depth] = current;
+    }
+    
+    // Copy path to global memory
+    for (int i = 0; i <= depth; i++) {
+        selected_paths[wave_idx * max_depth + i] = local_path[i];
+    }
+    
+    // Fill remaining with -1
+    for (int i = depth + 1; i < max_depth; i++) {
+        selected_paths[wave_idx * max_depth + i] = -1;
+    }
+}
+
+/**
  * Batched Dirichlet noise generation for root exploration - Pass 1
  * Generates gamma samples and computes row sums
  */
@@ -997,6 +1091,51 @@ void optimized_backup_scatter_cuda(
     }
 }
 
+// Fused select and expand operation
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> fused_select_expand_cuda(
+    torch::Tensor roots,
+    torch::Tensor children,
+    torch::Tensor visit_counts,
+    torch::Tensor q_values,
+    torch::Tensor prior_probs,
+    torch::Tensor is_expanded,
+    int max_depth,
+    float c_puct)
+{
+    const int num_waves = roots.size(0);
+    const int max_children = children.size(1);
+    
+    // Allocate output tensors
+    auto selected_paths = torch::zeros({num_waves, max_depth}, torch::kInt32).cuda();
+    auto path_lengths = torch::zeros({num_waves}, torch::kInt32).cuda();
+    auto expand_nodes = torch::zeros({num_waves}, torch::kInt32).cuda();
+    auto needs_expansion = torch::zeros({num_waves}, torch::kBool).cuda();
+    
+    // Launch kernel
+    const int threads = 256;
+    const int blocks = (num_waves + threads - 1) / threads;
+    const int shared_mem = threads * max_depth * sizeof(int);
+    
+    fused_select_expand_kernel<<<blocks, threads, shared_mem>>>(
+        roots.data_ptr<int>(),
+        children.data_ptr<int>(),
+        visit_counts.data_ptr<int>(),
+        q_values.data_ptr<float>(),
+        prior_probs.data_ptr<float>(),
+        is_expanded.data_ptr<bool>(),
+        num_waves,
+        max_children,
+        max_depth,
+        c_puct,
+        selected_paths.data_ptr<int>(),
+        path_lengths.data_ptr<int>(),
+        expand_nodes.data_ptr<int>(),
+        needs_expansion.data_ptr<bool>()
+    );
+    
+    return std::make_tuple(selected_paths, path_lengths, expand_nodes, needs_expansion);
+}
+
 // =============================================================================
 // PYBIND11 MODULE DEFINITION
 // =============================================================================
@@ -1018,6 +1157,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("batched_dirichlet_noise", &batched_dirichlet_noise_cuda, "Batched Dirichlet noise generation");
     m.def("fused_ucb_with_noise", &fused_ucb_with_noise_cuda, "Fused UCB computation with Dirichlet noise");
     m.def("optimized_backup_scatter", &optimized_backup_scatter_cuda, "Optimized backup with scatter operations");
+    m.def("fused_select_expand", &fused_select_expand_cuda, "Fused select and expand operation");
     
     // Utility functions
     m.def("initialize_lookup_tables", &initialize_lookup_tables_cuda, "Initialize lookup tables");

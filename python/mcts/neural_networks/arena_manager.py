@@ -20,7 +20,7 @@ from mcts.core.mcts import MCTS
 from mcts.core.mcts_config import MCTSConfig
 from mcts.core.game_interface import GameInterface
 from mcts.utils.config_system import AlphaZeroConfig
-from mcts.utils.direct_gpu_evaluator import DirectGPUEvaluator
+from mcts.utils.single_gpu_evaluator import SingleGPUEvaluator
 
 
 logger = logging.getLogger(__name__)
@@ -454,9 +454,9 @@ class ArenaManager:
         """
         logger.info(f"Arena: {model1_name} vs {model2_name} - {self.arena_config.num_games} games (Single GPU)")
         
-        # Convert evaluators to DirectGPUEvaluator if needed
+        # Convert evaluators to SingleGPUEvaluator if needed
         if hasattr(evaluator1, 'model'):
-            gpu_eval1 = DirectGPUEvaluator(
+            gpu_eval1 = SingleGPUEvaluator(
                 model=evaluator1.model,
                 device=self.arena_config.device,
                 action_size=self.config.game.board_size ** 2,
@@ -466,7 +466,7 @@ class ArenaManager:
             gpu_eval1 = evaluator1
             
         if hasattr(evaluator2, 'model'):
-            gpu_eval2 = DirectGPUEvaluator(
+            gpu_eval2 = SingleGPUEvaluator(
                 model=evaluator2.model,
                 device=self.arena_config.device,
                 action_size=self.config.game.board_size ** 2,

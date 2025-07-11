@@ -88,6 +88,14 @@ class MCTSGPUAccelerator:
             return self._kernel_interface.vectorized_backup(*args, **kwargs)
         return self._kernel_interface.pytorch_backup(*args, **kwargs)
     
+    def fused_select_expand(self, *args, **kwargs):
+        """Fused select and expand operation"""
+        if hasattr(self._kernel_interface, 'fused_select_expand'):
+            return self._kernel_interface.fused_select_expand(*args, **kwargs)
+        # Fallback to separate operations
+        logger.debug("Fused select+expand not available, using separate operations")
+        return None
+    
     
     def find_expansion_nodes(self, *args, **kwargs):
         """Find expansion nodes"""
