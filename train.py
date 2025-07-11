@@ -15,6 +15,9 @@ import warnings
 python_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'python')
 sys.path.insert(0, python_dir)
 
+# Store original directory
+original_dir = os.getcwd()
+
 # Change to python directory for proper imports
 os.chdir(python_dir)
 
@@ -51,8 +54,6 @@ def _detect_cuda_kernels(device: str):
                 'batched_add_children',
                 # UCB selection operations
                 'batched_ucb_selection',
-                # Quantum-enhanced operations
-                'quantum_ucb_selection',
                 # Wave search optimizations
                 'batched_dirichlet_noise',
                 'fused_ucb_with_noise',

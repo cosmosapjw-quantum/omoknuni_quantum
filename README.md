@@ -63,12 +63,16 @@ Workers (12) → BatchEvaluationCoordinator → GPU Service → ResNet → Respo
 git clone <repository-url>
 cd omoknuni_quantum
 
-# Install Python dependencies (requires CUDA for GPU acceleration)
-cd python
-pip install -r requirements.txt
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Build C++ components
-python setup.py build_ext --inplace
+# Install package (automatically builds C++ components)
+pip install -e .
+
+# Optional: Build CUDA kernels for GPU acceleration
+# Requires PyTorch with CUDA support
+python build_cuda.py
 ```
 
 ### Basic Training

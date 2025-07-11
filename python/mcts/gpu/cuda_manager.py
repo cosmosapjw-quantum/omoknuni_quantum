@@ -44,10 +44,12 @@ class CudaManager:
         possible_build_dirs = [
             # Current working directory (for when running from project root)
             Path.cwd() / "build_cuda_shared",
-            # Parent of current working directory
+            # Parent of current working directory (when running from python/)
             Path.cwd().parent / "build_cuda_shared",
             # Development mode: python/mcts/gpu -> project_root/build_cuda_shared
             self.current_dir.parent.parent.parent / "build_cuda_shared",
+            # When train.py changes to python directory
+            Path.cwd() / ".." / "build_cuda_shared",
             # Look for build directories in site-packages parent directories
             self.current_dir.parent.parent.parent.parent / "build_cuda_shared",
             self.current_dir.parent.parent.parent.parent.parent / "build_cuda_shared",
@@ -77,7 +79,6 @@ class CudaManager:
             'functions': [
                 'find_expansion_nodes',
                 'batched_ucb_selection', 
-                'quantum_ucb_selection',
                 'vectorized_backup',
                 'batched_add_children',
                 'initialize_lookup_tables'
@@ -140,24 +141,70 @@ class CudaManager:
     def _try_load_existing_module(self) -> bool:
         """Try to load an existing compiled module without recompilation"""
         try:
-            module_path = self.build_dir / f"{self.kernel_config['module_name']}.so"
+            # First try to load from the same directory as this file
+            local_module_path = self.current_dir / f"{self.kernel_config['module_name']}.so"
             
-            if not module_path.exists():
-                logger.debug(f"Module not found at {module_path}")
+            # Also check build directory
+            build_module_path = self.build_dir / f"{self.kernel_config['module_name']}.so"
+            
+            # Try local path first (installed location)
+            if local_module_path.exists():
+                module_path = local_module_path
+                logger.info(f"Found CUDA module at {module_path}")
+            elif build_module_path.exists():
+                module_path = build_module_path
+                logger.info(f"Found CUDA module at {module_path}")
+            else:
+                logger.info(f"CUDA module not found. Searched:")
+                logger.info(f"  - {local_module_path}")
+                logger.info(f"  - {build_module_path}")
+                logger.info(f"  Current dir: {self.current_dir}")
+                logger.info(f"  Build dir: {self.build_dir}")
+                logger.info(f"  Working dir: {Path.cwd()}")
                 return False
             
-            # Try to load the existing module using importlib
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                self.kernel_config['module_name'], 
-                str(module_path)
-            )
-            if spec is None or spec.loader is None:
-                logger.debug("Failed to create module spec")
-                return False
-            
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            # Try to load using PyTorch's mechanism for better compatibility
+            try:
+                import torch
+                from torch.utils.cpp_extension import load
+                
+                # First load the library to resolve symbols
+                torch.ops.load_library(str(module_path))
+                logger.debug(f"Loaded library with torch.ops.load_library")
+                
+                # Now import the module
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    self.kernel_config['module_name'], 
+                    str(module_path)
+                )
+                if spec is None or spec.loader is None:
+                    logger.debug("Failed to create module spec")
+                    return False
+                
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                logger.debug(f"Successfully loaded module {self.kernel_config['module_name']}")
+                
+            except Exception as e:
+                logger.debug(f"PyTorch loading failed: {e}, trying direct import")
+                # Fallback to direct import
+                try:
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location(
+                        self.kernel_config['module_name'], 
+                        str(module_path)
+                    )
+                    if spec is None or spec.loader is None:
+                        logger.debug("Failed to create module spec")
+                        return False
+                    
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    logger.debug(f"Direct import successful")
+                except Exception as e2:
+                    logger.error(f"Both loading methods failed. PyTorch error: {e}, Direct error: {e2}")
+                    return False
             
             # Add parallel_backup alias if needed
             if hasattr(module, 'vectorized_backup') and not hasattr(module, 'parallel_backup'):

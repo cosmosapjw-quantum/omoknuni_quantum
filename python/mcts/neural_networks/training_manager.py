@@ -187,8 +187,8 @@ class TrainingManager:
         
         # Calculate losses
         # Policy loss: KL divergence between predicted and target policies
-        pred_log_policies = torch.log_softmax(pred_policies, dim=1)
-        policy_loss = self.policy_loss_fn(pred_log_policies, target_policies)
+        # Note: model already returns log probabilities from F.log_softmax
+        policy_loss = self.policy_loss_fn(pred_policies, target_policies)
         
         # Value loss: MSE between predicted and target values
         value_loss = self.value_loss_fn(pred_values, target_values)

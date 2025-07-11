@@ -28,6 +28,7 @@ find . -type f -name "*.dll" -delete
 echo "Removing CMake build directory..."
 rm -rf cmake-build-*/
 rm -rf CMakeFiles/
+rm -rf build_cpp/
 rm -f CMakeCache.txt
 rm -f cmake_install.cmake
 rm -f Makefile
@@ -37,8 +38,10 @@ echo "Removing CUDA kernel builds..."
 rm -rf python/mcts/gpu/build/
 rm -rf python/build_cuda/
 rm -rf build_cuda_shared/
+rm -rf build_torch_cuda/
 rm -f python/mcts/gpu/*.so
 rm -f python/mcts/gpu/*.pyd
+rm -rf ~/.cache/torch_extensions/py*_cu*/mcts_cuda_kernels/
 
 # Remove C++ build artifacts
 echo "Removing C++ build artifacts..."
@@ -54,9 +57,9 @@ echo "  pip install -e ."
 echo ""
 echo "This will automatically:"
 echo "  - Build C++ game backends (libalphazero.so and alphazero_py module)"
-echo "  - Compile CUDA kernels if CUDA is available (using fast nvcc)"
+echo "  - Compile CUDA kernels if PyTorch with CUDA is available"
 echo ""
 echo "For manual builds:"
-echo "  - CUDA kernels: python build_cuda.py"
+echo "  - CUDA kernels: python build_cuda.py (requires PyTorch with CUDA)"
 echo "  - C++ only: python build_cpp.py"
 echo "  - Or: mkdir build && cd build && cmake .. && make -j$(nproc)"

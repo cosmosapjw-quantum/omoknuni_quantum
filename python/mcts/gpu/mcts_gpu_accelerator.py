@@ -13,7 +13,6 @@ Core MCTS Operations:
 - batched_ucb_selection: UCB score computation for action selection
 - vectorized_backup: Efficient batch propagation of values up the tree
 - find_expansion_nodes: Node expansion logic for tree growth
-- quantum_ucb_selection: Quantum-enhanced UCB variants
 """
 
 import torch
@@ -96,9 +95,6 @@ class MCTSGPUAccelerator:
             return self._kernel_interface.find_expansion_nodes(*args, **kwargs)
         return self._pytorch_find_expansion_nodes(*args, **kwargs)
     
-    def quantum_ucb_selection(self, *args, **kwargs):
-        """Placeholder for quantum UCB (disabled) - uses classical UCB"""
-        return self.batched_ucb_selection(*args, **kwargs)
     
     def batched_add_children(self, *args, **kwargs):
         """Batched addition of children with proper parent assignment

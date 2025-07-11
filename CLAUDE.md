@@ -29,6 +29,8 @@ Production-ready Monte Carlo Tree Search implementation with 14.7x performance o
 - Removed legacy setup files (setup_legacy.py, setup_modern.py)
 - Updated documentation to reflect current architecture
 - Recovered quantum/docs/ for future version 2.0 development
+- Fixed CUDA kernel loading issue by using PyTorch's extension system for proper symbol resolution
+- Updated build process to use torch.utils.cpp_extension.load() for CUDA compilation
 
 # ROLE AND EXPERTISE
 

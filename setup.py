@@ -153,16 +153,32 @@ class SmartBuildExt(build_ext):
             return False
     
     def _build_cuda_kernels_with_script(self):
-        """Build CUDA kernels using the build_cuda.py script"""
-        print("\n🔧 Building CUDA kernels with build_cuda.py...")
+        """Build CUDA kernels using PyTorch extension builder"""
+        print("\n🔧 Building CUDA kernels with PyTorch...")
         
-        build_script = Path("build_cuda.py")
+        # Try the new PyTorch-based builder first
+        build_script = Path("build_cuda_torch.py")
         if not build_script.exists():
-            print("⚠️  build_cuda.py not found")
-            return False
+            # Fallback to old script
+            build_script = Path("build_cuda.py")
+            
+        if not build_script.exists():
+            print("⚠️  CUDA build script not found")
+            return True  # Continue without CUDA
         
         try:
-            # Run build script without capturing output to see what's happening
+            # Check if PyTorch is available
+            try:
+                import torch
+                if not torch.cuda.is_available():
+                    print("⚠️  PyTorch CUDA not available - skipping CUDA kernel build")
+                    return True
+            except ImportError:
+                print("⚠️  PyTorch not found - skipping CUDA kernel build")
+                return True
+            
+            # Run build script
+            print(f"   Using {build_script.name}...")
             result = subprocess.run(
                 [sys.executable, str(build_script)],
                 check=False  # Don't fail on error
@@ -171,7 +187,7 @@ class SmartBuildExt(build_ext):
                 print("✅ CUDA kernels built successfully")
                 return True
             else:
-                print("⚠️  CUDA kernel build skipped - continuing without GPU acceleration")
+                print("⚠️  CUDA kernel build failed - continuing without GPU acceleration")
                 print("   (This is normal if you don't have CUDA or if using CPU-only)")
                 return True  # Always return True to continue installation
         except Exception as e:
