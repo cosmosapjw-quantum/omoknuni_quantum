@@ -621,7 +621,6 @@ class UnifiedTrainingPipeline:
         )
     
     
-    
     def _augment_training_data(self, examples: List[GameExample]) -> List[GameExample]:
         """Apply data augmentation to training examples using board symmetries"""
         augmented_examples = []
@@ -1218,7 +1217,6 @@ class UnifiedTrainingPipeline:
 # Old wrapper function removed - now using GPU service architecture from self_play_module
 # The old play_self_play_game_wrapper function has been removed.
 # Workers now use RemoteEvaluator to communicate with GPU service for neural network evaluation
-# while using CPU for tree operations to avoid GPU memory exhaustion.
 
 
 if __name__ == "__main__":

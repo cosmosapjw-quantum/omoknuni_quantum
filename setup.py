@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Auto-adaptive setup script for AlphaZero Omoknuni
 Automatically detects Python version and adapts compilation accordingly

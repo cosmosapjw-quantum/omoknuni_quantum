@@ -1,36 +1,43 @@
 # High-Performance MCTS Implementation - Project Summary
 
 ## Overview
-Production-ready Monte Carlo Tree Search implementation with 14.7x performance optimization, achieving hardware-limited 2,500+ simulations/second on RTX 3060 Ti. Clean, streamlined codebase with all legacy code removed.
+Production-ready Monte Carlo Tree Search implementation with 14.7x performance optimization, achieving hardware-limited 2,500+ simulations/second on RTX 3060 Ti. Includes comprehensive physics analysis tools for extracting quantum and statistical mechanics properties from MCTS dynamics.
 
 ## Architecture
 - **Core**: Python + C++ hybrid with GPU acceleration (CUDA)
 - **Games**: Gomoku (15x15), Go, Chess
 - **Features**: Wave-based parallelization, optimized batch processing, hardware-accelerated tree operations
 - **Neural Networks**: ResNet with TensorRT support for maximum inference speed
+- **Physics Analysis**: Quantum/statistical mechanics extractors for MCTS dynamics
 
 ## Key Optimizations & Fixes
 1. **Batch Evaluation System** (14.7x speedup): Intelligent cross-worker coordination eliminating communication bottlenecks
 2. **Critical Bug Fixes**: Resolved value assignment perspective bias and illegal move issues
-3. **Code Streamlining**: Removed quantum features, legacy tests, debug logging, and unused modules
+3. **Code Streamlining**: Production-focused codebase with research explorations archived
 4. **Production Ready**: Clean codebase, minimal dependencies, professional logging
+5. **Physics Analysis**: Comprehensive analysis pipeline for quantum phenomena in MCTS
 
 ## Current State
 - **Performance**: Hardware-limited at GPU inference capacity (2,500+ sims/sec)
 - **Code Quality**: Streamlined, maintainable, production-ready
 - **Testing**: Comprehensive test suite with pytest
-- **Documentation**: Updated README and installation guides
+- **Documentation**: Updated README, physics analysis guides, and installation documentation
+- **Physics Analysis**: Production pipeline via `./run_physics_analysis.sh`
 
-## Recent Cleanup (Latest)
-- Removed duplicate tests directory and legacy C++ tests
-- Removed unused modules (validation_helpers, csr_gpu_kernels)
-- Cleaned up quantum references in code and tests
-- Removed all __pycache__ and build artifacts
-- Removed legacy setup files (setup_legacy.py, setup_modern.py)
-- Updated documentation to reflect current architecture
-- Recovered quantum/docs/ for future version 2.0 development
-- Fixed CUDA kernel loading issue by using PyTorch's extension system for proper symbol resolution
-- Updated build process to use torch.utils.cpp_extension.load() for CUDA compilation
+## Physics Analysis Features
+- **Entry Point**: `./run_physics_analysis.sh` with multiple presets (quick/standard/overnight)
+- **Statistical Mechanics**: Temperature extraction, free energy, phase transitions
+- **Quantum Phenomena**: Decoherence, entanglement, tunneling dynamics
+- **Information Theory**: Entropy production, mutual information, quantum Darwinism
+- **Visualization**: Automated plot generation and comprehensive reports
+
+## Recent Development (Latest)
+- Implemented unified quantum definitions with proper mixed state formalism
+- Created wave-based quantum state construction from natural MCTS dynamics
+- Vectorized all quantum calculations for performance
+- Integrated physics modules into main analysis pipeline
+- Archived unused research explorations to maintain clean production codebase
+- Updated documentation to reflect current project structure
 
 # ROLE AND EXPERTISE
 
@@ -113,6 +120,21 @@ Always write one test at a time, make it run, then improve structure. Always run
 - Ensure that your final output does not merely repeat the comments made during your thought process.
 - Rather than making the code just pass the test by artificial fix or artificial/temporary workaround, pinpoint fundamental issues in the codebase and fix them directly. You have to critically think and reflect deeply to resolve all the issues.
 - Always use ~/venv.
+
+# PROJECT-SPECIFIC GUIDELINES
+
+## Physics Analysis Development
+- The main physics analysis entry point is `./run_physics_analysis.sh`
+- Physics modules are in `python/mcts/quantum/` with analysis pipeline in `analysis/` and phenomena extractors in `phenomena/`
+- Always use real MCTS self-play data for validation, never synthetic data
+- Prioritize mathematical rigor and physical intuition in quantum formulations
+- Maintain consistency across all quantum/statistical physics modules
+
+## Code Organization
+- Production code remains in main directories
+- Research explorations are archived in `archive/` to keep codebase clean
+- Modify existing files rather than creating new ones when possible
+- Follow the existing module structure and import patterns
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

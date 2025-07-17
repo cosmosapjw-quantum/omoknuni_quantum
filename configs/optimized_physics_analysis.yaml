@@ -1,0 +1,71 @@
+# Optimized MCTS configuration for physics analysis
+# Adjusted for RTX 3060 Ti with 8GB VRAM (max 10K simulations)
+
+mcts_config:
+  # Wave search parameters (critical for performance)
+  max_wave_size: 7936  # Optimal for RTX 3060 Ti
+  min_wave_size: 1024
+  wave_num_pipelines: 5  # Full parallelism
+  wave_adaptive_sizing: true
+  
+  # Batch sizes (optimized for GPU)
+  batch_size: 896
+  inference_batch_size: 896
+  
+  # Memory settings (scaled for 10K max simulations)
+  memory_pool_size_mb: 4096  # 4GB for 10K sims
+  max_tree_nodes: 8000000  # 8M nodes max
+  initial_capacity_factor: 0.1  # Start small, grow as needed
+  
+  # Tree parameters
+  initial_children_per_expansion: 20  # Increased for efficiency
+  max_children_per_node: 80  # Increased significantly
+  
+  # Tree pruning
+  enable_tree_pruning: true
+  tree_pruning_threshold: 0.9  # Less aggressive
+  pruning_frequency: 500  # Less frequent
+  
+  # Other optimizations
+  enable_virtual_loss: true
+  virtual_loss: 1.0
+  enable_fast_ucb: true
+  enable_subtree_reuse: false  # Disabled for memory
+  classical_only_mode: true
+
+# Analysis configuration (optimized for RTX 3060 Ti)
+analysis_config:
+  # Quick preset (5-10 minutes)
+  quick_preset:
+    target_games: 10
+    sims_per_game: 1000  # High-temperature exploration only
+    
+  # Standard preset (30-60 minutes)
+  standard_preset:
+    target_games: 50
+    sims_per_game: 2500  # Captures early decoherence
+    
+  # Comprehensive preset (2-4 hours)
+  comprehensive_preset:
+    target_games: 100
+    sims_per_game: 5000  # Peak performance, good physics
+    parameter_sweep:
+      temperature_values: [0.5, 1.0, 1.5]  # 3 temperature values
+      # Total: 3 temperatures × 33 games ≈ 100 games
+    
+  # Deep preset (4-8 hours)
+  deep_preset:
+    target_games: 200
+    sims_per_game: 7500  # All major phase transitions
+    parameter_sweep:
+      temperature_values: [0.25, 0.5, 1.0, 1.5]  # 4 temperature values
+      # Total: 4 temperatures × 50 games = 200 games
+    
+  # Overnight preset (8-12 hours)
+  overnight_preset:
+    target_games: 500
+    sims_per_game: 10000  # Complete physics coverage
+    parameter_sweep:
+      c_puct_values: [0.5, 1.0, 1.414, 2.0, 3.0]  # 5 key values
+      temperature_values: [0.1, 0.5, 1.0, 1.5, 2.0]  # 5 temperature values for policy randomness
+      # Total: 5 c_puct × 5 temperatures × 20 games = 500 games

@@ -1,0 +1,195 @@
+# Optimized MCTS Self-Play Configuration
+# Based on Optuna optimization results from 2025-07-11
+# Best trial: #21 with 4700.89 simulations/second
+
+# Core MCTS Parameters
+mcts:
+  num_simulations: 1000
+  c_puct: 1.414
+  temperature: 1.0
+  temperature_threshold: 30
+  temperature_final: 0.1
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  
+  # Performance optimization modes
+  classical_only_mode: true
+  enable_fast_ucb: true
+  
+  # Virtual loss for parallelization
+  enable_virtual_loss: true
+  virtual_loss: 1.0
+
+# Wave Search Parameters - OPTIMIZED
+wave_search:
+  wave_size: null  # Auto-determine
+  min_wave_size: 512
+  max_wave_size: 7936  # Optimized: 7936
+  wave_adaptive_sizing: true
+  wave_target_sims_per_second: 100000
+  wave_target_gpu_utilization: 0.95
+  wave_num_pipelines: 5  # Optimized: 5
+  wave_async_expansion: true
+  wave_prefetch_evaluations: true
+  wave_memory_pool_mb: 1024
+  max_depth: 100
+
+# Memory Allocation Settings - OPTIMIZED
+memory:
+  memory_pool_size_mb: 2048  # Optimized: 2048
+  max_tree_nodes: 500000
+  max_tree_nodes_per_worker: 800000
+  tree_memory_fraction: 0.4
+  buffer_memory_fraction: 0.3
+  gpu_memory_fraction: 0.9
+  initial_capacity_factor: 0.6059  # Optimized: 0.6059
+  enable_memory_pooling: true
+  
+  # Node/Edge pool settings
+  initial_node_capacity: 1000000
+  initial_edge_capacity: 10000000
+  node_growth_factor: 1.5
+  edge_growth_factor: 1.5
+  defrag_threshold: 0.3
+  enable_auto_defrag: true
+  
+  # Pre-allocation
+  num_pre_allocated_trees: 4
+  max_memory_mb: 4096
+
+# GPU-Specific Configurations - OPTIMIZED
+gpu:
+  device: 'cuda'
+  use_mixed_precision: false  # Optimized: false
+  use_cuda_graphs: false  # Optimized: false
+  use_tensor_cores: true
+  enable_kernel_fusion: false  # Optimized: false
+  
+  # CUDA kernel settings
+  kernel_thread_block_size: 256
+  kernel_epsilon: 1.0e-8
+  kernel_unroll_factor: 8
+
+# Tree Operation Parameters - OPTIMIZED
+tree:
+  initial_children_per_expansion: 23  # Optimized: 23
+  max_children_per_node: 88  # Optimized: 88
+  progressive_expansion_threshold: 5
+  csr_max_actions: 225  # Minimum for 15x15 Gomoku
+  csr_use_sparse_operations: true
+  enable_subtree_reuse: true
+  subtree_reuse_min_visits: 10
+
+# Batch Processing Settings - OPTIMIZED
+batch:
+  batch_size: 768  # Optimized: 768
+  inference_batch_size: 896  # Optimized: 896
+  tree_batch_size: 8
+  max_coordination_batch_size: 128
+  training_batch_queue_size: 10
+
+# Thread and Worker Configurations
+workers:
+  cpu_threads_per_worker: 1
+  num_workers: 4
+  
+# Buffer and Queue Settings
+buffers:
+  max_queue_size: 10000
+
+# Timeout Values - OPTIMIZED
+timeouts:
+  gpu_batch_timeout: 0.0340  # Optimized: 0.0340
+  worker_batch_timeout: 0.050
+  batch_timeout_ms: 100.0
+
+# Neural Network Evaluator Settings
+evaluator:
+  # TensorRT Acceleration
+  use_tensorrt: false
+  tensorrt_fp16: true
+  tensorrt_fallback: true
+  tensorrt_workspace_size: 2048
+  tensorrt_int8: false
+  tensorrt_max_batch_size: 2048
+  tensorrt_engine_cache_dir: null
+  
+  # GPU evaluator service
+  workload_type: "throughput"
+  enable_cross_worker_batching: true
+
+# Caching and Optimization
+cache:
+  cache_legal_moves: true
+  cache_features: true
+  use_zobrist_hashing: true
+
+# Self-Play Settings
+self_play:
+  resign_threshold: -0.98
+  enable_resign: true
+
+# Tactical Move Detection
+tactical:
+  enable_tactical_boost: true
+  tactical_boost_strength: 0.3
+  tactical_boost_decay: 0.99
+  
+  # Gomoku-specific boosts
+  gomoku:
+    win_boost: 100.0
+    block_win_boost: 90.0
+    open_four_boost: 50.0
+    block_four_boost: 45.0
+    threat_base_boost: 40.0
+    threat_multiplier: 5.0
+    three_boost: 20.0
+    block_three_boost: 18.0
+    center_boost: 3.0
+    connection_boost: 2.0
+  
+  # Chess-specific boosts
+  chess:
+    capture_good_base: 10.0
+    capture_equal: 5.0
+    capture_bad: 2.0
+    check_boost: 8.0
+    check_capture_boost: 4.0
+    promotion_boost: 9.0
+    center_boost: 1.0
+    center_core_boost: 0.5
+    development_boost: 2.0
+    castling_boost: 6.0
+  
+  # Go-specific boosts
+  go:
+    capture_boost: 15.0
+    escape_boost: 12.0
+    atari_boost: 10.0
+    save_boost: 8.0
+    territory_boost: 5.0
+    connection_boost: 3.0
+    eye_boost: 7.0
+    corner_boost: 2.0
+
+# Game-specific settings
+game:
+  type: "gomoku"
+  board_size: 15
+
+# Debug and Profiling
+debug:
+  enable_debug_logging: false
+  enable_state_pool_debug: false
+  profile_gpu_kernels: false
+
+# Optimization results summary
+# Best trial: #21
+# Performance: 4700.89 simulations/second
+# Key optimizations:
+# - Large wave_max_size (7936) for better GPU utilization
+# - 5 wave pipelines for optimal parallelization
+# - Moderate batch sizes (768/896) for balanced throughput
+# - Higher initial_children_per_expansion (23) for better exploration
+# - GPU features disabled (mixed_precision, cuda_graphs, kernel_fusion) for stability
+# - Optimized memory allocation (2048 MB pool, 0.6059 initial capacity factor)

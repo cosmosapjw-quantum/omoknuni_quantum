@@ -1140,4 +1140,3 @@ class GameInterface:
         else:  # Player 2 wins
             return -1.0 if last_player == 0 else 1.0
 
-

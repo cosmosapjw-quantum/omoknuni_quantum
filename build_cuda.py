@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 PyTorch-based CUDA kernel builder for AlphaZero Omoknuni
 Uses torch.utils.cpp_extension for proper symbol resolution

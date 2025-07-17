@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Standalone C++ module builder for AlphaZero Omoknuni
 This handles the C++ compilation that's difficult to integrate with standard setuptools

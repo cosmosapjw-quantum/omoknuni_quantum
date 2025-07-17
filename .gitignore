@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+checkpoints/
+runs/
+self_play_data/
+arena_logs/
+*.pt
+*.pth
+*.onnx
+*.pb
+*.h5
+*.hdf5
+*.json.gz
+*.log
+experiments/*/
+physics_analysis_*/
+*.tensorboard/
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Archive
+archive/

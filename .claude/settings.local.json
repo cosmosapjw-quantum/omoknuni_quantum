@@ -82,7 +82,11 @@
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from mcts.utils.validation_helpers import validate_state; print(''Import successful'')\")",
       "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from mcts.utils.validation_helpers import validate_state; print(''Import successful'')\")",
       "WebFetch(domain:github.com)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(./run_physics_analysis.sh:*)",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(/home/cosmosapjw/venv/bin/python tests/test_new_physics_modules_import.py)",
+      "Bash(LD_LIBRARY_PATH=./python:$LD_LIBRARY_PATH /home/cosmosapjw/venv/bin/python tests/test_new_physics_modules_import.py)"
     ],
     "deny": []
   },

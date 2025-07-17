@@ -72,6 +72,9 @@ mcts:
   chess_development_boost: 2.0      # Piece development bonus
   chess_castling_boost: 6.0         # Castling bonus
   
+  # CSR tree configuration for Chess
+  csr_max_actions: 4096  # Buffer for all possible chess moves including promotions
+  
   # Device - Ryzen 9 5900X
   device: cuda
   num_threads: 24
@@ -156,7 +159,7 @@ arena:
   
   # Game settings
   temperature: 0.1
-  mcts_simulations: 400
+  mcts_simulations: 800  # Match training simulations for accurate evaluation
   c_puct: 1.0
   max_moves: 500
   

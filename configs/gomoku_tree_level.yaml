@@ -71,6 +71,9 @@ mcts:
   gomoku_connection_boost: 2.0      # Per connection bonus
   
   # Device - Ryzen 9 5900X
+  # CSR tree configuration
+  csr_max_actions: 225  # 15x15 board positions
+
   device: cuda
   num_threads: 24
   

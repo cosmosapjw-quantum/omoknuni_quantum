@@ -22,13 +22,13 @@ mcts:
   
   # Performance optimization
   min_wave_size: 3072      # Balanced for quality vs speed
-  max_wave_size: 3072      # Fixed size for consistency
-  batch_size: 512          # Optimized for RTX 3060 Ti
+  max_wave_size: 7936      # Optimized based on performance testing
+  batch_size: 768          # Optimized for RTX 3060 Ti based on testing
   virtual_loss: 0.5
   enable_virtual_loss: true
   
   # Memory and optimization - Balanced settings
-  memory_pool_size_mb: 4096   # Increased for deeper search
+  memory_pool_size_mb: 2048   # Optimized based on performance testing
   max_tree_nodes: 400000      # Support deeper analysis
   enable_subtree_reuse: false
   
@@ -38,7 +38,8 @@ mcts:
   enable_fast_ucb: true
   
   
-  # CSR tree parameters handled internally
+  # CSR tree parameters
+  csr_max_actions: 225  # 15x15 board positions
   
   # Interference thresholds
   interference_threshold: 0.1
@@ -176,7 +177,7 @@ arena:
   
   # Game settings - Match training quality
   temperature: 0.0          # No temperature for deterministic evaluation
-  mcts_simulations: 100     # Good evaluation quality
+  mcts_simulations: 150     # Match training simulations for accurate evaluation
   c_puct: 1.4               # Match training c_puct
   max_moves: 225
   time_limit_seconds: null

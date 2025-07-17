@@ -39,6 +39,9 @@ mcts:
   tactical_boost_strength: 0.3
   tactical_boost_decay: 0.99
   
+  # CSR tree configuration for 9x9 test board
+  csr_max_actions: 225  # Using default even for smaller board
+  
   # Device - still use all threads for testing
   device: cuda
   # Mixed precision handled by training section

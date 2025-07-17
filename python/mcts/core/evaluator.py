@@ -149,7 +149,6 @@ class Evaluator(ABC):
             self.evaluate_batch(dummy_batch)
 
 
-
 class AlphaZeroEvaluator(Evaluator):
     """Evaluator for AlphaZeroNetwork models that works with MCTS"""
     

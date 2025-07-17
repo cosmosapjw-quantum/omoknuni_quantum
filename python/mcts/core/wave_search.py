@@ -300,15 +300,20 @@ class WaveSearch:
             Tuple of (paths, path_lengths, leaf_nodes, expanded_nodes) or None if not available
         """
         try:
+            # Validate inputs
+            if not self._validate_tree_state():
+                logger.debug("Tree state validation failed for fused select+expand")
+                return None
+                
             # Prepare inputs for fused kernel
             roots = torch.arange(wave_size, device=self.device, dtype=torch.int32)
             
-            # Get tree data directly from node_data
-            children = self.tree.node_data.children  # Shape: [num_nodes, max_children]
-            visit_counts = self.tree.node_data.visit_counts
-            q_values = self.tree.node_data.q_values
-            prior_probs = self.tree.node_data.prior_probs
-            is_expanded = self.tree.node_data.is_expanded
+            # Get tree data with error checking
+            tree_data = self._get_tree_data_for_fusion()
+            if tree_data is None:
+                return None
+                
+            children, visit_counts, q_values, prior_probs, is_expanded = tree_data
             
             # Call fused kernel
             result = self.gpu_ops.fused_select_expand(
@@ -335,6 +340,42 @@ class WaveSearch:
             
         except Exception as e:
             logger.debug(f"Fused select+expand failed: {e}")
+            return None
+    
+    def _validate_tree_state(self) -> bool:
+        """Validate tree state before fusion operations"""
+        if not hasattr(self.tree, 'children'):
+            logger.debug("Tree missing children array")
+            return False
+        if not hasattr(self.tree, 'node_data'):
+            logger.debug("Tree missing node_data")
+            return False
+        if self.tree.num_nodes == 0:
+            logger.debug("Tree has no nodes")
+            return False
+        return True
+    
+    def _get_tree_data_for_fusion(self) -> Optional[Tuple[torch.Tensor, ...]]:
+        """Get tree data needed for fusion operations with error handling"""
+        try:
+            # Get tree data correctly
+            children = self.tree.children  # Shape: [num_nodes, max_children]
+            visit_counts = self.tree.node_data.visit_counts
+            
+            # Calculate q_values from value_sums and visit_counts
+            q_values = self.tree.node_data.value_sums / (visit_counts + 1e-8)
+            prior_probs = self.tree.node_data.node_priors
+            
+            # Calculate is_expanded from children array
+            is_expanded = (children >= 0).any(dim=1)
+            
+            return children, visit_counts, q_values, prior_probs, is_expanded
+            
+        except AttributeError as e:
+            logger.debug(f"Missing tree attribute: {e}")
+            return None
+        except Exception as e:
+            logger.debug(f"Error getting tree data: {e}")
             return None
     
     def _select_batch_vectorized(self, wave_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

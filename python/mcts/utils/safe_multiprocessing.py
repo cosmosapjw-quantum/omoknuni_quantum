@@ -144,4 +144,3 @@ def make_config_multiprocessing_safe(config: Any) -> Any:
     
     return reconstruct_dataclass(type(config), cleaned_dict)
 
-

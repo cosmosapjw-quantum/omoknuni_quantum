@@ -45,6 +45,9 @@ mcts:
   enable_quantum: false
   
   # Device configuration
+  # CSR tree configuration
+  csr_max_actions: 225  # 15x15 board positions
+
   device: cuda
   num_threads: 4
   

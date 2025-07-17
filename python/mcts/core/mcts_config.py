@@ -89,7 +89,7 @@ class MCTSConfig:
     progressive_expansion_threshold: int = 5
     
     # CSR and sparse operations
-    csr_max_actions: int = 10
+    csr_max_actions: int = 225  # Minimum for 15x15 Gomoku
     csr_use_sparse_operations: bool = True
     
     # CPU thread configuration

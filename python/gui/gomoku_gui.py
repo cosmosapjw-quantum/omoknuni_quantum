@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Gomoku GUI for playing against AlphaZero AI
 Supports PT file loading, board size detection, undo/restart, color selection, and difficulty levels

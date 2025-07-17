@@ -14,33 +14,36 @@ game:
 
 mcts:
   # Optimized for RTX 3060 Ti performance and quality balance
-  num_simulations: 400       # Increased for better exploration and play quality
+  num_simulations: 500       # Increased for better exploration and play quality
   c_puct: 1.4                # Balanced exploration-exploitation
   dirichlet_alpha: 0.3       # Standard for Gomoku
-  dirichlet_epsilon: 0.5     # Increased for better exploration with untrained network
+  dirichlet_epsilon: 0.25    # Reasonable exploration noise for training
   temperature: 1.0
   temperature_threshold: 30   # Extended exploration for stronger play
   # temperature_final is calculated from temperature at runtime
   
-  # RTX 3060 Ti optimized performance (8GB VRAM with multi-worker constraints)
-  min_wave_size: 3072        # Reduced to leave memory for multiple workers
-  max_wave_size: 3072        # Conservative to avoid OOM with 8 workers
-  batch_size: 512            # Optimal for TensorRT + 8GB VRAM
-  virtual_loss: 0.5          # Parallel exploration
+  # RTX 3060 Ti optimized performance based on Optuna results
+  min_wave_size: 1024         # Optimal minimum from optimization
+  max_wave_size: 8192        # Best performance with larger waves
+  batch_size: 512            # Optimal batch size from trials
+  virtual_loss: 1.0          # Standard virtual loss
   enable_virtual_loss: true
   
   # Tree reuse for better performance
   enable_subtree_reuse: true
   
-  # Memory optimization for 64GB RAM + 8GB VRAM (single-GPU mode)
-  memory_pool_size_mb: 6144  # Increased for single-GPU mode
-  max_tree_nodes: 1000000    # Larger tree for single-GPU (uses more VRAM efficiently)
+  # Memory optimization for 64GB RAM + 8GB VRAM (optimized values)
+  memory_pool_size_mb: 2048  # Optimal from optimization (less is more)
+  max_tree_nodes: 500000     # Balanced for performance
   
   # Maximum GPU optimization for RTX 3060 Ti
   # GPU optimizations handled automatically
   
   # Performance mode
   enable_fast_ucb: true
+  
+  # CSR tree configuration for Gomoku
+  csr_max_actions: 225       # Full board size for 15x15 Gomoku
   
   # Ryzen 9 5900X optimization (24 threads available)
   device: cuda
@@ -103,8 +106,11 @@ training:
   early_stopping_patience: 15  # More patience for longer training
   early_stopping_min_delta: 0.0003
   
+  # Optimized batch processing from Optuna results
+  inference_batch_size: 1024    # Optimal inference batch size
+  
   # Self-play settings optimized for single-GPU execution
-  num_games_per_iteration: 120  # Sequential games on single GPU
+  num_games_per_iteration: 100  # Sequential games on single GPU
   max_moves_per_game: 225    # Full board
   resign_threshold: -0.92    # Slightly more conservative
   resign_check_moves: 18     # More moves to verify resignation
@@ -125,9 +131,9 @@ training:
   loss_scale: dynamic
   
   # Paths for 3-day intensive training
-  save_dir: experiments/gomoku_3day_intensive/checkpoints
-  tensorboard_dir: experiments/gomoku_3day_intensive/runs
-  data_dir: experiments/gomoku_3day_intensive/self_play_data
+  save_dir: experiments/gomoku_intensive/checkpoints
+  tensorboard_dir: experiments/gomoku_intensive/runs
+  data_dir: experiments/gomoku_intensive/self_play_data
 
 arena:
   # Optimized evaluation for intensive 3-4 day training
@@ -138,7 +144,7 @@ arena:
   
   # Game settings - match training configuration
   temperature: 0.0           # Deterministic for evaluation
-  mcts_simulations: 100      # Match training simulations exactly
+  mcts_simulations: 500      # Match training simulations exactly
   c_puct: 1.4                # Match training c_puct
   max_moves: 225
   time_limit_seconds: null
@@ -159,20 +165,20 @@ arena:
   # Data saving with updated paths
   save_game_records: true
   save_arena_logs: true
-  arena_log_dir: experiments/gomoku_3day_intensive/arena_logs
-  elo_save_path: experiments/gomoku_3day_intensive/elo_ratings.json
+  arena_log_dir: experiments/gomoku_intensive/arena_logs
+  elo_save_path: experiments/gomoku_intensive/elo_ratings.json
 
 # 3-4 Day Intensive Training Strategy (8GB VRAM Optimized):
 # 
 # Hardware Optimizations for Ryzen 9 5900X + RTX 3060 Ti + 64GB RAM:
-# 1. MCTS simulations: set to 100 (balanced for quality and speed)
-# 2. Wave size: 3072 → 3072 (optimized for single-GPU execution)
-# 3. Single GPU: No multiprocessing - direct GPU evaluation
-# 4. Batch size: 512 (optimal for TensorRT + single GPU)
-# 5. Memory pool: 4GB (optimized for single large tree)
-# 6. ResNet blocks: 10 → 12 (stronger pattern recognition)
-# 7. Window size: 30K → 50K (much larger replay buffer)
-# 8. Iterations: 100 → 200 (3-4 day training capacity)
+# 1. MCTS simulations: 400 (balanced for quality and speed)
+# 2. Wave size: 512 → 7936 (optimized based on Optuna results)
+# 3. Single GPU: Direct GPU evaluation with optimal batching
+# 4. Batch size: 768 (optimal from 4700+ sims/sec benchmark)
+# 5. Memory pool: 2GB (optimal - less memory, better performance)
+# 6. ResNet blocks: 12 (stronger pattern recognition)
+# 7. Window size: 50K (much larger replay buffer)
+# 8. Iterations: 200 (3-4 day training capacity)
 #
 # Resource Allocation (RTX 3060 Ti - 8GB + Ryzen 9 5900X 12 cores/24 threads):
 # - GPU: TensorRT model (~1.5GB) + direct GPU evaluation + MCTS tree operations

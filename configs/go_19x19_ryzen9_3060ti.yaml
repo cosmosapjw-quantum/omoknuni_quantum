@@ -71,6 +71,9 @@ mcts:
   go_eye_boost: 7.0                 # Eye formation
   go_corner_boost: 2.0              # Corner moves bonus
   
+  # CSR tree configuration for Go 19x19
+  csr_max_actions: 361  # 19x19 board positions
+  
   # Device settings
   device: cuda
   num_threads: 8
@@ -165,7 +168,7 @@ arena:
   
   # Game settings
   temperature: 0.1
-  mcts_simulations: 1600  # High quality evaluation
+  mcts_simulations: 3200  # Match training simulations for accurate evaluation
   c_puct: 1.2
   max_moves: 400
   randomize_start_player: false  # Black always first in Go

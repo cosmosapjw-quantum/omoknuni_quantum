@@ -85,6 +85,15 @@ python train.py --config configs/gomoku_classical.yaml
 # Self-play games: 100%|███████████| 120/120 [05:23<00:00, 0.37game/s]
 ```
 
+### Physics Analysis
+```bash
+# Run physics analysis on MCTS dynamics
+./run_physics_analysis.sh --preset quick  # Quick test (~3 minutes)
+./run_physics_analysis.sh --preset standard  # Standard analysis (~30 minutes)
+
+# Results saved to timestamped directories with plots and reports
+```
+
 ### Using High-Performance MCTS
 ```python
 from mcts.core.mcts import MCTS
@@ -152,7 +161,9 @@ policy = mcts.search(game_state, num_simulations=800)
 ### Essential Documentation
 - **[CLAUDE.md](CLAUDE.md)** - Project summary and development guidelines
 - **[INSTALL.md](INSTALL.md)** - Installation guide with automatic Python detection
+- **[README_PHYSICS_ANALYSIS.md](README_PHYSICS_ANALYSIS.md)** - Physics analysis entry point guide
 - `docs/` - Additional documentation and guides
+- `docs/quantum_physics/` - Comprehensive physics analysis documentation
 - `examples/` - Example implementations and usage patterns
 
 ## Project Structure
@@ -163,12 +174,17 @@ omoknuni_quantum/
 │   ├── core/                       # High-performance MCTS core
 │   ├── gpu/                        # GPU acceleration with CUDA kernels
 │   ├── neural_networks/            # ResNet integration with TensorRT support
-│   └── utils/                      # Batch coordination and optimization
-├── quantum/docs/                   # Quantum-inspired theory (for v2.0)
+│   ├── utils/                      # Batch coordination and optimization
+│   └── quantum/                    # Physics analysis modules
+│       ├── analysis/               # Main physics analysis pipeline
+│       └── phenomena/              # Statistical mechanics analyzers
+├── run_physics_analysis.sh         # Main physics analysis entry point
 ├── docs/                           # Comprehensive documentation
+│   └── quantum_physics/            # Physics analysis guides
 ├── configs/                        # Game configurations
 ├── experiments/                    # Training experiments and checkpoints
-└── examples/                       # Usage examples and demos
+├── examples/                       # Usage examples and demos
+└── archive/                        # Archived research explorations
 ```
 
 ## Future Optimization Recommendations
@@ -203,12 +219,21 @@ Since the system now operates at hardware limits, further performance gains requ
 - [x] **Code Quality**: Professional codebase with comprehensive cleanup
 - [x] **Documentation**: Complete optimization and analysis documentation
 - [x] **Monitoring**: Real-time performance tracking and validation
+- [x] **Physics Analysis**: Comprehensive quantum/statistical mechanics analysis tools
 
-### 🔬 Future Opportunities
+### 🔬 Physics Analysis Features
+- **Statistical Mechanics**: Temperature extraction, free energy landscapes, phase transitions
+- **Quantum Phenomena**: Decoherence dynamics, entanglement entropy, quantum tunneling
+- **Information Theory**: Mutual information, quantum Darwinism, entropy production
+- **Non-equilibrium Dynamics**: Jarzynski equality, Sagawa-Ueda theorem validation
+- **Visualization**: Comprehensive plots and analysis reports
+
+### 🚀 Future Opportunities
 - Extended validation across game domains
 - Integration with modern RL approaches
 - Hardware-specific optimizations (TensorRT compilation)
 - Multi-GPU scaling for distributed training
+- Quantum-inspired algorithm improvements based on physics insights
 
 ## Performance Benchmarks
 

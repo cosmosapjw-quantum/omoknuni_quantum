@@ -57,7 +57,6 @@ class CSRStorage:
             initial_edges = 50000
             
         # Debug logging (only for errors)
-        # import logging
         # logger = logging.getLogger(__name__)
         # logger.info(f"CSRStorage: init_nodes={initial_nodes}, init_edges={initial_edges}, row_ptr_size={initial_nodes + 1}")
             

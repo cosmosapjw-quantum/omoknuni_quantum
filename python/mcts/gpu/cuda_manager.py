@@ -17,7 +17,6 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
-
 class CudaManager:
     """
     Simplified CUDA kernel detection and loading system

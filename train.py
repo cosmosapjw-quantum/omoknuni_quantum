@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Convenient script to run the unified training pipeline.
 Run from the project root directory.

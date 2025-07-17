@@ -25,7 +25,7 @@ class GameType(IntEnum):
 @dataclass
 class GPUGameStatesConfig:
     """Configuration for GPU game states"""
-    capacity: int = 100000  # Maximum number of states
+    capacity: int = 4000000  # Maximum number of states - increased for physics analysis
     game_type: GameType = GameType.GOMOKU
     board_size: int = 15  # For Go/Gomoku
     device: str = 'cuda'

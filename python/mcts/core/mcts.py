@@ -607,8 +607,24 @@ class MCTS:
             
     def clear(self):
         """Clear tree and reset state"""
+        # Free all allocated GPU game states before clearing tree
+        if hasattr(self, 'node_to_state') and hasattr(self, 'game_states'):
+            # Get all allocated state indices
+            allocated_states = self.node_to_state[self.node_to_state >= 0]
+            if len(allocated_states) > 0:
+                # Free the states in the GPU pool
+                self.game_states.free_states(allocated_states)
+                logger.debug(f"Freed {len(allocated_states)} GPU game states during clear")
+        
+        # Clear the tree
         self.tree_ops.clear()
+        
+        # Reinitialize state management
         self._initialize_state_management()
+        
+        # Clear enhanced feature cache if present
+        if hasattr(self.game_states, 'clear_enhanced_cache'):
+            self.game_states.clear_enhanced_cache()
         
         if self.quantum_features:
             self.quantum_total_simulations = 0
