@@ -554,6 +554,149 @@ __global__ void prepare_backup_operations_kernel(
 }
 
 // =============================================================================
+// SECTION 4: VIRTUAL LOSS OPERATIONS
+// =============================================================================
+
+/**
+ * Batch apply virtual losses in parallel using atomic operations
+ * This replaces sequential virtual loss application for better GPU utilization
+ */
+__global__ void batch_apply_virtual_loss_kernel(
+    const int* __restrict__ node_indices,
+    int* __restrict__ virtual_loss_counts,
+    const int num_nodes_to_update
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_nodes_to_update) return;
+    
+    int node_idx = node_indices[idx];
+    if (node_idx >= 0) {
+        // Atomic increment for thread-safe updates
+        atomicAdd(&virtual_loss_counts[node_idx], 1);
+    }
+}
+
+/**
+ * Batch remove virtual losses in parallel
+ */
+__global__ void batch_remove_virtual_loss_kernel(
+    const int* __restrict__ node_indices,
+    int* __restrict__ virtual_loss_counts,
+    const int num_nodes_to_update
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_nodes_to_update) return;
+    
+    int node_idx = node_indices[idx];
+    if (node_idx >= 0) {
+        // Atomic decrement with lower bound of 0
+        // Use atomicSub which is more efficient than atomicAdd with negative value
+        int old_val = atomicSub(&virtual_loss_counts[node_idx], 1);
+        // If we went negative, restore to 0
+        if (old_val == 0) {
+            atomicAdd(&virtual_loss_counts[node_idx], 1);
+        }
+    }
+}
+
+/**
+ * Parallel UCB selection with batched virtual loss application
+ * Enhanced version that handles:
+ * 1. Legal move filtering for non-root nodes
+ * 2. Virtual loss application
+ * 3. Per-simulation priors (for Dirichlet noise at root)
+ */
+__global__ void parallel_select_with_virtual_loss_kernel(
+    const int* __restrict__ parent_nodes,        // Parent node for each simulation
+    const int* __restrict__ children,            // Children table [num_nodes x max_children]
+    const int* __restrict__ visit_counts,        // Visit counts
+    const int* __restrict__ virtual_loss_counts, // Virtual loss counts
+    const float* __restrict__ value_sums,        // Value sums
+    const float* __restrict__ priors,            // Priors: [num_nodes] or [num_sims x num_nodes]
+    const bool* __restrict__ legal_masks,        // Legal move masks [num_sims x action_space_size] (optional)
+    const int* __restrict__ child_actions,       // Action for each child node
+    int* __restrict__ selected_children,         // Output: selected child for each sim
+    int* __restrict__ virtual_loss_updates,      // Output: nodes to update virtual loss
+    const int num_sims,
+    const int max_children,
+    const int children_stride,                   // Stride for children table
+    const int action_space_size,                 // Size of action space for legal mask
+    const float c_puct,
+    const float virtual_loss_value,
+    const bool apply_legal_mask,                 // Whether to apply legal move filtering
+    const bool per_sim_priors,                   // Whether priors are per-simulation
+    const int priors_stride                      // Stride for per-simulation priors
+) {
+    int sim_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (sim_idx >= num_sims) return;
+    
+    int parent_idx = parent_nodes[sim_idx];
+    if (parent_idx < 0) {
+        selected_children[sim_idx] = -1;
+        virtual_loss_updates[sim_idx] = -1;
+        return;
+    }
+    
+    // Calculate parent visits and sqrt
+    int parent_visits = visit_counts[parent_idx];
+    float sqrt_parent = sqrtf((float)(parent_visits + 1));
+    
+    float best_ucb = -INFINITY;
+    int best_child = -1;
+    
+    // Check if we're at root (for legal move filtering logic)
+    bool is_root = (parent_idx == 0);
+    
+    // Evaluate all children using the fixed table layout
+    int child_base = parent_idx * children_stride;
+    
+    for (int i = 0; i < max_children; i++) {
+        int child_idx = children[child_base + i];
+        if (child_idx < 0) continue;  // Skip invalid children
+        
+        // Legal move filtering (for non-root nodes)
+        if (apply_legal_mask && legal_masks != nullptr && !is_root) {
+            int action = child_actions[child_idx];
+            if (action >= 0 && action < action_space_size) {
+                int legal_mask_idx = sim_idx * action_space_size + action;
+                if (!legal_masks[legal_mask_idx]) {
+                    continue;  // Skip illegal move
+                }
+            }
+        }
+        
+        // Get effective visits and values (including virtual losses)
+        int child_visits = visit_counts[child_idx] + virtual_loss_counts[child_idx];
+        float child_value = value_sums[child_idx] + virtual_loss_counts[child_idx] * virtual_loss_value;
+        
+        // Calculate Q-value
+        float q_value = (child_visits > 0) ? (child_value / child_visits) : 0.0f;
+        
+        // Get prior (with per-simulation support for Dirichlet noise at root)
+        float prior;
+        if (per_sim_priors) {
+            // Per-simulation priors: priors[sim_idx * priors_stride + child_idx]
+            prior = priors[sim_idx * priors_stride + child_idx];
+        } else {
+            // Shared priors: priors[child_idx]
+            prior = priors[child_idx];
+        }
+        
+        // UCB formula
+        float exploration = c_puct * prior * sqrt_parent / (1.0f + child_visits);
+        float ucb = q_value + exploration;
+        
+        if (ucb > best_ucb) {
+            best_ucb = ucb;
+            best_child = child_idx;
+        }
+    }
+    
+    selected_children[sim_idx] = best_child;
+    virtual_loss_updates[sim_idx] = best_child;  // Mark for virtual loss update
+}
+
+// =============================================================================
 // SECTION 5: UTILITY FUNCTIONS
 // =============================================================================
 
@@ -775,6 +918,28 @@ void optimized_backup_scatter_cuda(
     torch::Tensor values,
     torch::Tensor visit_counts,
     torch::Tensor value_sums
+);
+
+// Virtual loss operations
+void batch_apply_virtual_loss_cuda(
+    torch::Tensor node_indices,
+    torch::Tensor virtual_loss_counts
+);
+
+void batch_remove_virtual_loss_cuda(
+    torch::Tensor node_indices,
+    torch::Tensor virtual_loss_counts
+);
+
+torch::Tensor parallel_select_with_virtual_loss_cuda(
+    torch::Tensor parent_nodes,
+    torch::Tensor children,
+    torch::Tensor visit_counts,
+    torch::Tensor virtual_loss_counts,
+    torch::Tensor value_sums,
+    torch::Tensor priors,
+    float c_puct,
+    float virtual_loss_value
 );
 
 // =============================================================================
@@ -1091,6 +1256,102 @@ void optimized_backup_scatter_cuda(
     }
 }
 
+void batch_apply_virtual_loss_cuda(
+    torch::Tensor node_indices,
+    torch::Tensor virtual_loss_counts
+) {
+    int num_nodes = node_indices.size(0);
+    const int threads = 256;
+    const int blocks = (num_nodes + threads - 1) / threads;
+    
+    batch_apply_virtual_loss_kernel<<<blocks, threads>>>(
+        node_indices.data_ptr<int>(),
+        virtual_loss_counts.data_ptr<int>(),
+        num_nodes
+    );
+}
+
+void batch_remove_virtual_loss_cuda(
+    torch::Tensor node_indices,
+    torch::Tensor virtual_loss_counts
+) {
+    int num_nodes = node_indices.size(0);
+    const int threads = 256;
+    const int blocks = (num_nodes + threads - 1) / threads;
+    
+    batch_remove_virtual_loss_kernel<<<blocks, threads>>>(
+        node_indices.data_ptr<int>(),
+        virtual_loss_counts.data_ptr<int>(),
+        num_nodes
+    );
+}
+
+// Enhanced version with optional Dirichlet noise and legal move filtering
+torch::Tensor parallel_select_with_virtual_loss_enhanced_cuda(
+    torch::Tensor parent_nodes,
+    torch::Tensor children,
+    torch::Tensor visit_counts,
+    torch::Tensor virtual_loss_counts,
+    torch::Tensor value_sums,
+    torch::Tensor priors,
+    torch::optional<torch::Tensor> dirichlet_noise,   // Optional (ignored - priors should be pre-mixed)
+    torch::optional<torch::Tensor> legal_masks,       // Optional
+    torch::Tensor child_actions,
+    float c_puct,
+    float virtual_loss_value,
+    float dirichlet_epsilon,                          // Ignored - noise should be pre-mixed
+    bool apply_legal_mask
+) {
+    int num_sims = parent_nodes.size(0);
+    int max_children = children.size(1);
+    int children_stride = children.stride(0);
+    int action_space_size = apply_legal_mask && legal_masks.has_value() ? 
+                           legal_masks.value().size(1) : 0;
+    
+    // Determine if priors are per-simulation (2D) or shared (1D)
+    bool per_sim_priors = priors.dim() == 2;
+    int priors_stride = per_sim_priors ? priors.size(1) : 0;
+    
+    auto options = torch::TensorOptions().dtype(torch::kInt32).device(parent_nodes.device());
+    auto selected_children = torch::zeros({num_sims}, options);
+    auto virtual_loss_updates = torch::zeros({num_sims}, options);
+    
+    const int threads = 256;
+    const int blocks = (num_sims + threads - 1) / threads;
+    
+    parallel_select_with_virtual_loss_kernel<<<blocks, threads>>>(
+        parent_nodes.data_ptr<int>(),
+        children.data_ptr<int>(),
+        visit_counts.data_ptr<int>(),
+        virtual_loss_counts.data_ptr<int>(),
+        value_sums.data_ptr<float>(),
+        priors.data_ptr<float>(),
+        legal_masks.has_value() ? legal_masks.value().data_ptr<bool>() : nullptr,
+        child_actions.data_ptr<int>(),
+        selected_children.data_ptr<int>(),
+        virtual_loss_updates.data_ptr<int>(),
+        num_sims,
+        max_children,
+        children_stride,
+        action_space_size,
+        c_puct,
+        virtual_loss_value,
+        apply_legal_mask,
+        per_sim_priors,
+        priors_stride
+    );
+    
+    // Apply virtual losses to selected children
+    auto valid_mask = virtual_loss_updates >= 0;
+    if (valid_mask.any().item<bool>()) {
+        auto valid_updates = virtual_loss_updates.masked_select(valid_mask);
+        batch_apply_virtual_loss_cuda(valid_updates, virtual_loss_counts);
+    }
+    
+    return selected_children;
+}
+
+
 // Fused select and expand operation
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> fused_select_expand_cuda(
     torch::Tensor roots,
@@ -1158,6 +1419,25 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("fused_ucb_with_noise", &fused_ucb_with_noise_cuda, "Fused UCB computation with Dirichlet noise");
     m.def("optimized_backup_scatter", &optimized_backup_scatter_cuda, "Optimized backup with scatter operations");
     m.def("fused_select_expand", &fused_select_expand_cuda, "Fused select and expand operation");
+    
+    // Virtual loss operations
+    m.def("batch_apply_virtual_loss", &batch_apply_virtual_loss_cuda, "Batch apply virtual losses");
+    m.def("batch_remove_virtual_loss", &batch_remove_virtual_loss_cuda, "Batch remove virtual losses");
+    m.def("parallel_select_with_virtual_loss", &parallel_select_with_virtual_loss_enhanced_cuda, 
+          "Enhanced parallel selection with virtual loss, Dirichlet noise, and legal move filtering",
+          py::arg("parent_nodes"),
+          py::arg("children"), 
+          py::arg("visit_counts"),
+          py::arg("virtual_loss_counts"),
+          py::arg("value_sums"),
+          py::arg("priors"),
+          py::arg("dirichlet_noise") = py::none(),
+          py::arg("legal_masks") = py::none(),
+          py::arg("child_actions"),
+          py::arg("c_puct"),
+          py::arg("virtual_loss_value"),
+          py::arg("dirichlet_epsilon") = 0.0f,
+          py::arg("apply_legal_mask") = false);
     
     // Utility functions
     m.def("initialize_lookup_tables", &initialize_lookup_tables_cuda, "Initialize lookup tables");

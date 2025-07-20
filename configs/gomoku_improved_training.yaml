@@ -23,18 +23,18 @@ mcts:
   # temperature_final is calculated from temperature at runtime
   
   # RTX 3060 Ti optimized performance based on Optuna results
-  min_wave_size: 1024         # Optimal minimum from optimization
-  max_wave_size: 8192        # Best performance with larger waves
-  batch_size: 512            # Optimal batch size from trials
-  virtual_loss: 1.0          # Standard virtual loss
+  min_wave_size: 4096         # Optimal minimum from optimization
+  max_wave_size: 16384        # Best performance with larger waves
+  batch_size: 2048            # Optimal batch size from trials
+  virtual_loss: 1.0           # Standard virtual loss
   enable_virtual_loss: true
   
   # Tree reuse for better performance
   enable_subtree_reuse: true
   
   # Memory optimization for 64GB RAM + 8GB VRAM (optimized values)
-  memory_pool_size_mb: 2048  # Optimal from optimization (less is more)
-  max_tree_nodes: 500000     # Balanced for performance
+  memory_pool_size_mb: 4096  # Optimal from optimization (less is more)
+  max_tree_nodes: 1000000     # Balanced for performance
   
   # Maximum GPU optimization for RTX 3060 Ti
   # GPU optimizations handled automatically
@@ -65,9 +65,9 @@ network:
   model_type: resnet
   input_channels: 18
   input_representation: basic
-  num_res_blocks: 12          # Increased for better pattern recognition
-  num_filters: 128            # Slightly larger for better capacity (still efficient)
-  value_head_hidden_size: 256 # Enlarged for better value estimation
+  num_res_blocks: 9           # Increased for better pattern recognition
+  num_filters: 64             # Slightly larger for better capacity (still efficient)
+  value_head_hidden_size: 128 # Enlarged for better value estimation
   policy_head_filters: 2
   
   # Optimized regularization for 3-4 day training
@@ -83,7 +83,7 @@ network:
 training:
   # Optimized for 3-4 day intensive training
   batch_size: 1024            # Larger batches for better GPU utilization (64GB RAM allows this)
-  learning_rate: 0.002       # Slightly higher for faster initial learning
+  learning_rate: 0.002        # Slightly higher for faster initial learning
   learning_rate_schedule: cosine  # Better for long training
   lr_decay_steps: 40         # More frequent decay steps
   lr_decay_rate: 0.85        # Slightly more aggressive decay

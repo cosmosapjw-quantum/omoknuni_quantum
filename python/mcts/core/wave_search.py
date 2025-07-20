@@ -339,18 +339,15 @@ class WaveSearch:
             paths, path_lengths, expand_nodes, needs_expansion = result
             
             # Validate expand_nodes are within bounds
-            max_node_idx = expand_nodes.max().item()
-            if max_node_idx >= self.tree.num_nodes:
+            if (expand_nodes >= self.tree.num_nodes).any():
                 return None
             
             # Process results to match expected format
             leaf_nodes = expand_nodes[needs_expansion]
             
             # Additional validation for leaf_nodes
-            if len(leaf_nodes) > 0:
-                max_leaf_idx = leaf_nodes.max().item()
-                if max_leaf_idx >= self.tree.num_nodes:
-                    return None
+            if len(leaf_nodes) > 0 and (leaf_nodes >= self.tree.num_nodes).any():
+                return None
             
             expanded_nodes = self._expand_batch_vectorized(leaf_nodes)
             
@@ -508,20 +505,25 @@ class WaveSearch:
         needs_expansion = torch.zeros_like(valid_unique_nodes, dtype=torch.bool)
         state_indices = torch.zeros_like(valid_unique_nodes, dtype=torch.int32)
         
-        for i, node_idx in enumerate(valid_unique_nodes):
-            node_idx_val = node_idx.item()
-            children, _, _ = self.tree.get_children(node_idx_val)
+        # Batch check which nodes have children
+        batch_children, _, _ = self.tree.batch_get_children(valid_unique_nodes)
+        has_no_children = (batch_children[:, 0] < 0)  # First child < 0 means no children
+        
+        # Get state indices for nodes without children
+        node_states = current_node_to_state[valid_unique_nodes]
+        valid_states = (node_states >= 0) & has_no_children
+        
+        # Batch check terminal states
+        if valid_states.any():
+            # Get terminal status for all valid states at once
+            state_indices_to_check = node_states[valid_states]
+            is_terminal_batch = self.game_states.is_terminal[state_indices_to_check]
             
-            if len(children) == 0:
-                state_idx = current_node_to_state[node_idx].item()
-                if state_idx >= 0:
-                    # CRITICAL: Check if state is terminal before expanding
-                    is_terminal = self.game_states.is_terminal[state_idx].item()
-                    if not is_terminal:
-                        needs_expansion[i] = True
-                        state_indices[i] = state_idx
-                    else:
-                        continue  # Skip terminal node expansion
+            # Update needs_expansion for non-terminal states
+            temp_mask = torch.zeros_like(valid_states, dtype=torch.bool)
+            temp_mask[valid_states] = ~is_terminal_batch
+            needs_expansion = temp_mask
+            state_indices = node_states * needs_expansion.long()  # Zero out non-expanding states
         
         nodes_to_expand = valid_unique_nodes[needs_expansion]
         states_to_expand = state_indices[needs_expansion]
@@ -576,7 +578,7 @@ class WaveSearch:
                         # Get board state
                         board = self.game_states.boards[state_idx]
                         # GPUGameStates already uses 1-based players (1, 2)
-                        current_player = self.game_states.current_player[state_idx].item()
+                        current_player = self.game_states.current_player[state_idx]
                         
                         # Debug: log board state
                         # Board state ready for tactical detection
@@ -617,7 +619,7 @@ class WaveSearch:
                         # This ensures UCB calculations use the boosted values
                         
                         # Debug logging
-                        if node_idx.item() == 0:  # Root node
+                        if node_idx == 0:  # Root node
                             pass  # Board shape checked
                             
                             # Check boost values
@@ -684,10 +686,12 @@ class WaveSearch:
         # Group simulations by which node they're at
         unique_nodes = torch.unique(expanded_nodes)
         
-        for node_idx in unique_nodes:
-            node_idx_val = node_idx.item()
-            if node_idx_val < 0 or node_idx_val >= self.tree.num_nodes:
-                continue
+        # Filter out invalid nodes
+        valid_nodes_mask = (unique_nodes >= 0) & (unique_nodes < self.tree.num_nodes)
+        valid_unique_nodes = unique_nodes[valid_nodes_mask]
+        
+        for node_idx in valid_unique_nodes:
+            node_idx_val = node_idx.item()  # Need for tree.get_children API
                 
             # Find all simulations at this node
             sim_mask = expanded_nodes == node_idx
@@ -702,7 +706,7 @@ class WaveSearch:
             if len(children) > 0:
                 # CRITICAL FIX: Filter out children whose actions are no longer legal
                 # This prevents illegal moves from being selected by UCB
-                state_idx = self.node_to_state[node_idx_val].item()
+                state_idx = self.node_to_state[node_idx_val]
                 if state_idx >= 0:
                     # Get current legal moves for this state
                     legal_mask = self.game_states.get_legal_moves_mask(
@@ -725,7 +729,7 @@ class WaveSearch:
                         
                         # Debug logging for illegal child filtering
                         if not legal_children_mask.all():
-                            num_illegal = (~legal_children_mask).sum().item()
+                            num_illegal = (~legal_children_mask).sum()
                             pass  # Illegal children filtered
                     else:
                         # All children are illegal - treat as no children
@@ -776,8 +780,10 @@ class WaveSearch:
                     final_nodes[sim_idx] = child
                     
                     # Update path to include the selected child
-                    current_length = updated_lengths[sim_idx].item()
-                    if current_length < updated_paths.shape[1]:
+                    # Use masking to avoid .item() call
+                    current_length = updated_lengths[sim_idx]
+                    valid_update = current_length < updated_paths.shape[1]
+                    if valid_update:
                         updated_paths[sim_idx, current_length] = child
                         updated_lengths[sim_idx] = current_length + 1
                 
@@ -791,6 +797,8 @@ class WaveSearch:
         This method maintains GPU parallelization while ensuring virtual losses are applied
         correctly when multiple simulations are at the same parent node.
         
+        OPTIMIZED VERSION: Uses batched CUDA kernels for virtual loss application
+        
         Args:
             active_indices: Indices of active simulations
             active_nodes: Current node for each active simulation
@@ -802,115 +810,212 @@ class WaveSearch:
         Returns:
             Selected children for each active simulation (-1 if no valid children)
         """
-        if len(active_indices) == 0:
-            return None
-            
-        # Initialize result tensor
-        selected_children = torch.full_like(active_indices, -1, dtype=torch.int32)
+        batch_size = len(active_indices)
+        selected_children = torch.full((batch_size,), -1, dtype=torch.int32, device=self.device)
         
-        # Group simulations by parent node to handle virtual losses correctly
-        unique_nodes, node_indices = torch.unique(active_nodes, return_inverse=True)
+        # Group simulations by parent node
+        unique_parents, parent_inverse = torch.unique(active_nodes, return_inverse=True)
         
-        # Process each unique parent node
-        for node_idx, parent_node in enumerate(unique_nodes):
-            # Find simulations at this parent node
-            sims_at_node = active_indices[node_indices == node_idx]
+        for parent_idx, parent_node in enumerate(unique_parents):
+            if parent_node < 0:
+                continue
+                
+            # Get simulations at this parent
+            sims_mask = parent_inverse == parent_idx
+            sims_at_node = active_indices[sims_mask]
             
             if len(sims_at_node) == 0:
                 continue
-                
-            # Get children and priors for this node
-            node_children = batch_children[node_indices == node_idx][0]  # All same for same parent
-            node_priors = batch_priors[node_indices == node_idx][0]
-            node_valid_mask = valid_children_mask[node_indices == node_idx][0]
             
-            if not node_valid_mask.any():
+            # Get children for this parent
+            first_sim_idx = sims_at_node[0]
+            valid_children = batch_children[first_sim_idx]
+            valid_priors = batch_priors[first_sim_idx]
+            valid_mask = valid_children_mask[first_sim_idx]
+            
+            # Filter to valid children only
+            valid_children = valid_children[valid_mask]
+            valid_priors = valid_priors[valid_mask]
+            
+            if len(valid_children) == 0:
                 continue
-                
-            # Get valid children for this node
-            valid_children = node_children[node_valid_mask]
-            valid_priors = node_priors[node_valid_mask]
             
-            # CRITICAL FIX: Filter out children whose actions are no longer legal
-            # This prevents illegal moves from being selected by UCB
-            state_idx = self.node_to_state[parent_node].item()
-            if state_idx >= 0:
-                # Get current legal moves for this state
-                legal_mask = self.game_states.get_legal_moves_mask(
-                    torch.tensor([state_idx], device=self.device)
-                )[0]
-                
-                # Vectorized legal action filtering
-                child_actions = self.tree.node_data.parent_actions[valid_children]
-                valid_actions = (child_actions >= 0) & (child_actions < legal_mask.shape[0])
-                legal_children_mask = torch.zeros(len(valid_children), dtype=torch.bool, device=self.device)
-                if valid_actions.any():
-                    # Use advanced indexing only for valid action indices
-                    legal_children_mask[valid_actions] = legal_mask[child_actions[valid_actions]]
+            # Check legal moves if not root
+            if parent_node > 0:
+                state_idx = self.node_to_state[parent_node]
+                if state_idx < 0:
+                    continue
+                    
+                # Get legal moves for this state
+                legal_mask_full = self.game_states.get_legal_moves_mask(state_idx.unsqueeze(0))[0]
+                # Get actions for each child node
+                child_actions_tensor = self.tree.node_data.parent_actions[valid_children]
+                legal_children_mask = legal_mask_full[child_actions_tensor]
                 
                 # Only keep legal children
                 if legal_children_mask.any():
                     valid_children = valid_children[legal_children_mask]
                     valid_priors = valid_priors[legal_children_mask]
-                    
-                    # Debug logging for illegal child filtering
-                    if not legal_children_mask.all():
-                        num_illegal = (~legal_children_mask).sum().item()
-                        pass  # Illegal children filtered
                 else:
-                    # All children are illegal - skip this node
-                    logger.warning(f"All children at node {parent_node} have illegal actions - skipping parallel selection")
+                    # All children are illegal
                     continue
             
-            # CRITICAL FIX: Apply virtual losses BETWEEN each simulation's selection
-            # This ensures proper exploration by preventing collision on same nodes
-            
-            # Get parent visits once for this node
+            # Get parent visits for UCB calculation
             parent_visits = self.tree.node_data.visit_counts[parent_node].float()
             parent_visits_sqrt = torch.sqrt(torch.maximum(parent_visits, torch.ones(1, device=self.device)))
             
-            # Process each simulation sequentially within this parent node
-            for sim_idx in sims_at_node:
-                # Get current effective visits/values (including virtual losses from previous selections)
+            # Apply noise for root exploration (if at root)
+            if parent_node == 0 and self.config.dirichlet_epsilon > 0:
+                # Don't use cached noise - generate fresh noise for this selection
+                noise = torch.distributions.Dirichlet(
+                    torch.full((len(valid_children),), self.config.dirichlet_alpha, device=self.device)
+                ).sample()
+                noised_priors = (1 - self.config.dirichlet_epsilon) * valid_priors + self.config.dirichlet_epsilon * noise
+            else:
+                noised_priors = valid_priors
+            
+            # OPTIMIZED: Use enhanced CUDA kernel for parallel selection with virtual loss
+            if self.gpu_ops and hasattr(self.gpu_ops, 'parallel_select_with_virtual_loss') and hasattr(self.tree, 'children'):
+                # Prepare data for CUDA kernel
+                parent_nodes = torch.full((len(sims_at_node),), parent_node, 
+                                        dtype=torch.int32, device=self.device)
+                
+                # Pre-mix priors with Dirichlet noise if at root
+                mixed_priors = None
+                if parent_node == 0 and self.config.dirichlet_epsilon > 0:
+                    # Use the batched CUDA kernel for efficient per-simulation noise generation
+                    if self.gpu_ops and hasattr(self.gpu_ops, 'batched_dirichlet_noise'):
+                        # Generate noise for the actual number of valid children
+                        num_children = len(valid_children)
+                        noise_raw = self.gpu_ops.batched_dirichlet_noise(
+                            len(sims_at_node),
+                            num_children,
+                            self.config.dirichlet_alpha,
+                            1.0,  # epsilon=1.0 to get pure Dirichlet samples
+                            self.device
+                        )
+                        
+                        # Create per-simulation mixed priors
+                        # Shape: [num_sims, max_nodes] where we fill in mixed priors at child positions
+                        mixed_priors = torch.zeros((len(sims_at_node), self.tree.node_data.node_priors.shape[0]), 
+                                                 device=self.device)
+                        
+                        # Get base priors for valid children
+                        base_priors = self.tree.node_data.node_priors[valid_children]
+                        
+                        # Mix priors with noise for each simulation
+                        for i in range(len(sims_at_node)):
+                            mixed = (1 - self.config.dirichlet_epsilon) * base_priors + \
+                                   self.config.dirichlet_epsilon * noise_raw[i]
+                            # Place mixed priors at child node positions
+                            mixed_priors[i, valid_children] = mixed
+                    else:
+                        # Fallback to PyTorch generation
+                        num_children = len(valid_children)
+                        mixed_priors = torch.zeros((len(sims_at_node), self.tree.node_data.node_priors.shape[0]), 
+                                                 device=self.device)
+                        
+                        base_priors = self.tree.node_data.node_priors[valid_children]
+                        
+                        for i in range(len(sims_at_node)):
+                            noise = torch.distributions.Dirichlet(
+                                torch.full((num_children,), self.config.dirichlet_alpha, device=self.device)
+                            ).sample()
+                            mixed = (1 - self.config.dirichlet_epsilon) * base_priors + \
+                                   self.config.dirichlet_epsilon * noise
+                            mixed_priors[i, valid_children] = mixed
+                
+                # Prepare legal masks for non-root nodes
+                legal_masks = None
+                apply_legal_mask = parent_node > 0
+                if apply_legal_mask:
+                    state_idx = self.node_to_state[parent_node]
+                    if state_idx >= 0:
+                        # Get legal moves for all simulations at this node
+                        legal_mask_full = self.game_states.get_legal_moves_mask(
+                            state_idx.unsqueeze(0).expand(len(sims_at_node), -1)
+                        )
+                        legal_masks = legal_mask_full
+                
+                # Call enhanced CUDA kernel
+                # Use mixed_priors if available (at root), otherwise use base priors
+                priors_for_kernel = mixed_priors if mixed_priors is not None else self.tree.node_data.node_priors
+                
+                selections = self.gpu_ops.parallel_select_with_virtual_loss(
+                    parent_nodes,
+                    self.tree.children,
+                    self.tree.node_data.visit_counts,
+                    self.tree.node_data.virtual_loss_counts,
+                    self.tree.node_data.value_sums,
+                    priors_for_kernel,
+                    None,  # No separate noise needed - already mixed into priors
+                    legal_masks,
+                    self.tree.node_data.parent_actions,
+                    self.config.c_puct,
+                    self.config.virtual_loss,
+                    0.0,  # epsilon=0 since noise already mixed
+                    apply_legal_mask
+                )
+                
+                # Map selections back to simulation indices
+                for i, sim_idx in enumerate(sims_at_node):
+                    if i < len(selections) and selections[i] >= 0:
+                        selected_children[active_indices == sim_idx] = selections[i].item()
+            else:
+                # Fallback: Truly batched selection
+                num_sims = len(sims_at_node)
+                
+                # Get initial effective visits/values
                 effective_visits = self.tree.node_data.get_effective_visits(valid_children).float()
                 effective_values = self.tree.node_data.get_effective_values(valid_children)
                 
-                # Calculate Q-values with current virtual losses
+                # Calculate initial Q-values and UCB scores
                 q_values = torch.where(
                     effective_visits > 0,
                     effective_values / effective_visits,
                     torch.zeros_like(effective_values)
                 )
                 
-                # Apply GLOBAL Dirichlet noise for root (standard AlphaZero approach)
-                if parent_node == 0 and self.config.dirichlet_epsilon > 0:
-                    # Use global noise shared by all simulations at this node
-                    if not hasattr(self, '_global_noise_cache') or self._global_noise_cache is None:
-                        # Generate global noise once for this root
-                        noise = torch.distributions.Dirichlet(
-                            torch.full((len(valid_children),), self.config.dirichlet_alpha, device=self.device)
-                        ).sample()
-                        self._global_noise_cache = (1 - self.config.dirichlet_epsilon) * valid_priors + self.config.dirichlet_epsilon * noise
-                    noised_priors = self._global_noise_cache
-                else:
-                    # No noise for non-root nodes
-                    noised_priors = valid_priors
-                
-                # Calculate UCB scores for this simulation
                 exploration = (self.config.c_puct * noised_priors * 
                              parent_visits_sqrt / (1 + effective_visits))
                 ucb_scores = q_values + exploration
                 
-                # This simulation selects its best child
-                best_idx = ucb_scores.argmax().item()
-                selected_child = valid_children[best_idx]
+                # Parallel selection with diversity
+                # Sort children by UCB score
+                sorted_scores, sorted_indices = torch.sort(ucb_scores, descending=True)
+                sorted_children = valid_children[sorted_indices]
                 
-                # CRITICAL: Apply virtual loss immediately after selection
-                # This affects the UCB calculation for the next simulation
-                self.tree.node_data.apply_virtual_loss(selected_child.unsqueeze(0))
+                # Assign simulations to children to ensure diversity
+                local_selections = torch.zeros(num_sims, dtype=torch.int32, device=self.device)
                 
-                # Store selection
-                selected_children[active_indices == sim_idx] = selected_child
+                if num_sims <= len(valid_children):
+                    # Enough children for each simulation to get a different one
+                    local_selections = sorted_children[:num_sims]
+                else:
+                    # More simulations than children - distribute evenly
+                    # Calculate how many simulations per child
+                    base_count = num_sims // len(valid_children)
+                    extra_count = num_sims % len(valid_children)
+                    
+                    idx = 0
+                    for i, child in enumerate(sorted_children):
+                        count = base_count + (1 if i < extra_count else 0)
+                        local_selections[idx:idx+count] = child
+                        idx += count
+                
+                # Apply all virtual losses at once
+                # Filter out invalid selections
+                valid_mask = local_selections >= 0
+                if valid_mask.any():
+                    valid_selections = local_selections[valid_mask]
+                    # Apply virtual loss for all valid selections
+                    # This handles duplicates correctly since apply_virtual_loss increments
+                    for child in valid_selections:
+                        self.tree.node_data.apply_virtual_loss(child.unsqueeze(0))
+                
+                # Map selections back
+                for i, sim_idx in enumerate(sims_at_node):
+                    selected_children[active_indices == sim_idx] = local_selections[i]
         
         return selected_children
         
@@ -1097,31 +1202,42 @@ class WaveSearch:
         if not self.config.enable_virtual_loss:
             return
             
-        # Track how many virtual losses to remove from each node
-        # Each path represents one simulation that applied virtual losses during selection
-        virtual_loss_counts = {}
+        # Also check if tree has virtual loss enabled
+        if not self.tree.node_data.config.enable_virtual_loss:
+            return
+            
+        # Vectorized approach to track virtual losses
+        # Create mask for valid path positions (skip root at position 0)
+        max_len = paths.shape[1]
+        batch_size = paths.shape[0]
         
-        for i in range(paths.shape[0]):
-            path_len = path_lengths[i].item()
-            # Skip the root node (index 0) and only count selection nodes
-            for j in range(1, path_len):  # Start from 1 to skip root
-                node = paths[i, j].item()
-                if node >= 0 and node < self.tree.num_nodes:
-                    virtual_loss_counts[node] = virtual_loss_counts.get(node, 0) + 1
+        # Create position indices
+        positions = torch.arange(max_len, device=self.device).unsqueeze(0).expand(batch_size, -1)
         
-        # Remove the appropriate number of virtual losses from each node
-        for node, count in virtual_loss_counts.items():
-            node_tensor = torch.tensor([node], device=self.device)
-            for _ in range(count):
-                self.tree.node_data.remove_virtual_loss(node_tensor)
+        # Mask: position > 0 and position < path_length
+        valid_mask = (positions > 0) & (positions < path_lengths.unsqueeze(1))
+        
+        # Get all valid nodes from paths
+        valid_nodes = paths[valid_mask]
+        
+        # Filter nodes within valid range
+        node_mask = (valid_nodes >= 0) & (valid_nodes < self.tree.node_data.num_nodes)
+        nodes_to_process = valid_nodes[node_mask]
+        
+        # Remove virtual losses from all nodes at once
+        if len(nodes_to_process) > 0:
+            # Each node in nodes_to_process needs one virtual loss removed
+            for node in nodes_to_process:
+                self.tree.node_data.remove_virtual_loss(node.unsqueeze(0))
     
     def _scatter_backup(self, paths: torch.Tensor, lengths: torch.Tensor, values: torch.Tensor):
         """Optimized backup using scatter operations"""
         batch_size = paths.shape[0]
-        max_length = lengths.max().item()
         
-        if max_length == 0:
+        if lengths.numel() == 0 or lengths.max() == 0:
             return
+            
+        max_length = int(lengths.max())
             
         # Create mask for valid path positions
         length_range = torch.arange(max_length, device=self.device).unsqueeze(0)
@@ -1130,15 +1246,22 @@ class WaveSearch:
         # Flatten paths for valid positions
         valid_nodes = paths[:, :max_length][valid_mask]
         
-        # Create alternating signs for player perspective
+        # Create alternating signs for player perspective vectorized
         # Signs should alternate based on distance from leaf (reverse order)
-        signs = torch.ones((batch_size, max_length), device=self.device)
-        for i in range(batch_size):
-            path_len = lengths[i].item()
-            # Create alternating pattern from leaf backwards
-            for j in range(path_len):
-                if (path_len - 1 - j) % 2 == 1:
-                    signs[i, j] = -1
+        # Create position indices
+        positions = torch.arange(max_length, device=self.device).unsqueeze(0).expand(batch_size, -1)
+        
+        # Calculate distance from leaf for each position
+        # distance_from_leaf = path_length - 1 - position
+        distance_from_leaf = lengths.unsqueeze(1) - 1 - positions
+        
+        # Signs are -1 when distance from leaf is odd, 1 when even
+        signs = torch.where(distance_from_leaf % 2 == 1, 
+                          torch.tensor(-1.0, device=self.device),
+                          torch.tensor(1.0, device=self.device))
+        
+        # Mask out invalid positions
+        signs = torch.where(valid_mask, signs, torch.ones_like(signs))
         
         # Expand values and apply signs
         expanded_values = values.unsqueeze(1).expand(-1, max_length)
