@@ -54,7 +54,7 @@ mcts:
   enable_state_pool_debug: false
   
   # Tactical boost for finding important moves with untrained networks
-  enable_tactical_boost: true
+  enable_tactical_boost: false
   tactical_boost_strength: 0.3      # 0.0 = no boost, 1.0 = full replacement
   tactical_boost_decay: 0.99        # Decay factor per iteration
   
@@ -117,11 +117,11 @@ training:
   resign_start_iteration: 15 # Start resignation later for better early data
   
   # Larger replay buffer for 3-4 day training (64GB RAM advantage)
-  window_size: 50000         # Much larger for better sample diversity
+  window_size: 100000         # Much larger for better sample diversity
   sample_weight_by_game_length: true
   augment_data: true
-  shuffle_buffer_size: 15000 # Larger shuffle buffer
-  dataloader_workers: 12      # DataLoader workers for training (not self-play)
+  shuffle_buffer_size: 20000 # Larger shuffle buffer
+  dataloader_workers: 16     # DataLoader workers for training (not self-play)
   pin_memory: true
   # Persistent workers not needed for single-GPU
   
@@ -133,7 +133,7 @@ training:
   # Paths for 3-day intensive training
   save_dir: experiments/gomoku_intensive/checkpoints
   tensorboard_dir: experiments/gomoku_intensive/runs
-  data_dir: experiments/gomoku_intensive/self_play_data
+  data_dir: self_play_data
 
 arena:
   # Optimized evaluation for intensive 3-4 day training
@@ -165,8 +165,8 @@ arena:
   # Data saving with updated paths
   save_game_records: true
   save_arena_logs: true
-  arena_log_dir: experiments/gomoku_intensive/arena_logs
-  elo_save_path: experiments/gomoku_intensive/elo_ratings.json
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json
 
 # 3-4 Day Intensive Training Strategy (8GB VRAM Optimized):
 # 

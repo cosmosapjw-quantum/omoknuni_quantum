@@ -478,6 +478,8 @@ class MCTS:
             
         # Create policy vector efficiently
         policy = np.zeros(action_space_size)
+        visits_np = visits.cpu().numpy()
+        actions_np = actions.cpu().numpy()
         
         # Trust the tree structure - children are legal by construction
         # This is the key optimization: we don't re-validate what we already know

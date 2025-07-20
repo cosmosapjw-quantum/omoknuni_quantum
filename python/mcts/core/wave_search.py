@@ -261,7 +261,13 @@ class WaveSearch:
             self.allocate_buffers(wave_size)
             
         # Try fused select+expand if available
-        if self.gpu_ops and hasattr(self.gpu_ops, 'fused_select_expand') and self.config.enable_kernel_fusion:
+        # Only use fused operation if tree has sufficient nodes to avoid indexing issues
+        min_nodes_for_fusion = max(wave_size * 2, 100)  # Require at least 2x wave_size nodes
+        use_fused = (self.gpu_ops and hasattr(self.gpu_ops, 'fused_select_expand') and 
+                    self.config.enable_kernel_fusion and 
+                    self.tree.num_nodes >= min_nodes_for_fusion)
+        
+        if use_fused:
             fused_result = self._try_fused_select_expand(wave_size)
             if fused_result is not None:
                 paths, path_lengths, leaf_nodes, expanded_nodes = fused_result
@@ -306,7 +312,7 @@ class WaveSearch:
                 return None
                 
             # Prepare inputs for fused kernel
-            roots = torch.arange(wave_size, device=self.device, dtype=torch.int32)
+            roots = torch.zeros(wave_size, device=self.device, dtype=torch.int32)  # All searches start from root node 0
             
             # Get tree data with error checking
             tree_data = self._get_tree_data_for_fusion()
@@ -332,9 +338,21 @@ class WaveSearch:
                 
             paths, path_lengths, expand_nodes, needs_expansion = result
             
+            # Validate expand_nodes are within bounds
+            max_node_idx = expand_nodes.max().item()
+            if max_node_idx >= self.tree.num_nodes:
+                return None
+            
             # Process results to match expected format
             leaf_nodes = expand_nodes[needs_expansion]
-            expanded_nodes = self._expand_nodes_batch(leaf_nodes)
+            
+            # Additional validation for leaf_nodes
+            if len(leaf_nodes) > 0:
+                max_leaf_idx = leaf_nodes.max().item()
+                if max_leaf_idx >= self.tree.num_nodes:
+                    return None
+            
+            expanded_nodes = self._expand_batch_vectorized(leaf_nodes)
             
             return paths, path_lengths, leaf_nodes, expanded_nodes
             

@@ -71,8 +71,14 @@ class CheckpointManager:
             'iteration': iteration,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            **metadata
+            'metadata': metadata  # Store metadata in its own field
         }
+        
+        # Also include scheduler and scaler if they exist in metadata
+        if 'scheduler_state_dict' in metadata:
+            checkpoint['scheduler_state_dict'] = metadata.pop('scheduler_state_dict')
+        if 'scaler_state_dict' in metadata:
+            checkpoint['scaler_state_dict'] = metadata.pop('scaler_state_dict')
         
         # Save checkpoint
         torch.save(checkpoint, checkpoint_path)
@@ -94,7 +100,7 @@ class CheckpointManager:
         Returns:
             Dictionary containing checkpoint data
         """
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
         logger.info(f"Loaded checkpoint from {checkpoint_path}")
         return checkpoint
     

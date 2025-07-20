@@ -71,18 +71,21 @@ class PolicyHead(nn.Module):
     
     def _initialize_policy_weights(self):
         """Initialize policy head weights with proper symmetry breaking"""
+        # Initialize conv layer with smaller weights
+        nn.init.xavier_normal_(self.conv.weight, gain=0.5)
+        
         # Standard initialization for fc1
         nn.init.kaiming_normal_(self.fc1.weight, mode='fan_in', nonlinearity='relu')
         if self.fc1.bias is not None:
             nn.init.constant_(self.fc1.bias, 0)
         
-        # Proper initialization for fc2 to break symmetry while maintaining stability
-        # Use Xavier/Glorot initialization which considers both fan-in and fan-out
-        # This creates diverse initial policies without extreme values
-        nn.init.xavier_normal_(self.fc2.weight, gain=0.5)  # Reduced gain for stability
+        # CRITICAL: Initialize fc2 weights to be very small to prevent extreme logits
+        # The untrained network should output near-uniform policies
+        # Use much smaller gain to ensure logits stay in reasonable range
+        nn.init.xavier_normal_(self.fc2.weight, gain=0.1)  # Much smaller gain
         if self.fc2.bias is not None:
-            # Small random bias to break symmetry
-            nn.init.uniform_(self.fc2.bias, -0.01, 0.01)
+            # Initialize bias to zero for more uniform initial policies
+            nn.init.constant_(self.fc2.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through policy head"""

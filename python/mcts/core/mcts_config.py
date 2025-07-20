@@ -35,6 +35,7 @@ class MCTSConfig:
     temperature: float = 1.0
     dirichlet_alpha: float = 0.3
     dirichlet_epsilon: float = 0.25
+    max_depth: int = 100  # Maximum search depth for MCTS
     
     # Performance optimization modes
     classical_only_mode: bool = False  # Aggressive fast-path for classical MCTS
@@ -120,7 +121,7 @@ class MCTSConfig:
     profile_gpu_kernels: bool = False
     
     # Tactical move detection (helps find important moves with untrained network)
-    enable_tactical_boost: bool = True
+    enable_tactical_boost: bool = False  # Disabled to prevent deterministic play in early training
     tactical_boost_strength: float = 0.3  # 0.0 = no boost, 1.0 = full replacement
     tactical_boost_decay: float = 0.99  # Decay factor per iteration to reduce over time
     

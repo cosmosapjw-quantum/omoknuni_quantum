@@ -90,15 +90,20 @@ class SelfPlayGame:
         
         # Calculate and store policy entropy
         # Entropy = -sum(p * log(p)) for p > 0
-        entropy = -np.sum(action_probs[action_probs > 0] * np.log(action_probs[action_probs > 0] + 1e-10))
+        # Add small epsilon to avoid log(0) and ensure non-negative entropy
+        valid_probs = action_probs[action_probs > 1e-10]
+        if len(valid_probs) > 0:
+            entropy = -np.sum(valid_probs * np.log(valid_probs))
+        else:
+            entropy = 0.0
         self.policy_entropies.append(entropy)
         
         # Log low entropy situations which might indicate overconfidence
         # Low entropy situations tracked internally
         
         # Get value prediction from MCTS (if available)
-        if hasattr(self.mcts, 'tree') and hasattr(self.mcts.tree, 'get_node_value'):
-            value_pred = self.mcts.tree.get_node_value(0)  # Root node value
+        if hasattr(self.mcts, 'get_root_value'):
+            value_pred = self.mcts.get_root_value()
             self.value_predictions.append((value_pred, self.current_player))
             # Value prediction tracked
         else:
@@ -125,6 +130,7 @@ class SelfPlayGame:
             # Select best action
             action = np.argmax(action_probs)
         
+        
         # Validate action is legal
         valid_actions = self.game.get_valid_actions()
         # valid_actions is a list of legal move indices, not a boolean mask
@@ -139,6 +145,11 @@ class SelfPlayGame:
         
         self.game.make_action(action)
         self.move_count += 1
+        
+        # Debug logging for early game termination investigation
+        if self.game.is_terminal() and self.move_count <= 20:
+            winner = self.game.get_winner()
+            logger.warning(f"Game {self.game_id} ended early at move {self.move_count}, winner: {winner}, action: {action}")
         
         # Check for resignation
         if self.config.enable_resign and self.move_count > 10:
@@ -212,7 +223,11 @@ class SelfPlayGame:
                 else:  # player == 2
                     actual_value = -winner
                 # Accuracy is 1 if prediction has same sign as actual, 0 otherwise
-                accuracy = 1.0 if (value_pred > 0) == (actual_value > 0) else 0.0
+                # Special case for draws: check if prediction is close to 0
+                if actual_value == 0:
+                    accuracy = 1.0 if abs(value_pred) < 0.1 else 0.0
+                else:
+                    accuracy = 1.0 if (value_pred * actual_value) > 0 else 0.0
                 value_accuracies.append(accuracy)
         
         # Prepare metrics for this game
@@ -261,8 +276,8 @@ class SelfPlayManager:
             mcts_simulations=config.mcts.num_simulations,
             temperature=config.mcts.temperature,
             temperature_threshold=config.mcts.temperature_threshold,
-            resign_threshold=getattr(config.mcts, 'resign_threshold', -0.98),
-            enable_resign=getattr(config.mcts, 'enable_resign', True),
+            resign_threshold=getattr(config.training, 'resign_threshold', -0.98),
+            enable_resign=getattr(config.training, 'enable_resign', True),
             dirichlet_alpha=config.mcts.dirichlet_alpha,
             dirichlet_epsilon=config.mcts.dirichlet_epsilon,
             c_puct=config.mcts.c_puct,

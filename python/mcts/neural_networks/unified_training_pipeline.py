@@ -35,6 +35,7 @@ from mcts.utils.config_system import (
     merge_configs
 )
 from mcts.neural_networks.replay_buffer import ReplayBuffer, GameExample
+from mcts.utils.training_monitor import TrainingMonitor
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -103,6 +104,9 @@ class UnifiedTrainingPipeline:
             auto_save_interval=config.log.checkpoint_frequency
         )
         self.elo_tracker = None
+        
+        # Initialize training monitor
+        self.training_monitor = TrainingMonitor(alert_threshold=3)
         
         # Resume from checkpoint if specified
         if resume_from:
@@ -545,6 +549,23 @@ class UnifiedTrainingPipeline:
         # Collect metrics
         self.game_metrics = self_play_manager.collect_game_metrics(examples)
         
+        # Check training health
+        should_continue, warnings = self.training_monitor.check_training_health(self.game_metrics)
+        if warnings:
+            for warning in warnings:
+                logger.warning(warning)
+            
+            # Get recommendations if there are issues
+            recommendations = self.training_monitor.get_recommendations(warnings)
+            if recommendations:
+                logger.info("Recommendations to improve training:")
+                for rec in recommendations:
+                    logger.info(rec)
+        
+        if not should_continue:
+            logger.error("Training collapse detected! Stopping training.")
+            raise RuntimeError("Training collapsed - check logs for details")
+        
         # Log game quality metrics
         self._log_game_quality_metrics()
         
@@ -986,24 +1007,44 @@ class UnifiedTrainingPipeline:
         )
         
         # Load checkpoint
-        checkpoint_data = checkpoint_manager.load_checkpoint(
-            checkpoint_path=checkpoint_path,
-            model=self.model,
-            optimizer=self.optimizer,
-            replay_buffer=self.replay_buffer,
-            scheduler=self.scheduler,
-            scaler=self.scaler,
-            device=self.config.mcts.device
-        )
+        checkpoint_data = checkpoint_manager.load_checkpoint(checkpoint_path)
+        
+        # Load model state
+        self.model.load_state_dict(checkpoint_data["model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint_data["optimizer_state_dict"])
+        
+        # Load scheduler if exists
+        if "scheduler_state_dict" in checkpoint_data and self.scheduler is not None:
+            self.scheduler.load_state_dict(checkpoint_data["scheduler_state_dict"])
+        
+        # Load scaler if exists
+        if "scaler_state_dict" in checkpoint_data and self.scaler is not None:
+            self.scaler.load_state_dict(checkpoint_data["scaler_state_dict"])
         
         # Update state from checkpoint
-        self.iteration = checkpoint_data["iteration"]
-        self.best_model_iteration = checkpoint_data["metadata"]["best_model_iteration"]
+        self.iteration = checkpoint_data.get("iteration", 44)  # Use filename iteration as fallback
         
-        # Load ELO ratings if available
-        if "elo_ratings" in checkpoint_data["metadata"]:
-            self.arena.elo_system.ratings = checkpoint_data["metadata"]["elo_ratings"]
-            logger.info(f"Loaded ELO ratings for {len(self.arena.elo_system.ratings)} players")
+        # Handle metadata if it exists
+        if "metadata" in checkpoint_data:
+            self.best_model_iteration = checkpoint_data["metadata"].get("best_model_iteration", self.iteration)
+            
+            # Load ELO ratings if available
+            if "elo_ratings" in checkpoint_data["metadata"]:
+                self.arena.elo_system.ratings = checkpoint_data["metadata"]["elo_ratings"]
+                logger.info(f"Loaded ELO ratings for {len(self.arena.elo_system.ratings)} players")
+        else:
+            # No metadata, use defaults
+            self.best_model_iteration = self.iteration
+            logger.warning("Checkpoint has no metadata - using defaults")
+        
+        # Load replay buffer if it exists
+        try:
+            self.replay_buffer = checkpoint_manager.load_replay_buffer(self.iteration)
+            logger.info(f"Loaded replay buffer with {len(self.replay_buffer)} examples")
+        except Exception as e:
+            logger.warning(f"Could not load replay buffer: {e}")
+        
+        logger.info(f"Resumed training from iteration {self.iteration}")
     
     def run_final_tournament(self):
         """Run tournament between all saved models"""

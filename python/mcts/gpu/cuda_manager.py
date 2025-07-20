@@ -80,7 +80,11 @@ class CudaManager:
                 'batched_ucb_selection', 
                 'vectorized_backup',
                 'batched_add_children',
-                'initialize_lookup_tables'
+                'initialize_lookup_tables',
+                'fused_select_expand',
+                'batched_dirichlet_noise',
+                'fused_ucb_with_noise',
+                'optimized_backup_scatter'
             ]
         }
         

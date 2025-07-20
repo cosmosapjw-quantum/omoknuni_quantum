@@ -258,6 +258,32 @@ class ConsolidatedKernelInterface:
     def batched_add_children(self, *args, **kwargs):
         return self.kernels.batched_add_children(*args, **kwargs)
     
+    def fused_select_expand(self, *args, **kwargs):
+        # Convert kwargs to positional args for C++ binding
+        if kwargs:
+            roots = kwargs['roots']
+            children = kwargs['children']
+            visit_counts = kwargs['visit_counts']
+            q_values = kwargs['q_values']
+            prior_probs = kwargs['prior_probs']
+            is_expanded = kwargs['is_expanded']
+            max_depth = kwargs['max_depth']
+            c_puct = kwargs['c_puct']
+            return self.kernels.fused_select_expand(
+                roots, children, visit_counts, q_values, 
+                prior_probs, is_expanded, max_depth, c_puct
+            )
+        return self.kernels.fused_select_expand(*args)
+    
+    def batched_dirichlet_noise(self, *args, **kwargs):
+        return self.kernels.batched_dirichlet_noise(*args, **kwargs)
+    
+    def fused_ucb_with_noise(self, *args, **kwargs):
+        return self.kernels.fused_ucb_with_noise(*args, **kwargs)
+    
+    def optimized_backup_scatter(self, *args, **kwargs):
+        return self.kernels.optimized_backup_scatter(*args, **kwargs)
+    
     def get_stats(self):
         if CUDA_MANAGER_AVAILABLE:
             manager = get_cuda_manager()
