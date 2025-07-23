@@ -187,7 +187,7 @@ class NeuralNetworkConfig:
     """Neural network architecture and training configuration"""
     # Architecture
     model_type: str = "resnet"  # resnet, simple, lightweight
-    input_channels: int = 18
+    input_channels: int = 19  # Standard AlphaZero representation
     input_representation: str = "basic"  # basic, standard, enhanced, compact
     num_res_blocks: int = 10
     num_filters: int = 256
@@ -295,6 +295,15 @@ class TrainingFullConfig:
     shuffle_buffer_size: int = 10000
     dataloader_workers: int = 4
     pin_memory: bool = True
+    
+    # Q-value training
+    use_mcts_q_values: bool = False  # Use Q-values from MCTS as training targets
+    q_value_weight: float = 0.8  # Weight for mixing Q-values with game outcomes
+    q_value_temperature: float = 0.1  # Temperature for Q-value softening
+    
+    # KL divergence regularization
+    kl_weight: float = 0.0  # Weight for KL divergence regularization with previous model
+    kl_warmup_iterations: int = 10  # Number of iterations before applying KL regularization
     
     # Mixed precision
     mixed_precision: bool = True

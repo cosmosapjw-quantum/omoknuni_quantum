@@ -1,7 +1,7 @@
 """Training monitoring utilities to detect and prevent training collapse"""
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 from dataclasses import dataclass
 
@@ -57,15 +57,28 @@ class TrainingHealthMetrics:
 class TrainingMonitor:
     """Monitor training health and detect issues"""
     
-    def __init__(self, alert_threshold: int = 3):
+    def __init__(self, alert_threshold: int = 3, early_stopping_enabled: bool = True):
         """Initialize training monitor
         
         Args:
             alert_threshold: Number of consecutive unhealthy iterations before alerting
+            early_stopping_enabled: Whether to trigger early stopping on critical issues
         """
         self.alert_threshold = alert_threshold
+        self.early_stopping_enabled = early_stopping_enabled
         self.unhealthy_count = 0
         self.previous_metrics: Optional[TrainingHealthMetrics] = None
+        
+        # Policy stability tracking
+        self.policy_entropy_history = []
+        self.win_rate_history = []
+        self.value_variance_history = []
+        
+        # Early stopping thresholds
+        self.min_policy_entropy = 0.05  # Stop if entropy drops below this
+        self.max_win_rate_imbalance = 0.95  # Stop if one player wins >95% of games
+        self.min_value_variance = 0.001  # Stop if values collapse
+        self.consecutive_bad_iterations = 5  # Stop after this many bad iterations
         
     def check_training_health(self, game_metrics: Dict[str, any]) -> Tuple[bool, List[str]]:
         """Check if training is healthy based on game metrics
@@ -147,6 +160,15 @@ class TrainingMonitor:
                 resign_rate=resigned_games / total_games if total_games > 0 else 0.0
             )
         
+        # Update tracking histories
+        self.update_policy_stability(metrics.policy_entropy)
+        self.update_win_rate(
+            game_metrics.get('player1_wins', 0),
+            game_metrics.get('player2_wins', 0),
+            game_metrics.get('total_games', 1)
+        )
+        self.update_value_variance(metrics.value_variance)
+        
         # Check health
         is_healthy, issues = metrics.is_healthy()
         
@@ -175,6 +197,13 @@ class TrainingMonitor:
         
         self.previous_metrics = metrics
         
+        # Check if we should stop training
+        if self.early_stopping_enabled:
+            should_stop, stop_reason = self.should_stop_training()
+            if should_stop:
+                warnings.append(f"🛑 EARLY STOPPING TRIGGERED: {stop_reason}")
+                return False, warnings
+        
         # Log current metrics
         logger.info(f"Training metrics - Entropy: {metrics.policy_entropy:.3f}, "
                    f"Value Var: {metrics.value_variance:.3f}, "
@@ -182,6 +211,113 @@ class TrainingMonitor:
                    f"Win Balance: {metrics.win_rate_balance:.2f}")
         
         return True, warnings
+    
+    def update_policy_stability(self, policy_entropy: float):
+        """Update policy stability tracking
+        
+        Args:
+            policy_entropy: Current policy entropy value
+        """
+        self.policy_entropy_history.append(policy_entropy)
+        
+        # Keep only recent history (last 20 iterations)
+        if len(self.policy_entropy_history) > 20:
+            self.policy_entropy_history.pop(0)
+    
+    def update_win_rate(self, player1_wins: int, player2_wins: int, total_games: int):
+        """Update win rate tracking
+        
+        Args:
+            player1_wins: Number of wins for player 1
+            player2_wins: Number of wins for player 2
+            total_games: Total number of games
+        """
+        if total_games > 0:
+            win_rate_imbalance = abs(player1_wins - player2_wins) / total_games
+            self.win_rate_history.append(win_rate_imbalance)
+            
+            # Keep only recent history
+            if len(self.win_rate_history) > 20:
+                self.win_rate_history.pop(0)
+    
+    def update_value_variance(self, value_variance: float):
+        """Update value variance tracking
+        
+        Args:
+            value_variance: Current value variance
+        """
+        self.value_variance_history.append(value_variance)
+        
+        # Keep only recent history
+        if len(self.value_variance_history) > 20:
+            self.value_variance_history.pop(0)
+    
+    def should_stop_training(self) -> Tuple[bool, str]:
+        """Check if training should be stopped due to critical issues
+        
+        Returns:
+            Tuple of (should_stop, reason_message)
+        """
+        if not self.early_stopping_enabled:
+            return False, ""
+        
+        # Check for critically low policy entropy
+        if self.policy_entropy_history:
+            recent_entropy = self.policy_entropy_history[-1]
+            if recent_entropy < self.min_policy_entropy:
+                return True, f"Policy entropy critically low: {recent_entropy:.4f} < {self.min_policy_entropy}"
+        
+        # Check for extreme win rate imbalance
+        if self.win_rate_history:
+            recent_imbalance = self.win_rate_history[-1]
+            if recent_imbalance > self.max_win_rate_imbalance:
+                return True, f"Extreme win rate imbalance: {recent_imbalance:.2f} > {self.max_win_rate_imbalance}"
+        
+        # Check for collapsed value variance
+        if self.value_variance_history:
+            recent_variance = self.value_variance_history[-1]
+            if recent_variance < self.min_value_variance:
+                return True, f"Value variance collapsed: {recent_variance:.6f} < {self.min_value_variance}"
+        
+        # Check for sustained bad iterations
+        if self.unhealthy_count >= self.consecutive_bad_iterations:
+            return True, f"Training unhealthy for {self.unhealthy_count} consecutive iterations"
+        
+        # Check for entropy trend (decreasing over time)
+        if len(self.policy_entropy_history) >= 10:
+            # Calculate trend over last 10 iterations
+            recent_entropies = self.policy_entropy_history[-10:]
+            entropy_trend = np.polyfit(range(10), recent_entropies, 1)[0]
+            
+            # If entropy is decreasing rapidly
+            if entropy_trend < -0.05:  # Losing 0.05 entropy per iteration
+                avg_entropy = np.mean(recent_entropies)
+                if avg_entropy < 0.5:  # And already at low entropy
+                    return True, f"Policy entropy rapidly decreasing: trend={entropy_trend:.4f}/iter, avg={avg_entropy:.3f}"
+        
+        return False, ""
+    
+    def get_stability_metrics(self) -> Dict[str, Any]:
+        """Get current stability metrics
+        
+        Returns:
+            Dictionary of stability metrics
+        """
+        metrics = {
+            'current_entropy': self.policy_entropy_history[-1] if self.policy_entropy_history else None,
+            'avg_entropy_last_10': np.mean(self.policy_entropy_history[-10:]) if len(self.policy_entropy_history) >= 10 else None,
+            'entropy_trend': None,
+            'current_win_rate_imbalance': self.win_rate_history[-1] if self.win_rate_history else None,
+            'current_value_variance': self.value_variance_history[-1] if self.value_variance_history else None,
+            'consecutive_unhealthy': self.unhealthy_count
+        }
+        
+        # Calculate entropy trend if enough data
+        if len(self.policy_entropy_history) >= 5:
+            recent_entropies = self.policy_entropy_history[-5:]
+            metrics['entropy_trend'] = np.polyfit(range(5), recent_entropies, 1)[0]
+        
+        return metrics
     
     def get_recommendations(self, issues: List[str]) -> List[str]:
         """Get recommendations based on detected issues

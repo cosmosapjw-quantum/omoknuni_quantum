@@ -240,7 +240,7 @@ class ArenaMatch:
     """Manages a single arena match between two models"""
     
     def __init__(self, game_interface, evaluator1, evaluator2, 
-                 config: ArenaConfig, match_id: str):
+                 config: ArenaConfig, match_id: str, log_dir: Optional[Path] = None):
         """Initialize arena match
         
         Args:
@@ -249,6 +249,7 @@ class ArenaMatch:
             evaluator2: Second model's evaluator
             config: Arena configuration
             match_id: Unique match identifier
+            log_dir: Directory to save game logs (optional)
         """
         self.game_interface = game_interface
         self.evaluator1 = evaluator1
@@ -256,6 +257,10 @@ class ArenaMatch:
         self.config = config
         self.match_id = match_id
         self.game_results = []
+        self.log_dir = log_dir
+        
+        # Storage for detailed game records if logging is enabled
+        self.game_records = [] if config.save_game_records else None
     
     def play_single_game(self, game_idx: int) -> int:
         """Play a single game
@@ -291,6 +296,19 @@ class ArenaMatch:
         move_count = 0
         current_player = 0  # Start with player 0 (game interface uses 0-based indexing)
         
+        # Initialize game record if logging is enabled
+        if self.config.save_game_records:
+            game_record = {
+                'game_idx': game_idx,
+                'match_id': self.match_id,
+                'moves': [],
+                'action_probs': [],
+                'timestamps': [],
+                'evaluator1': str(type(self.evaluator1).__name__),
+                'evaluator2': str(type(self.evaluator2).__name__)
+            }
+            start_time = time.time()
+        
         while not self.game_interface.is_terminal(state):
             # Get canonical form for current player
             canonical_state = self.game_interface.get_canonical_form(state, current_player)
@@ -311,6 +329,18 @@ class ArenaMatch:
             best_legal_idx = np.argmax(legal_probs)
             action = legal_moves[best_legal_idx]
             
+            # Record move details if logging is enabled
+            if self.config.save_game_records:
+                game_record['moves'].append({
+                    'move_number': move_count,
+                    'player': current_player + 1,  # Convert to 1-based for display
+                    'action': int(action),
+                    'action_string': self.game_interface.action_to_string(state, action),
+                    'probability': float(action_probs[action])
+                })
+                game_record['action_probs'].append(action_probs.tolist())
+                game_record['timestamps'].append(time.time() - start_time)
+            
             # Make move
             state = self.game_interface.get_next_state(state, action)
             move_count += 1
@@ -330,6 +360,13 @@ class ArenaMatch:
             'winner': winner,
             'moves': move_count
         })
+        
+        # Complete and store game record if logging is enabled
+        if self.config.save_game_records:
+            game_record['winner'] = int(winner)
+            game_record['total_moves'] = move_count
+            game_record['duration'] = time.time() - start_time
+            self.game_records.append(game_record)
         
         return winner
     
@@ -384,6 +421,10 @@ class ArenaMatch:
         total_games = model1_wins + model2_wins + draws
         win_rate = model1_wins / total_games if total_games > 0 else 0.5
         
+        # Save game records if logging is enabled
+        if self.config.save_game_records and self.game_records and self.log_dir:
+            self.save_game_records()
+        
         return {
             'total_games': total_games,
             'model1_wins': model1_wins,
@@ -392,21 +433,48 @@ class ArenaMatch:
             'win_rate': win_rate,
             'game_results': self.game_results
         }
+    
+    def save_game_records(self):
+        """Save detailed game records to file"""
+        if not self.log_dir or not self.game_records:
+            return
+        
+        # Ensure log directory exists
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create filename with timestamp
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = self.log_dir / f"arena_games_{self.match_id}_{timestamp}.json"
+        
+        # Save records
+        import json
+        with open(filename, 'w') as f:
+            json.dump({
+                'match_id': self.match_id,
+                'num_games': len(self.game_records),
+                'evaluator1': str(type(self.evaluator1).__name__),
+                'evaluator2': str(type(self.evaluator2).__name__),
+                'games': self.game_records
+            }, f, indent=2)
+        
+        logger.info(f"Saved {len(self.game_records)} game records to {filename}")
 
 
 class ArenaManager:
     """Manages arena evaluation between models"""
     
-    def __init__(self, config: AlphaZeroConfig, arena_config: ArenaConfig = None, game_interface=None):
+    def __init__(self, config: AlphaZeroConfig, arena_config: ArenaConfig = None, game_interface=None, log_dir: Optional[Path] = None):
         """Initialize arena manager
         
         Args:
             config: AlphaZero configuration
             arena_config: Arena configuration (optional, for backward compatibility)
             game_interface: Game interface to use (optional)
+            log_dir: Directory to save game logs (optional)
         """
         self.config = config
         self.game_interface = game_interface
+        self.log_dir = log_dir
         
         # Use provided arena config or create from AlphaZero config
         if arena_config is not None:
@@ -519,7 +587,8 @@ class ArenaManager:
             evaluator1=evaluator1,
             evaluator2=evaluator2,
             config=self.arena_config,
-            match_id="single_gpu"
+            match_id="single_gpu",
+            log_dir=self.log_dir
         )
         
         return match.play_match()

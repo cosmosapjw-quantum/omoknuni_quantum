@@ -440,7 +440,7 @@ class GPUGameStates:
             
         Returns:
             Feature tensor ready for neural network:
-            - Enhanced representation: 18 or 20 channels (configurable)
+            - Enhanced representation: 19 or 21 channels (configurable)
             - Basic representation: 4 channels for Gomoku, 5 for Go, 12 for Chess
         """
         batch_size = len(state_indices)
@@ -450,12 +450,12 @@ class GPUGameStates:
             return self._get_enhanced_nn_features(state_indices)
         
         if self.game_type == GameType.GOMOKU:
-            # Create proper 18-channel AlphaZero representation (GPU implementation)
+            # Create proper 19-channel AlphaZero representation (GPU implementation)
             boards = self.boards[state_indices]
             current_players = self.current_player[state_indices]
             
-            # Create 18 feature planes: board + player + 8 moves × 2 players
-            features = torch.zeros((batch_size, 18, self.board_size, self.board_size), 
+            # Create 19 feature planes: current + opponent + player indicator + 8 moves × 2 players
+            features = torch.zeros((batch_size, 19, self.board_size, self.board_size), 
                                  device=self.device, dtype=torch.float32)
             
             # Channel 0: Current board state (all stones)
@@ -552,13 +552,9 @@ class GPUGameStates:
     def get_feature_planes(self) -> int:
         """Get number of feature planes for the current game type"""
         if hasattr(self, '_use_enhanced_features') and self._use_enhanced_features:
-            return getattr(self, '_enhanced_channels', 20)  # Enhanced representation
-        if self.game_type == GameType.GOMOKU:
-            return 4  # current player, opponent, empty, current player constant
-        elif self.game_type == GameType.GO:
-            return 5  # black, white, empty, ko, current player
-        else:  # Chess
-            return 12  # 6 piece types x 2 colors
+            return getattr(self, '_enhanced_channels', 21)  # Enhanced representation
+        # Standard AlphaZero representation for all games
+        return 19  # current player, opponent, player indicator, 8 move history pairs
     
     def get_state_info(self, state_idx: int) -> Dict[str, Any]:
         """Get human-readable state information for debugging"""
@@ -583,14 +579,14 @@ class GPUGameStates:
     def enable_enhanced_features(self):
         """Enable enhanced feature representation for all games"""
         self._use_enhanced_features = True
-        self._enhanced_channels = 20  # Default to 20 channels
+        self._enhanced_channels = 21  # Default to 21 channels
         self._cpp_states_cache = {}
         self._cpp_states_pool = []  # Pool of reusable states
     
     def set_enhanced_channels(self, channels: int):
         """Set the number of channels for enhanced features (18 or 20)"""
-        if channels not in [18, 20]:
-            raise ValueError(f"Enhanced features only support 18 or 20 channels, got {channels}")
+        if channels not in [19, 21]:
+            raise ValueError(f"Enhanced features only support 19 or 21 channels, got {channels}")
         self._enhanced_channels = channels
     
     def _get_enhanced_nn_features(self, state_indices: torch.Tensor) -> torch.Tensor:
@@ -601,20 +597,20 @@ class GPUGameStates:
         0: Current board state
         1: Current player indicator
         2-17: Previous 8 moves for each player (16 channels)
-        18-19: Attack/defense planes (only included if _enhanced_channels == 20)
+        19-20: Attack/defense planes (only included if _enhanced_channels == 21)
         
         Args:
             state_indices: State indices to get features for
             
         Returns:
             Feature tensor of shape (batch_size, channels, board_size, board_size)
-            where channels is either 18 or 20 depending on configuration
+            where channels is either 19 or 21 depending on configuration
         """
         batch_size = len(state_indices)
-        target_channels = getattr(self, '_enhanced_channels', 20)
+        target_channels = getattr(self, '_enhanced_channels', 21)
         
-        # Create tensor to hold all features (always start with 20 channels from C++)
-        features_20 = torch.zeros((batch_size, 20, self.board_size, self.board_size), 
+        # Create tensor to hold all features (always start with 21 channels from C++)
+        features_21 = torch.zeros((batch_size, 21, self.board_size, self.board_size), 
                                 device=self.device, dtype=torch.float32)
         
         # Process each state
@@ -638,7 +634,7 @@ class GPUGameStates:
                              f"got {enhanced_tensor.shape[1]}x{enhanced_tensor.shape[2]}")
                 
                 # Create a tensor of the correct size
-                correct_tensor = np.zeros((20, self.board_size, self.board_size), dtype=np.float32)
+                correct_tensor = np.zeros((21, self.board_size, self.board_size), dtype=np.float32)
                 
                 # Copy the center portion if the actual tensor is larger
                 if enhanced_tensor.shape[1] > self.board_size:
@@ -653,15 +649,15 @@ class GPUGameStates:
                 enhanced_tensor = correct_tensor
             
             # Convert numpy array to torch tensor and copy to GPU
-            features_20[i] = torch.from_numpy(enhanced_tensor).to(self.device)
+            features_21[i] = torch.from_numpy(enhanced_tensor).to(self.device)
         
         # Return the appropriate number of channels based on configuration
-        if target_channels == 18:
-            # Remove attack/defense planes (channels 18-19) to get 18 channels
-            return features_20[:, :18, :, :]
+        if target_channels == 19:
+            # Remove attack/defense planes (channels 19-20) to get 19 channels
+            return features_21[:, :19, :, :]
         else:
-            # Return all 20 channels
-            return features_20
+            # Return all 21 channels
+            return features_21
     
     def _get_cpp_state(self, state_idx: int):
         """Get or create C++ game state for given index using exact reconstruction"""

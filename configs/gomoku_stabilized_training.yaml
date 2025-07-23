@@ -1,0 +1,195 @@
+# Stabilized Gomoku Training Configuration to prevent early collapse
+# Based on gomoku_improved_training.yaml with stability fixes
+
+experiment_name: gomoku_stabilized
+seed: 42
+log_level: INFO
+num_iterations: 200
+
+game:
+  game_type: gomoku
+  board_size: 15
+
+mcts:
+  # Optimized for RTX 3060 Ti performance and quality balance
+  num_simulations: 500
+  c_puct: 1.4
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  
+  # RTX 3060 Ti optimized performance
+  min_wave_size: 4096
+  max_wave_size: 16384
+  batch_size: 2048
+  virtual_loss: 1.0
+  enable_virtual_loss: true
+  
+  # Tree reuse for better performance
+  enable_subtree_reuse: true
+  
+  # Memory optimization
+  memory_pool_size_mb: 4096
+  max_tree_nodes: 1000000
+  
+  # Performance mode
+  enable_fast_ucb: true
+  
+  # CSR tree configuration for Gomoku
+  csr_max_actions: 225
+  
+  # Ryzen 9 5900X optimization
+  device: cuda
+  num_threads: 22
+  
+  # Production mode
+  enable_debug_logging: false
+  enable_state_pool_debug: false
+  
+  # Disable tactical boost for stability
+  enable_tactical_boost: false
+
+network:
+  # Optimized ResNet for RTX 3060 Ti
+  model_type: resnet
+  input_channels: 19
+  input_representation: basic
+  num_res_blocks: 9
+  num_filters: 64
+  value_head_hidden_size: 128
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.15
+  batch_norm: true
+  batch_norm_momentum: 0.995
+  l2_regularization: 0.0003
+  
+  # Activation
+  activation: gelu
+  weight_init: he_normal
+
+training:
+  # STABILITY FIXES
+  # 1. Disable resignation for early iterations
+  enable_resign: false  # Completely disable resignation initially
+  resign_threshold: -0.98  # Very conservative threshold when enabled
+  resign_check_moves: 30  # Check after more moves
+  resign_start_iteration: 50  # Don't resign until iteration 50
+  
+  # 2. Increase exploration for diversity
+  temperature: 1.2  # Higher temperature for more exploration
+  temperature_decay: 0.99  # Slowly decay temperature
+  min_temperature: 0.5  # Keep some exploration even late
+  
+  # 3. Add more noise to prevent deterministic collapse
+  dirichlet_epsilon: 0.35  # Increased from 0.25
+  
+  # 4. Reduce early stopping sensitivity
+  early_stopping_enabled: true  # Keep enabled but make less sensitive
+  monitor_alert_threshold: 5  # Require 5 bad iterations before alerting
+  
+  # Original optimized settings
+  batch_size: 1024
+  learning_rate: 0.0005
+  learning_rate_schedule: cosine
+  lr_decay_steps: 40
+  lr_decay_rate: 0.85
+  min_learning_rate: 0.00005
+  
+  # AdamW optimizer
+  optimizer: adamw
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.01
+  
+  # Gradient handling
+  gradient_accumulation_steps: 2
+  max_grad_norm: 3.0
+  gradient_clip_value: null
+  
+  # Training loop
+  num_epochs: 10
+  early_stopping_patience: 15
+  early_stopping_min_delta: 0.0003
+  
+  # Batch processing
+  inference_batch_size: 1024
+  
+  # Self-play settings
+  num_games_per_iteration: 100
+  max_moves_per_game: 225
+  
+  # Replay buffer
+  window_size: 100000
+  sample_weight_by_game_length: true
+  augment_data: true
+  shuffle_buffer_size: 20000
+  dataloader_workers: 16
+  pin_memory: true
+  
+  # Q-value training
+  use_mcts_q_values: true
+  q_value_weight: 0.6
+  q_value_temperature: 0.1
+  
+  # KL divergence
+  kl_weight: 0.3
+  kl_warmup_iterations: 10
+  
+  # Mixed precision
+  mixed_precision: true
+  loss_scale: dynamic
+  
+  # Paths
+  save_dir: experiments/gomoku_stabilized/checkpoints
+  tensorboard_dir: experiments/gomoku_stabilized/runs
+  data_dir: self_play_data
+  
+  # Population-based training
+  opponent_buffer_size: 10
+  opponent_selection_temperature: 1.0
+  opponent_use_elo_weighting: true
+  opponent_min_elo_difference: 50.0
+
+arena:
+  # Evaluation settings
+  num_games: 40
+  win_threshold: 0.53
+  statistical_significance: true
+  confidence_level: 0.95
+  
+  # Game settings
+  temperature: 0.0
+  mcts_simulations: 500
+  c_puct: 1.4
+  max_moves: 225
+  time_limit_seconds: null
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 32.0
+  elo_initial_rating: 0.0
+  elo_anchor_rating: 0.0
+  update_elo: true
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 24
+  
+  # Data saving
+  save_game_records: true
+  save_arena_logs: true
+  arena_log_dir: arena_logs
+  elo_save_path: elo_ratings.json
+
+# STABILITY STRATEGY:
+# 1. No resignation for first 50 iterations - get full game data
+# 2. Higher exploration temperature (1.2) with slow decay
+# 3. More Dirichlet noise (0.35) for diversity
+# 4. Less sensitive early stopping (5 bad iterations)
+# 5. Conservative resign threshold (-0.98) when eventually enabled
+# 
+# This should prevent the immediate collapse seen in training

@@ -18,7 +18,7 @@ class ResNetConfig:
     """Configuration for ResNet model"""
     num_blocks: int = 19  # Number of residual blocks
     num_filters: int = 256  # Number of filters in conv layers
-    input_channels: int = 18  # Basic feature channels
+    input_channels: int = 19  # Standard AlphaZero feature channels
     fc_value_hidden: int = 256  # Hidden units in value head
     fc_policy_hidden: int = 256  # Hidden units in policy head
 
@@ -272,7 +272,7 @@ class ResNetModel(BaseGameModel):
 
 def create_resnet_for_game(
     game_type: str,
-    input_channels: int = 18,
+    input_channels: int = 19,  # Standard AlphaZero representation
     num_blocks: int = 19,
     num_filters: int = 256
 ) -> ResNetModel:

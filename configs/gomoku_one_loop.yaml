@@ -91,7 +91,7 @@ mcts:
 network:
   # Standard network configuration
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 12
   num_filters: 192

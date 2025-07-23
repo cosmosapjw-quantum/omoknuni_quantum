@@ -73,7 +73,7 @@ mcts:
 network:
   # Optimized network for RTX 3060 Ti while maintaining tournament strength
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 15          # Reduced from 20 (still very deep)
   num_filters: 192            # Reduced from 256 (fits 8GB VRAM)

@@ -91,8 +91,8 @@ mcts:
 network:
   # Standard chess network architecture
   model_type: resnet
-  input_channels: 18           # Standard AlphaZero representation
-  input_representation: basic  # 'basic' (18ch), 'minimal' (3ch), or 'enhanced' (20ch)
+  input_channels: 19           # Standard AlphaZero representation
+  input_representation: basic  # 'basic' (19ch), 'minimal' (3ch), or 'enhanced' (21ch)
   num_res_blocks: 20
   num_filters: 256
   value_head_hidden_size: 256

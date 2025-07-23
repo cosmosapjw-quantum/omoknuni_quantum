@@ -90,7 +90,7 @@ mcts:
 network:
   # Go-specific network architecture
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 40  # Deep network for Go
   num_filters: 256

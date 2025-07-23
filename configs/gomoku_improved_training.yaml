@@ -63,7 +63,7 @@ mcts:
 network:
   # Optimized ResNet for RTX 3060 Ti (maximize learning within VRAM constraints)
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 9           # Increased for better pattern recognition
   num_filters: 64             # Slightly larger for better capacity (still efficient)
@@ -83,7 +83,7 @@ network:
 training:
   # Optimized for 3-4 day intensive training
   batch_size: 1024            # Larger batches for better GPU utilization (64GB RAM allows this)
-  learning_rate: 0.002        # Slightly higher for faster initial learning
+  learning_rate: 0.0005       # Reduced to prevent training collapse
   learning_rate_schedule: cosine  # Better for long training
   lr_decay_steps: 40         # More frequent decay steps
   lr_decay_rate: 0.85        # Slightly more aggressive decay
@@ -124,6 +124,15 @@ training:
   dataloader_workers: 16     # DataLoader workers for training (not self-play)
   pin_memory: true
   # Persistent workers not needed for single-GPU
+  
+  # Q-value training for stable learning
+  use_mcts_q_values: true  # Use MCTS Q-values as training targets
+  q_value_weight: 0.6  # Mix 60% Q-values with 40% game outcomes
+  q_value_temperature: 0.1
+  
+  # KL divergence regularization
+  kl_weight: 0.3  # Moderate KL regularization to prevent collapse
+  kl_warmup_iterations: 10  # Apply KL after 10 iterations
   
   # Mixed precision optimized for Ampere architecture
   mixed_precision: true

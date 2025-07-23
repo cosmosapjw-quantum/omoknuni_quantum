@@ -1,0 +1,171 @@
+# Stable Gomoku Training Configuration
+# Designed to prevent training collapse with improved regularization and Q-value targets
+
+experiment_name: gomoku_stable_training
+seed: 42
+log_level: INFO
+num_iterations: 100
+
+game:
+  game_type: gomoku
+  board_size: 15
+
+mcts:
+  # Core MCTS parameters
+  num_simulations: 500  # Increased for better quality moves
+  c_puct: 1.5  # Slightly higher for more exploration
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  temperature_final: 0.1
+  
+  # Performance optimization
+  min_wave_size: 3072
+  max_wave_size: 8192
+  batch_size: 1024
+  virtual_loss: 1.0
+  enable_virtual_loss: true
+  enable_fast_ucb: true
+  
+  # Memory and optimization
+  memory_pool_size_mb: 2048
+  max_tree_nodes: 500000
+  enable_subtree_reuse: false
+  
+  # GPU optimizations
+  use_cuda_graphs: true
+  use_mixed_precision: true
+  use_tensor_cores: true
+  
+  # TensorRT acceleration
+  use_tensorrt: true
+  tensorrt_fp16: true
+  tensorrt_fallback: true
+  tensorrt_workspace_size: 2048
+  
+  # Device configuration
+  device: cuda
+  num_threads: 22
+
+network:
+  # Network architecture
+  model_type: resnet
+  input_channels: 19  # Standard AlphaZero representation
+  input_representation: basic
+  num_res_blocks: 9
+  num_filters: 128  # Increased for better capacity
+  value_head_hidden_size: 256
+  policy_head_filters: 2
+  
+  # Regularization
+  dropout_rate: 0.2  # Increased dropout
+  batch_norm: true
+  batch_norm_momentum: 0.995
+  l2_regularization: 0.0005  # Stronger L2 regularization
+  
+  # Activation
+  activation: relu
+  weight_init: he_normal
+
+training:
+  # Training parameters - More conservative
+  batch_size: 512  # Smaller batch size for more updates
+  learning_rate: 0.0002  # Much lower learning rate
+  learning_rate_schedule: cosine
+  lr_decay_steps: 50
+  lr_decay_rate: 0.9
+  min_learning_rate: 0.00001
+  
+  # Optimization
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.0001
+  
+  # Gradient handling
+  gradient_accumulation_steps: 2
+  max_grad_norm: 1.0  # Lower gradient clipping
+  
+  # Training loop
+  num_epochs: 15  # More epochs per iteration
+  early_stopping_patience: 20
+  early_stopping_min_delta: 0.0001
+  
+  # Self-play settings
+  num_games_per_iteration: 200  # More games for better diversity
+  num_workers: 4
+  max_moves_per_game: 225
+  resign_threshold: -0.95  # More conservative resignation
+  resign_check_moves: 20
+  resign_start_iteration: 30  # Start resignation later
+  
+  # Q-value training - ENABLED
+  use_mcts_q_values: true  # Use MCTS Q-values as targets
+  q_value_weight: 0.7  # Mix 70% Q-values with 30% game outcomes
+  q_value_temperature: 0.1
+  
+  # KL divergence regularization - ENABLED
+  kl_weight: 0.5  # Moderate KL regularization
+  kl_warmup_iterations: 5  # Apply KL after 5 iterations
+  
+  # Data handling
+  window_size: 100000  # Larger window for more diverse data
+  augment_data: true
+  shuffle_buffer_size: 20000
+  dataloader_workers: 8
+  pin_memory: true
+  
+  # Mixed precision
+  mixed_precision: true
+  amp_opt_level: O1
+  
+  # Paths
+  save_dir: checkpoints/stable_training
+  tensorboard_dir: runs/stable_training
+  data_dir: self_play_data/stable_training
+
+arena:
+  # Arena evaluation settings
+  num_games: 40
+  num_workers: 4
+  win_threshold: 0.52  # Lower threshold for accepting new models
+  statistical_significance: true
+  confidence_level: 0.95
+  
+  # Game settings
+  temperature: 0.0
+  mcts_simulations: 500
+  c_puct: 1.5
+  max_moves: 225
+  randomize_start_player: true
+  
+  # ELO settings
+  elo_k_factor: 32.0
+  elo_initial_rating: 0.0
+  update_elo: true
+  
+  # Tournament settings
+  tournament_rounds: 1
+  tournament_games_per_pair: 20
+  
+  # Data saving
+  save_game_records: true
+  save_arena_logs: true
+  arena_log_dir: arena_logs/stable_training
+  elo_save_path: elo_ratings_stable.json
+
+# Policy stability monitoring
+monitoring:
+  track_policy_entropy: true
+  min_policy_entropy: 0.5  # Alert if entropy drops below this
+  track_value_distribution: true
+  track_gradient_norms: true
+  save_frequency: 10  # Save model every N iterations
+  
+  # Early stopping for collapse detection
+  collapse_detection_enabled: true
+  min_win_rate_difference: 0.1  # Max allowed win rate difference between players
+  max_consecutive_one_sided_games: 20  # Stop if too many one-sided games
+  min_game_length: 20  # Alert if games are too short

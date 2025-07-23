@@ -740,14 +740,14 @@ std::vector<std::vector<std::vector<float>>> ChessState::getTensorRepresentation
 }
 
 std::vector<std::vector<std::vector<float>>> ChessState::getBasicTensorRepresentation() const {
-    // Unified format: 18 channels (same structure as Go/Gomoku)
-    // Channel 0: Current board state (piece encodings: 1-6 for white, 7-12 for black pieces)
-    // Channel 1: Current player indicator (all 1.0 if white's turn, all 0.0 if black's turn)
-    // Channels 2-17: Previous 8 board states (2 channels per historical position)
+    // Standard AlphaZero format: 19 channels
+    // Channel 0: Current player's pieces (all types)
+    // Channel 1: Opponent player's pieces (all types)
+    // Channel 2: Player indicator (all 1s for white's turn, all 0s for black's turn)
+    // Channels 3-18: Previous 8 moves for each player (16 channels)
     
     const int boardSize = 8;
-    const int num_feature_planes = 18;
-    const int history_planes = 8;
+    const int num_feature_planes = 19;
     
     // Create tensor
     std::vector<std::vector<std::vector<float>>> tensor(
@@ -755,66 +755,77 @@ std::vector<std::vector<std::vector<float>>> ChessState::getBasicTensorRepresent
         std::vector<std::vector<float>>(boardSize, std::vector<float>(boardSize, 0.0f))
     );
     
-    // Channel 0: Current board state
+    // Channels 0-1: Current and opponent player pieces
     for (int row = 0; row < boardSize; ++row) {
         for (int col = 0; col < boardSize; ++col) {
             int square = row * 8 + col;
             auto piece = board_[square];
             
             if (piece.type != PieceType::NONE) {
-                // Encode pieces: 1-6 for white, 7-12 for black
+                // Encode piece type value (1-6)
                 float pieceValue = 0.0f;
-                int typeOffset = 0;
                 switch (piece.type) {
-                    case PieceType::PAWN:   typeOffset = 0; break;
-                    case PieceType::KNIGHT: typeOffset = 1; break;
-                    case PieceType::BISHOP: typeOffset = 2; break;
-                    case PieceType::ROOK:   typeOffset = 3; break;
-                    case PieceType::QUEEN:  typeOffset = 4; break;
-                    case PieceType::KING:   typeOffset = 5; break;
+                    case PieceType::PAWN:   pieceValue = 1.0f; break;
+                    case PieceType::KNIGHT: pieceValue = 2.0f; break;
+                    case PieceType::BISHOP: pieceValue = 3.0f; break;
+                    case PieceType::ROOK:   pieceValue = 4.0f; break;
+                    case PieceType::QUEEN:  pieceValue = 5.0f; break;
+                    case PieceType::KING:   pieceValue = 6.0f; break;
                     default: continue;
                 }
                 
-                if (piece.color == PieceColor::WHITE) {
-                    pieceValue = 1.0f + typeOffset;  // 1-6 for white pieces
+                if (piece.color == current_player_) {
+                    tensor[0][row][col] = pieceValue;  // Current player's pieces
                 } else {
-                    pieceValue = 7.0f + typeOffset;  // 7-12 for black pieces
+                    tensor[1][row][col] = pieceValue;  // Opponent player's pieces
                 }
-                
-                tensor[0][row][col] = pieceValue;
             }
         }
     }
     
-    // Channel 1: Current player indicator
-    float player_value = (current_player_ == PieceColor::WHITE) ? 1.0f : 0.0f;
-    for (int row = 0; row < boardSize; ++row) {
-        for (int col = 0; col < boardSize; ++col) {
-            tensor[1][row][col] = player_value;
+    // Channel 2: Player indicator (all 1s for white's turn, all 0s for black's turn)
+    if (current_player_ == PieceColor::WHITE) {
+        for (int row = 0; row < boardSize; ++row) {
+            for (int col = 0; col < boardSize; ++col) {
+                tensor[2][row][col] = 1.0f;
+            }
+        }
+    }
+    // For black's turn, the channel remains all 0s
+    
+    // Channels 3-18: Move history (8 pairs)
+    int history_len = move_history_.size();
+    std::vector<ChessMove> current_player_moves_in_history;
+    std::vector<ChessMove> opponent_player_moves_in_history;
+
+    // Go through history backwards and separate moves by player
+    for(int k = 0; k < history_len && k < 16; ++k) {
+        if (k % 2 == 0) { 
+            // Most recent move was by opponent
+            opponent_player_moves_in_history.push_back(move_history_[history_len - 1 - k].move);
+        } else { 
+            // Second most recent move was by current player
+            current_player_moves_in_history.push_back(move_history_[history_len - 1 - k].move);
+        }
+    }
+
+    // Fill history channels starting from channel 3
+    const int num_history_pairs = 8;
+    for(int i = 0; i < num_history_pairs && i < current_player_moves_in_history.size(); ++i) {
+        ChessMove move = current_player_moves_in_history[i];
+        int dest_row = getRank(move.to_square);
+        int dest_col = getFile(move.to_square);
+        if (dest_row >= 0 && dest_row < boardSize && dest_col >= 0 && dest_col < boardSize) {
+            tensor[3 + i*2][dest_row][dest_col] = 1.0f;  // Channels 3, 5, 7, ..., 17
         }
     }
     
-    // Fill history planes (channels 2-17)
-    // Each pair of channels represents one historical position
-    // This is simplified - a full implementation would reconstruct positions
-    
-    for (int h = 0; h < history_planes; ++h) {
-        int board_channel = 2 + h * 2;
-        int player_channel = 2 + h * 2 + 1;
-        
-        // For chess, we'll leave history as zeros for now
-        // A complete implementation would track board positions through move history
-        // and reconstruct them similar to Go
-        
-        // Just indicate if we're tracking potential repetitions
-        if (h == 0 && halfmove_clock_ == 0) {
-            // Recent capture or pawn move - potential for new patterns
-            for (int row = 0; row < boardSize; ++row) {
-                for (int col = 0; col < boardSize; ++col) {
-                    tensor[board_channel][row][col] = 0.0f;
-                    tensor[player_channel][row][col] = 0.0f;
-                }
-            }
+    for(int i = 0; i < num_history_pairs && i < opponent_player_moves_in_history.size(); ++i) {
+        ChessMove move = opponent_player_moves_in_history[i];
+        int dest_row = getRank(move.to_square);
+        int dest_col = getFile(move.to_square);
+        if (dest_row >= 0 && dest_row < boardSize && dest_col >= 0 && dest_col < boardSize) {
+            tensor[4 + i*2][dest_row][dest_col] = 1.0f;  // Channels 4, 6, 8, ..., 18
         }
     }
     
@@ -828,15 +839,16 @@ std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepres
     }
     
     try {
-        // Option C format:
-        // Channel 0: Current board state (with piece encoding)
-        // Channel 1: Current player indicator
-        // Channels 2-17: Previous 8 moves for each player (16 channels)
-        // Channels 18-19: Attack/defense planes
+        // Enhanced format (consistent with basic representation):
+        // Channel 0: Current player's pieces
+        // Channel 1: Opponent player's pieces
+        // Channel 2: Player indicator (all 1s for white's turn, all 0s for black's turn)
+        // Channels 3-18: Previous 8 moves for each player (16 channels)
+        // Channels 19-20: Attack/defense planes (optional)
         const int boardSize = 8;
-        const int num_feature_planes = 20; // Total channels
+        const int num_feature_planes = 21; // Total channels (19 standard + 2 enhanced)
         
-        // Create tensor with 20 channels
+        // Create tensor with 21 channels
         std::vector<std::vector<std::vector<float>>> tensor(
             num_feature_planes, 
             std::vector<std::vector<float>>(
@@ -845,45 +857,45 @@ std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepres
             )
         );
         
-        // Channel 0: Current board state with piece encoding
-        // Encoding: Pawn=1, Knight=2, Bishop=3, Rook=4, Queen=5, King=6
-        // Negative values for black pieces, positive for white
+        // Channels 0-1: Current and opponent player pieces
         for (int rank = 0; rank < boardSize; ++rank) {
             for (int file = 0; file < boardSize; ++file) {
                 int square = getSquare(rank, file);
                 Piece piece = board_[square];
                 
                 if (piece.type != PieceType::NONE) {
-                    float value = 0.0f;
+                    // Encode piece type value (1-6)
+                    float pieceValue = 0.0f;
                     switch (piece.type) {
-                        case PieceType::PAWN:   value = 1.0f; break;
-                        case PieceType::KNIGHT: value = 2.0f; break;
-                        case PieceType::BISHOP: value = 3.0f; break;
-                        case PieceType::ROOK:   value = 4.0f; break;
-                        case PieceType::QUEEN:  value = 5.0f; break;
-                        case PieceType::KING:   value = 6.0f; break;
-                        default: break;
+                        case PieceType::PAWN:   pieceValue = 1.0f; break;
+                        case PieceType::KNIGHT: pieceValue = 2.0f; break;
+                        case PieceType::BISHOP: pieceValue = 3.0f; break;
+                        case PieceType::ROOK:   pieceValue = 4.0f; break;
+                        case PieceType::QUEEN:  pieceValue = 5.0f; break;
+                        case PieceType::KING:   pieceValue = 6.0f; break;
+                        default: continue;
                     }
                     
-                    // Negate for black pieces
-                    if (piece.color == PieceColor::BLACK) {
-                        value = -value;
+                    if (piece.color == current_player_) {
+                        tensor[0][rank][file] = pieceValue;  // Current player's pieces
+                    } else {
+                        tensor[1][rank][file] = pieceValue;  // Opponent player's pieces
                     }
-                    
-                    tensor[0][rank][file] = value;
                 }
             }
         }
         
-        // Channel 1: Current player indicator (1.0 for white, 0.0 for black)
-        float current_player_value = (current_player_ == PieceColor::WHITE) ? 1.0f : 0.0f;
-        for (int rank = 0; rank < boardSize; ++rank) {
-            for (int file = 0; file < boardSize; ++file) {
-                tensor[1][rank][file] = current_player_value;
+        // Channel 2: Player indicator (all 1s for white's turn, all 0s for black's turn)
+        if (current_player_ == PieceColor::WHITE) {
+            for (int rank = 0; rank < boardSize; ++rank) {
+                for (int file = 0; file < boardSize; ++file) {
+                    tensor[2][rank][file] = 1.0f;
+                }
             }
         }
+        // For black's turn, the channel remains all 0s
         
-        // Channels 2-17: Move history (8 pairs)
+        // Channels 3-18: Move history (8 pairs)
         int history_len = move_history_.size();
         std::vector<ChessMove> current_player_moves;
         std::vector<ChessMove> opponent_moves;
@@ -900,40 +912,30 @@ std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepres
             }
         }
         
-        // Fill history channels starting from channel 2
-        // Using different values to distinguish FROM (0.5) and TO (1.0) squares
+        // Fill history channels starting from channel 3
+        // Using TO squares only for simplicity (like Go/Gomoku)
         const int num_history_pairs = 8;
         for (int i = 0; i < num_history_pairs && i < static_cast<int>(current_player_moves.size()); ++i) {
             const ChessMove& move = current_player_moves[i];
-            int from_rank = getRank(move.from_square);
-            int from_file = getFile(move.from_square);
             int to_rank = getRank(move.to_square);
             int to_file = getFile(move.to_square);
             
-            if (from_rank >= 0 && from_rank < boardSize && from_file >= 0 && from_file < boardSize) {
-                tensor[2 + i * 2][from_rank][from_file] = 0.5f; // FROM square
-            }
             if (to_rank >= 0 && to_rank < boardSize && to_file >= 0 && to_file < boardSize) {
-                tensor[2 + i * 2][to_rank][to_file] = 1.0f; // TO square
+                tensor[3 + i * 2][to_rank][to_file] = 1.0f; // Channels 3, 5, 7, ..., 17
             }
         }
         
         for (int i = 0; i < num_history_pairs && i < static_cast<int>(opponent_moves.size()); ++i) {
             const ChessMove& move = opponent_moves[i];
-            int from_rank = getRank(move.from_square);
-            int from_file = getFile(move.from_square);
             int to_rank = getRank(move.to_square);
             int to_file = getFile(move.to_square);
             
-            if (from_rank >= 0 && from_rank < boardSize && from_file >= 0 && from_file < boardSize) {
-                tensor[3 + i * 2][from_rank][from_file] = 0.5f; // FROM square
-            }
             if (to_rank >= 0 && to_rank < boardSize && to_file >= 0 && to_file < boardSize) {
-                tensor[3 + i * 2][to_rank][to_file] = 1.0f; // TO square
+                tensor[4 + i * 2][to_rank][to_file] = 1.0f; // Channels 4, 6, 8, ..., 18
             }
         }
         
-        // Channels 18-19: Attack and Defense planes (GPU-accelerated if available)
+        // Channels 19-20: Attack and Defense planes (GPU-accelerated if available)
         computeAttackDefensePlanes(tensor);
         
         // PERFORMANCE FIX: Cache the computed enhanced tensor
@@ -945,8 +947,8 @@ std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepres
         std::cerr << "Exception in ChessState::getEnhancedTensorRepresentation: " << e.what() << std::endl;
         
         // Return a default tensor with the correct dimensions
-        // Option C format: 20 channels
-        const int num_planes = 20;
+        // Enhanced format: 21 channels
+        const int num_planes = 21;
         const int boardSize = 8;
         
         return std::vector<std::vector<std::vector<float>>>(
@@ -960,7 +962,7 @@ std::vector<std::vector<std::vector<float>>> ChessState::getEnhancedTensorRepres
         std::cerr << "Unknown exception in ChessState::getEnhancedTensorRepresentation" << std::endl;
         
         // Return a default tensor with the correct dimensions
-        const int num_planes = 20;
+        const int num_planes = 21;
         const int boardSize = 8;
         
         return std::vector<std::vector<std::vector<float>>>(

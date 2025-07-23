@@ -52,7 +52,7 @@ mcts:
 network:
   # Tiny network for testing
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 2
   num_filters: 32

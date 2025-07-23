@@ -203,21 +203,22 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getTensorRepresentatio
 }
 
 std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresentation() const {
-    // Basic tensor representation without attack/defense planes
+    // Basic tensor representation (AlphaZero standard format)
     // Channel 0: Current player's stones  
     // Channel 1: Opponent player's stones
-    // Channels 2-17: Previous 8 moves for each player (16 channels)
-    // Total: 18 channels (no attack/defense overhead)
+    // Channel 2: Player indicator (all 1s if current player is BLACK/player1, all 0s if WHITE/player2)
+    // Channels 3-18: Previous 8 moves for each player (16 channels)
+    // Total: 19 channels (standard AlphaZero format)
     
     try {
-        const int num_feature_planes = 18; // Basic representation without attack/defense
+        const int num_feature_planes = 19; // Standard AlphaZero representation
         
         // Create fresh tensor without pooling to avoid memory retention
         auto tensor = std::vector<std::vector<std::vector<float>>>(
             num_feature_planes, std::vector<std::vector<float>>(
                 board_size_, std::vector<float>(board_size_, 0.0f)));
 
-        // Channels 0-1: Current and opponent player stones (like standard representation)
+        // Channels 0-1: Current and opponent player stones
         int p_idx_current = current_player_ - 1;      // 0 for BLACK, 1 for WHITE
         int p_idx_opponent = 1 - p_idx_current;       // 1 for BLACK, 0 for WHITE
         
@@ -233,7 +234,17 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
             }
         }
 
-        // Channels 2-17: Move history (8 pairs)
+        // Channel 2: Player indicator (all 1s for BLACK/player1, all 0s for WHITE/player2)
+        if (current_player_ == BLACK) {
+            for (int r = 0; r < board_size_; ++r) {
+                for (int c = 0; c < board_size_; ++c) {
+                    tensor[2][r][c] = 1.0f;
+                }
+            }
+        }
+        // For WHITE (player 2), the channel remains all 0s
+
+        // Channels 3-18: Move history (8 pairs)
         int history_len = move_history_.size();
         std::vector<int> current_player_moves_in_history;
         std::vector<int> opponent_player_moves_in_history;
@@ -247,14 +258,14 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
             }
         }
 
-        // Fill history channels starting from channel 2
+        // Fill history channels starting from channel 3
         const int num_history_pairs = 8;
         for(int i=0; i < num_history_pairs && i < current_player_moves_in_history.size(); ++i) {
             auto coords = action_to_coords_pair(current_player_moves_in_history[i]);
             int r = coords.first;
             int c = coords.second;
             if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
-                tensor[2 + i*2][r][c] = 1.0f;  // Channels 2, 4, 6, ..., 16
+                tensor[3 + i*2][r][c] = 1.0f;  // Channels 3, 5, 7, ..., 17
             }
         }
         
@@ -263,7 +274,7 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
             int r = coords.first;
             int c = coords.second;
             if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
-                tensor[3 + i*2][r][c] = 1.0f;  // Channels 3, 5, 7, ..., 17
+                tensor[4 + i*2][r][c] = 1.0f;  // Channels 4, 6, 8, ..., 18
             }
         }
         
@@ -273,8 +284,8 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
     } catch (const std::exception& e) {
         std::cerr << "Exception in getBasicTensorRepresentation: " << e.what() << std::endl;
         
-        // Return a default tensor with the correct dimensions (18 channels)
-        const int num_feature_planes = 18; // Basic representation
+        // Return a default tensor with the correct dimensions (19 channels)
+        const int num_feature_planes = 19; // Standard representation
         
         return std::vector<std::vector<std::vector<float>>>(
             num_feature_planes, 
@@ -286,8 +297,8 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
     } catch (...) {
         std::cerr << "Unknown exception in getBasicTensorRepresentation" << std::endl;
         
-        // Return a default tensor with the correct dimensions (18 channels)
-        const int num_feature_planes = 18; // Basic representation
+        // Return a default tensor with the correct dimensions (19 channels)
+        const int num_feature_planes = 19; // Standard representation
         
         return std::vector<std::vector<std::vector<float>>>(
             num_feature_planes, 
@@ -303,12 +314,13 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
     // CRITICAL FIX: Don't cache tensors to prevent memory accumulation
     
     try {
-        // Enhanced tensor format:
+        // Enhanced tensor format (consistent with basic representation):
         // Channel 0: Current player's stones
         // Channel 1: Opponent player's stones
-        // Channels 2-17: Previous 8 moves for each player (16 channels)
-        // Channels 18-19: Attack/defense planes
-        const int num_feature_planes = 20; // Total channels
+        // Channel 2: Player indicator (all 1s for BLACK/player1, all 0s for WHITE/player2)
+        // Channels 3-18: Previous 8 moves for each player (16 channels)
+        // Channels 19-20: Attack/defense planes (optional)
+        const int num_feature_planes = 21; // Total channels (19 standard + 2 enhanced)
         
         // Create fresh tensor without pooling to avoid memory retention
         auto tensor = std::vector<std::vector<std::vector<float>>>(
@@ -331,7 +343,17 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
             }
         }
 
-        // Channels 2-17: Move history (8 pairs)
+        // Channel 2: Player indicator (all 1s for BLACK/player1, all 0s for WHITE/player2)
+        if (current_player_ == BLACK) {
+            for (int r = 0; r < board_size_; ++r) {
+                for (int c = 0; c < board_size_; ++c) {
+                    tensor[2][r][c] = 1.0f;
+                }
+            }
+        }
+        // For WHITE (player 2), the channel remains all 0s
+
+        // Channels 3-18: Move history (8 pairs)
         int history_len = move_history_.size();
         std::vector<int> current_player_moves_in_history;
         std::vector<int> opponent_player_moves_in_history;
@@ -345,14 +367,14 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
             }
         }
 
-        // Fill history channels starting from channel 2
+        // Fill history channels starting from channel 3
         const int num_history_pairs = 8;
         for(int i=0; i < num_history_pairs && i < current_player_moves_in_history.size(); ++i) {
             auto coords = action_to_coords_pair(current_player_moves_in_history[i]);
             int r = coords.first;
             int c = coords.second;
             if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
-                tensor[2 + i*2][r][c] = 1.0f;  // Channels 2, 4, 6, ..., 16
+                tensor[3 + i*2][r][c] = 1.0f;  // Channels 3, 5, 7, ..., 17
             }
         }
         
@@ -361,11 +383,11 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getEnhancedTensorRepre
             int r = coords.first;
             int c = coords.second;
             if (r >= 0 && r < board_size_ && c >= 0 && c < board_size_) {
-                tensor[3 + i*2][r][c] = 1.0f;  // Channels 3, 5, 7, ..., 17
+                tensor[4 + i*2][r][c] = 1.0f;  // Channels 4, 6, 8, ..., 18
             }
         }
         
-        // Add attack and defense planes (channels 18 and 19)
+        // Add attack and defense planes (channels 19 and 20)
         try {
 #ifdef WITH_TORCH
             if (isGPUEnabled()) {

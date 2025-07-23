@@ -594,13 +594,13 @@ std::vector<std::vector<std::vector<float>>> GoState::getTensorRepresentation() 
 }
 
 std::vector<std::vector<std::vector<float>>> GoState::getBasicTensorRepresentation() const {
-    // Unified format: 18 channels
-    // Channel 0: Current board state (1.0 for player 1/black, 2.0 for player 2/white)
-    // Channel 1: Current player indicator (all 1.0 if player 1's turn, all 0.0 if player 2's turn)
-    // Channels 2-17: Previous 8 board states (2 channels per historical position)
+    // Standard AlphaZero format: 19 channels
+    // Channel 0: Current player's stones
+    // Channel 1: Opponent player's stones
+    // Channel 2: Player indicator (all 1s for player 1/black, all 0s for player 2/white)
+    // Channels 3-18: Previous 8 moves for each player (16 channels)
     
-    const int num_feature_planes = 18;
-    const int history_planes = 8; // 8 previous states
+    const int num_feature_planes = 19;
     
     // Create tensor
     auto tensor = std::vector<std::vector<std::vector<float>>>(
@@ -608,71 +608,71 @@ std::vector<std::vector<std::vector<float>>> GoState::getBasicTensorRepresentati
         std::vector<std::vector<float>>(board_size_, std::vector<float>(board_size_, 0.0f))
     );
     
-    // Channel 0: Current board state
+    // Channels 0-1: Current and opponent player stones
     for (int y = 0; y < board_size_; ++y) {
         for (int x = 0; x < board_size_; ++x) {
             int pos = y * board_size_ + x;
             int stone = getStone(pos);
             
-            if (stone == 1) {
-                tensor[0][y][x] = 1.0f;  // Black stone
-            } else if (stone == 2) {
-                tensor[0][y][x] = 2.0f;  // White stone
+            if (stone == current_player_) {
+                tensor[0][y][x] = 1.0f;  // Current player's stones
+            } else if (stone == (3 - current_player_)) {
+                tensor[1][y][x] = 1.0f;  // Opponent player's stones
             }
             // Empty = 0.0 (default)
         }
     }
     
-    // Channel 1: Current player indicator
-    float player_value = (current_player_ == 1) ? 1.0f : 0.0f;
-    for (int y = 0; y < board_size_; ++y) {
-        for (int x = 0; x < board_size_; ++x) {
-            tensor[1][y][x] = player_value;
+    // Channel 2: Player indicator (all 1s for player 1/black, all 0s for player 2/white)
+    if (current_player_ == 1) {
+        for (int y = 0; y < board_size_; ++y) {
+            for (int x = 0; x < board_size_; ++x) {
+                tensor[2][y][x] = 1.0f;
+            }
+        }
+    }
+    // For player 2 (white), the channel remains all 0s
+    
+    // Channels 3-18: Move history (8 pairs)
+    int history_len = move_history_.size();
+    std::vector<int> current_player_moves_in_history;
+    std::vector<int> opponent_player_moves_in_history;
+
+    // Go through history backwards and separate moves by player
+    for(int k = 0; k < history_len; ++k) {
+        int move_action = move_history_[history_len - 1 - k];
+        // Note: Go includes pass moves (-1) in history
+        if (k % 2 == 0) { 
+            // Most recent move was by opponent
+            opponent_player_moves_in_history.push_back(move_action);
+        } else { 
+            // Second most recent move was by current player
+            current_player_moves_in_history.push_back(move_action);
+        }
+    }
+
+    // Fill history channels starting from channel 3
+    const int num_history_pairs = 8;
+    for(int i = 0; i < num_history_pairs && i < current_player_moves_in_history.size(); ++i) {
+        int move = current_player_moves_in_history[i];
+        if (move >= 0) { // Not a pass move
+            int y = move / board_size_;
+            int x = move % board_size_;
+            if (y >= 0 && y < board_size_ && x >= 0 && x < board_size_) {
+                tensor[3 + i*2][y][x] = 1.0f;  // Channels 3, 5, 7, ..., 17
+            }
         }
     }
     
-    // Fill history planes (channels 2-17)
-    // Each pair of channels represents one historical position:
-    // Channels 2-3: 1 move ago (board state + player turn)
-    // Channels 4-5: 2 moves ago
-    // ... and so on
-    
-    for (int h = 0; h < history_planes; ++h) {
-        int board_channel = 2 + h * 2;      // Channels 2, 4, 6, 8, 10, 12, 14, 16
-        int player_channel = 2 + h * 2 + 1; // Channels 3, 5, 7, 9, 11, 13, 15, 17
-        
-        // Calculate how many moves back we need to go
-        int moves_back = h + 1;
-        
-        if (move_history_.size() >= moves_back) {
-            // Replay the game up to this historical position
-            GoState historical_state(board_size_, rule_set_, komi_);
-            
-            for (int i = 0; i < move_history_.size() - moves_back; ++i) {
-                int move = move_history_[i];
-                if (move >= 0 && historical_state.isLegalMove(move)) {
-                    historical_state.makeMove(move);
-                }
-            }
-            
-            // Fill the board state for this historical position
-            for (int y = 0; y < board_size_; ++y) {
-                for (int x = 0; x < board_size_; ++x) {
-                    int pos = y * board_size_ + x;
-                    int stone = historical_state.getStone(pos);
-                    
-                    if (stone == 1) {
-                        tensor[board_channel][y][x] = 1.0f;  // Black
-                    } else if (stone == 2) {
-                        tensor[board_channel][y][x] = 2.0f;  // White
-                    }
-                    
-                    // Player turn for that historical position
-                    tensor[player_channel][y][x] = (historical_state.getCurrentPlayer() == 1) ? 1.0f : 0.0f;
-                }
+    for(int i = 0; i < num_history_pairs && i < opponent_player_moves_in_history.size(); ++i) {
+        int move = opponent_player_moves_in_history[i];
+        if (move >= 0) { // Not a pass move
+            int y = move / board_size_;
+            int x = move % board_size_;
+            if (y >= 0 && y < board_size_ && x >= 0 && x < board_size_) {
+                tensor[4 + i*2][y][x] = 1.0f;  // Channels 4, 6, 8, ..., 18
             }
         }
-        // If no history at this depth, planes remain zero
     }
     
     return tensor;
@@ -685,14 +685,15 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
     }
     
     try {
-        // Option C format:
-        // Channel 0: Current board state
-        // Channel 1: Current player indicator
-        // Channels 2-17: Previous 8 moves for each player (16 channels)
-        // Channels 18-19: Attack/defense planes
-        const int num_feature_planes = 20; // Total channels
+        // Enhanced format (consistent with basic representation):
+        // Channel 0: Current player's stones
+        // Channel 1: Opponent player's stones
+        // Channel 2: Player indicator (all 1s for player 1/black, all 0s for player 2/white)
+        // Channels 3-18: Previous 8 moves for each player (16 channels)
+        // Channels 19-20: Attack/defense planes (optional)
+        const int num_feature_planes = 21; // Total channels (19 standard + 2 enhanced)
         
-        // Create tensor with 20 channels
+        // Create tensor with 21 channels
         std::vector<std::vector<std::vector<float>>> tensor(
             num_feature_planes, 
             std::vector<std::vector<float>>(
@@ -701,30 +702,31 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
             )
         );
         
-        // Channel 0: Current board state
-        // BLACK stones = 1.0, WHITE stones = 2.0, empty = 0.0
+        // Channels 0-1: Current and opponent player stones
         for (int y = 0; y < board_size_; ++y) {
             for (int x = 0; x < board_size_; ++x) {
                 int pos = y * board_size_ + x;
                 int stone = board_[pos];
-                if (stone == 1) { // BLACK
-                    tensor[0][y][x] = 1.0f;
-                } else if (stone == 2) { // WHITE
-                    tensor[0][y][x] = 2.0f;
+                if (stone == current_player_) {
+                    tensor[0][y][x] = 1.0f;  // Current player's stones
+                } else if (stone == (3 - current_player_)) {
+                    tensor[1][y][x] = 1.0f;  // Opponent player's stones
                 }
                 // Empty squares remain 0.0f
             }
         }
         
-        // Channel 1: Current player indicator (1.0 for black, 0.0 for white)
-        float current_player_value = (current_player_ == 1) ? 1.0f : 0.0f;
-        for (int y = 0; y < board_size_; ++y) {
-            for (int x = 0; x < board_size_; ++x) {
-                tensor[1][y][x] = current_player_value;
+        // Channel 2: Player indicator (all 1s for player 1/black, all 0s for player 2/white)
+        if (current_player_ == 1) {
+            for (int y = 0; y < board_size_; ++y) {
+                for (int x = 0; x < board_size_; ++x) {
+                    tensor[2][y][x] = 1.0f;
+                }
             }
         }
+        // For player 2 (white), the channel remains all 0s
         
-        // Channels 2-17: Move history (8 pairs)
+        // Channels 3-18: Move history (8 pairs)
         int history_len = move_history_.size();
         std::vector<int> current_player_moves;
         std::vector<int> opponent_moves;
@@ -743,7 +745,7 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
             }
         }
         
-        // Fill history channels starting from channel 2
+        // Fill history channels starting from channel 3
         const int num_history_pairs = 8;
         for (int i = 0; i < num_history_pairs && i < static_cast<int>(current_player_moves.size()); ++i) {
             int action = current_player_moves[i];
@@ -751,7 +753,7 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
                 int y = action / board_size_;
                 int x = action % board_size_;
                 if (y >= 0 && y < board_size_ && x >= 0 && x < board_size_) {
-                    tensor[2 + i * 2][y][x] = 1.0f;  // Channels 2, 4, 6, ..., 16
+                    tensor[3 + i * 2][y][x] = 1.0f;  // Channels 3, 5, 7, ..., 17
                 }
             }
         }
@@ -762,12 +764,12 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
                 int y = action / board_size_;
                 int x = action % board_size_;
                 if (y >= 0 && y < board_size_ && x >= 0 && x < board_size_) {
-                    tensor[3 + i * 2][y][x] = 1.0f;  // Channels 3, 5, 7, ..., 17
+                    tensor[4 + i * 2][y][x] = 1.0f;  // Channels 4, 6, 8, ..., 18
                 }
             }
         }
         
-        // Channels 18-19: Attack and Defense planes (GPU-accelerated if available)
+        // Channels 19-20: Attack and Defense planes (GPU-accelerated if available)
         computeAttackDefensePlanes(tensor);
         
         // PERFORMANCE FIX: Cache the computed enhanced tensor
@@ -779,8 +781,8 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
         std::cerr << "Exception in GoState::getEnhancedTensorRepresentation: " << e.what() << std::endl;
         
         // Return a default tensor with the correct dimensions
-        // Option C format: 20 channels
-        const int num_planes = 20;
+        // Enhanced format: 21 channels
+        const int num_planes = 21;
         
         return std::vector<std::vector<std::vector<float>>>(
             num_planes,
@@ -793,7 +795,7 @@ std::vector<std::vector<std::vector<float>>> GoState::getEnhancedTensorRepresent
         std::cerr << "Unknown exception in GoState::getEnhancedTensorRepresentation" << std::endl;
         
         // Return a default tensor with the correct dimensions
-        const int num_planes = 20;
+        const int num_planes = 21;
         
         return std::vector<std::vector<std::vector<float>>>(
             num_planes,

@@ -89,7 +89,7 @@ mcts:
 network:
   # Network architecture
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 10
   num_filters: 128

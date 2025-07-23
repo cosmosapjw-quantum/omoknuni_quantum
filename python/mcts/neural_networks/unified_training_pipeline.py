@@ -105,8 +105,22 @@ class UnifiedTrainingPipeline:
         )
         self.elo_tracker = None
         
-        # Initialize training monitor
-        self.training_monitor = TrainingMonitor(alert_threshold=3)
+        # Initialize training monitor with early stopping enabled
+        early_stopping_enabled = getattr(config.training, 'early_stopping_enabled', True)
+        alert_threshold = getattr(config.training, 'monitor_alert_threshold', 3)
+        self.training_monitor = TrainingMonitor(
+            alert_threshold=alert_threshold,
+            early_stopping_enabled=early_stopping_enabled
+        )
+        
+        # Initialize opponent buffer for population-based training
+        from mcts.neural_networks.opponent_buffer import OpponentBuffer
+        self.opponent_buffer = OpponentBuffer(
+            config=config,
+            buffer_size=getattr(config.training, 'opponent_buffer_size', 10)
+        )
+        self.opponent_buffer_dir = self.experiment_dir / "opponent_models"
+        self.opponent_buffer_dir.mkdir(parents=True, exist_ok=True)
         
         # Resume from checkpoint if specified
         if resume_from:
@@ -385,7 +399,7 @@ class UnifiedTrainingPipeline:
             save_game_records=self.config.arena.save_game_records
         )
         
-        return ArenaManager(self.config, arena_config, self.game_interface)
+        return ArenaManager(self.config, arena_config, self.game_interface, log_dir=self.arena_log_dir)
     
     def train(self, num_iterations: int):
         """Run the complete training pipeline
@@ -475,6 +489,9 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"  Model accepted: {accepted}")
             tqdm.write(f"{'='*80}")
             
+            # Force metrics to save after each iteration
+            self.metrics_recorder.save()
+            
             # Print metrics summary every 5 iterations or when model is accepted
             if self.iteration % 5 == 0 or accepted:
                 tqdm.write("")  # Empty line
@@ -540,7 +557,8 @@ class UnifiedTrainingPipeline:
             config=self.config,
             game_class=None,  # We'll use game_config instead
             evaluator=evaluator,
-            game_config=game_config
+            game_config=game_config,
+            opponent_buffer=self.opponent_buffer
         )
         
         # Generate self-play data (will use GPU service for multi-worker)
@@ -840,6 +858,19 @@ class UnifiedTrainingPipeline:
         if accepted:
             self._save_best_model()
             tqdm.write(f"\n      ✓ Model accepted as new best!")
+            
+            # Add to opponent buffer
+            self.opponent_buffer.add_opponent(
+                model=self.model,
+                iteration=self.iteration,
+                elo_rating=current_elo,
+                win_rate=win_rate_vs_best if win_rate_vs_best else win_rate_vs_random,
+                save_dir=self.opponent_buffer_dir,
+                metadata={
+                    'vs_random_win_rate': win_rate_vs_random,
+                    'vs_best_win_rate': win_rate_vs_best
+                }
+            )
         else:
             tqdm.write(f"\n      ✗ Model rejected")
         
@@ -960,10 +991,11 @@ class UnifiedTrainingPipeline:
         """Save training checkpoint using CheckpointManager"""
         from mcts.neural_networks.checkpoint_manager import CheckpointManager
         
-        # Create checkpoint manager
+        # Create checkpoint manager with separate data directory
         checkpoint_manager = CheckpointManager(
             checkpoint_dir=self.checkpoint_dir,
-            config=self.config
+            config=self.config,
+            data_dir=self.data_dir
         )
         
         # Prepare metadata - include scheduler and scaler state in metadata
@@ -1000,10 +1032,11 @@ class UnifiedTrainingPipeline:
             project_root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent.parent
             checkpoint_path = project_root / checkpoint_path
         
-        # Create checkpoint manager
+        # Create checkpoint manager with separate data directory
         checkpoint_manager = CheckpointManager(
             checkpoint_dir=self.checkpoint_dir,
-            config=self.config
+            config=self.config,
+            data_dir=self.data_dir
         )
         
         # Load checkpoint

@@ -89,8 +89,8 @@ mcts:
 network:
   # Balanced network for strong amateur play (12-hour budget)
   model_type: resnet
-  input_channels: 18           # Standard AlphaZero representation
-  input_representation: basic  # 'basic' (18ch), 'enhanced' (20ch), or 'standard' (3ch)
+  input_channels: 19           # Standard AlphaZero representation
+  input_representation: basic  # 'basic' (19ch), 'enhanced' (21ch), or 'standard' (3ch)
   num_res_blocks: 8            # Doubled for better pattern recognition
   num_filters: 96              # Increased for better capacity
   value_head_hidden_size: 192  # Larger for better evaluation

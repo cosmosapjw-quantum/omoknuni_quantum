@@ -90,7 +90,7 @@ mcts:
 network:
   # Smaller network for testing
   model_type: resnet
-  input_channels: 18
+  input_channels: 19
   input_representation: basic
   num_res_blocks: 5    # Reduced
   num_filters: 64      # Reduced

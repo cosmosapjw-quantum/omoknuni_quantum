@@ -29,15 +29,18 @@ logger = logging.getLogger(__name__)
 class CheckpointManager:
     """Manages checkpoints and model persistence"""
     
-    def __init__(self, checkpoint_dir: str, config: AlphaZeroConfig):
+    def __init__(self, checkpoint_dir: str, config: AlphaZeroConfig, data_dir: str = None):
         """Initialize checkpoint manager
         
         Args:
             checkpoint_dir: Directory to save checkpoints
             config: AlphaZero configuration
+            data_dir: Directory to save replay buffers (if None, uses checkpoint_dir)
         """
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir = Path(data_dir) if data_dir else self.checkpoint_dir
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         
         # Extract relevant config
         self.checkpoint_every_n_iterations = config.training.checkpoint_interval
@@ -84,8 +87,8 @@ class CheckpointManager:
         torch.save(checkpoint, checkpoint_path)
         logger.info(f"Saved checkpoint to {checkpoint_path}")
         
-        # Save replay buffer separately
-        replay_buffer_path = self.checkpoint_dir / f"replay_buffer_{iteration}.pkl"
+        # Save replay buffer separately to data directory
+        replay_buffer_path = self.data_dir / f"replay_buffer_{iteration}.pkl"
         replay_buffer.save(str(replay_buffer_path))
         logger.info(f"Saved replay buffer to {replay_buffer_path}")
         
@@ -113,7 +116,7 @@ class CheckpointManager:
         Returns:
             Loaded replay buffer
         """
-        replay_buffer_path = self.checkpoint_dir / f"replay_buffer_{iteration}.pkl"
+        replay_buffer_path = self.data_dir / f"replay_buffer_{iteration}.pkl"
         replay_buffer = ReplayBuffer()
         replay_buffer.load(str(replay_buffer_path))
         logger.info(f"Loaded replay buffer from {replay_buffer_path}")

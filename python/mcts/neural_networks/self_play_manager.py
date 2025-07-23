@@ -42,6 +42,8 @@ class SelfPlayConfig:
     device: str = 'cuda'  # GPU device for single-GPU execution
     num_workers: int = 4  # Number of parallel workers
     cpu_threads_per_worker: int = 1  # CPU threads per worker
+    use_mcts_q_values: bool = False  # Use Q-values from MCTS as training targets
+    q_value_weight: float = 0.8  # Weight for mixing Q-values with game outcomes
 
 
 class SelfPlayGame:
@@ -52,14 +54,15 @@ class SelfPlayGame:
         
         Args:
             game: Game instance
-            mcts: Shared MCTS instance
+            mcts: MCTS instance or dict mapping player to MCTS
             config: Self-play configuration
             game_id: Unique game identifier
         """
         self.game = game
-        self.mcts = mcts  # Use shared MCTS instance
+        self.mcts = mcts  # Can be single MCTS or dict of player -> MCTS
         self.config = config
         self.game_id = game_id
+        self.is_multi_mcts = isinstance(mcts, dict)
         self.examples = []
         self.current_player = 1
         self.move_count = 0
@@ -85,7 +88,13 @@ class SelfPlayGame:
         self.current_player = self.game.get_current_player()
         
         # Run MCTS search to get policy
-        action_probs = self.mcts.search(state)
+        if self.is_multi_mcts:
+            # Use appropriate MCTS for current player (0-indexed)
+            player_idx = self.current_player - 1
+            current_mcts = self.mcts[player_idx]
+            action_probs = current_mcts.search(state)
+        else:
+            action_probs = self.mcts.search(state)
         
         
         # Calculate and store policy entropy
@@ -102,13 +111,23 @@ class SelfPlayGame:
         # Low entropy situations tracked internally
         
         # Get value prediction from MCTS (if available)
-        if hasattr(self.mcts, 'get_root_value'):
-            value_pred = self.mcts.get_root_value()
-            self.value_predictions.append((value_pred, self.current_player))
-            # Value prediction tracked
+        if self.is_multi_mcts:
+            # Get value from current player's MCTS
+            player_idx = self.current_player - 1
+            current_mcts = self.mcts[player_idx]
+            if hasattr(current_mcts, 'get_root_value'):
+                value_pred = current_mcts.get_root_value()
+                self.value_predictions.append((value_pred, self.current_player))
+            else:
+                value_pred = 0.0
         else:
-            value_pred = 0.0  # Neutral value when no prediction available (don't resign)
-            # No value prediction available
+            if hasattr(self.mcts, 'get_root_value'):
+                value_pred = self.mcts.get_root_value()
+                self.value_predictions.append((value_pred, self.current_player))
+                # Value prediction tracked
+            else:
+                value_pred = 0.0  # Neutral value when no prediction available (don't resign)
+                # No value prediction available
         
         # Store training example with numpy array state
         # Convert state to numpy array for training compatibility
@@ -193,14 +212,27 @@ class SelfPlayGame:
         
         # Convert examples to GameExample objects with correct values
         game_examples = []
+        
+        # Check if we should use Q-values from MCTS
+        use_q_values = getattr(self.config, 'use_mcts_q_values', False)
+        q_value_weight = getattr(self.config, 'q_value_weight', 0.8)
+        
         for i, example in enumerate(self.examples):
             # Value is from the perspective of the player who made the move
             # winner is 1 for P1 win, -1 for P2 win, 0 for draw
             # Players are numbered 1 and 2
             if example['player'] == 1:
-                value = winner  # P1 gets +1 if they won, -1 if they lost
+                game_outcome_value = winner  # P1 gets +1 if they won, -1 if they lost
             else:  # player == 2
-                value = -winner  # P2 gets +1 if they won (winner=-1), -1 if they lost (winner=1)
+                game_outcome_value = -winner  # P2 gets +1 if they won (winner=-1), -1 if they lost (winner=1)
+            
+            # Use Q-value if available and enabled
+            if use_q_values and i < len(self.value_predictions):
+                q_value = self.value_predictions[i][0]  # Q-value from MCTS
+                # Mix Q-value with game outcome
+                value = q_value_weight * q_value + (1 - q_value_weight) * game_outcome_value
+            else:
+                value = game_outcome_value
             
             # Value assignment tracked internally
             
@@ -253,17 +285,19 @@ class SelfPlayManager:
     """Manages self-play data generation"""
     
     def __init__(self, config: AlphaZeroConfig, game_class: Type, evaluator,
-                 game_config: Optional[Dict[str, Any]] = None):
+                 game_config: Optional[Dict[str, Any]] = None, opponent_buffer=None):
         """Initialize self-play manager
         
         Args:
             config: AlphaZero configuration
             game_class: Game class to instantiate
             evaluator: Neural network evaluator
-            game_config: Configuration for game creation (for GameInterface wrapper)
+            game_config: Optional game configuration
+            opponent_buffer: Optional opponent buffer for population-based training
         """
         self.config = config
         self.game_class = game_class
+        self.opponent_buffer = opponent_buffer
         self.evaluator = evaluator
         self.game_config = game_config
         
@@ -282,7 +316,9 @@ class SelfPlayManager:
             dirichlet_epsilon=config.mcts.dirichlet_epsilon,
             c_puct=config.mcts.c_puct,
             batch_size=getattr(config.mcts, 'batch_size', 512),
-            device=config.mcts.device  # Use device from MCTS config
+            device=config.mcts.device,  # Use device from MCTS config
+            use_mcts_q_values=getattr(config.training, 'use_mcts_q_values', False),
+            q_value_weight=getattr(config.training, 'q_value_weight', 0.8)
         )
         
         # Create direct GPU evaluator if evaluator is a model
@@ -356,18 +392,56 @@ class SelfPlayManager:
             # Create new game instance
             game = self._create_game_instance()
             
-            # Reset MCTS tree for new game
-            shared_mcts.reset_tree()
+            # Decide if we should use an opponent from the buffer
+            use_opponent = False
+            opponent_evaluator = None
             
-            # Play game with shared MCTS
+            if self.opponent_buffer and game_idx % 4 == 0:  # Use opponent 25% of the time
+                opponent_evaluator = self.opponent_buffer.get_random_opponent()
+                if opponent_evaluator:
+                    use_opponent = True
+                    
+            # Create MCTS instance(s)
+            if use_opponent:
+                # Create separate MCTS for each player
+                mcts_current = MCTS(
+                    config=mcts_config,
+                    evaluator=self.gpu_evaluator,
+                    game_interface=game_interface
+                )
+                mcts_opponent = MCTS(
+                    config=mcts_config,
+                    evaluator=opponent_evaluator,
+                    game_interface=game_interface
+                )
+                # Randomly assign who plays first
+                if np.random.random() < 0.5:
+                    player_mcts = {0: mcts_current, 1: mcts_opponent}
+                    using_opponent_as = "player2"
+                else:
+                    player_mcts = {0: mcts_opponent, 1: mcts_current}
+                    using_opponent_as = "player1"
+            else:
+                # Use shared MCTS for both players
+                shared_mcts.reset_tree()
+                player_mcts = shared_mcts
+                using_opponent_as = None
+            
+            # Play game
             sp_game = SelfPlayGame(
                 game=game,
-                mcts=shared_mcts,
+                mcts=player_mcts,
                 config=self.self_play_config,
                 game_id=f"game_{game_idx}"
             )
             
             examples, metrics = sp_game.play_game()
+            
+            # Mark examples if playing against opponent
+            if use_opponent:
+                metrics['vs_opponent'] = True
+                metrics['opponent_as'] = using_opponent_as
+                
             all_examples.extend(examples)
             self.collected_metrics.append(metrics)
             

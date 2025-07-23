@@ -45,6 +45,10 @@ class TrainingConfig:
     value_loss_weight: float = 1.0
     use_mixed_precision: bool = True
     num_workers: int = 0  # DataLoader workers
+    use_mcts_q_values: bool = False  # Use Q-values from MCTS instead of game outcomes
+    q_value_weight: float = 0.5  # Weight for mixing Q-values with game outcomes
+    kl_weight: float = 0.0  # Weight for KL divergence regularization (0 = disabled)
+    kl_target_model: Optional[Any] = None  # Previous model for KL regularization
 
 
 @dataclass
@@ -175,7 +179,7 @@ class TrainingManager:
             target_values: Target values
             
         Returns:
-            Tuple of (total_loss, policy_loss, value_loss)
+            Tuple of (total_loss, policy_loss, value_loss, kl_loss)
         """
         # Forward pass
         pred_policies, pred_values = self.model(states)
@@ -193,13 +197,27 @@ class TrainingManager:
         # Value loss: MSE between predicted and target values
         value_loss = self.value_loss_fn(pred_values, target_values)
         
+        # KL divergence regularization
+        kl_loss = torch.tensor(0.0, device=self.device)
+        if self.training_config.kl_weight > 0 and self.training_config.kl_target_model is not None:
+            # Get policy from previous model
+            with torch.no_grad():
+                self.training_config.kl_target_model.eval()
+                old_policies, _ = self.training_config.kl_target_model(states)
+                old_policies = torch.exp(old_policies)  # Convert log probs to probs
+            
+            # KL divergence: sum(p_old * log(p_old / p_new))
+            # Since pred_policies are log probs, we use: sum(p_old * (log(p_old) - log(p_new)))
+            kl_loss = (old_policies * (torch.log(old_policies + 1e-8) - pred_policies)).sum(dim=1).mean()
+        
         # Total loss with weights
         total_loss = (
             self.training_config.policy_loss_weight * policy_loss +
-            self.training_config.value_loss_weight * value_loss
+            self.training_config.value_loss_weight * value_loss +
+            self.training_config.kl_weight * kl_loss
         )
         
-        return total_loss, policy_loss, value_loss
+        return total_loss, policy_loss, value_loss, kl_loss
     
     def _clip_gradients(self):
         """Apply gradient clipping"""
@@ -231,6 +249,7 @@ class TrainingManager:
         epoch_total_loss = []
         epoch_policy_loss = []
         epoch_value_loss = []
+        epoch_kl_loss = []
         
         # Set model to training mode
         self.model.train()
@@ -248,7 +267,7 @@ class TrainingManager:
             # Mixed precision training
             if self.use_mixed_precision:
                 with torch.amp.autocast('cuda'):
-                    total_loss, policy_loss, value_loss = self.compute_loss(
+                    total_loss, policy_loss, value_loss, kl_loss = self.compute_loss(
                         states, target_policies, target_values
                     )
                 
@@ -264,7 +283,7 @@ class TrainingManager:
                 self.scaler.update()
             else:
                 # Regular training
-                total_loss, policy_loss, value_loss = self.compute_loss(
+                total_loss, policy_loss, value_loss, kl_loss = self.compute_loss(
                     states, target_policies, target_values
                 )
                 
@@ -285,6 +304,7 @@ class TrainingManager:
             epoch_total_loss.append(total_loss.item())
             epoch_policy_loss.append(policy_loss.item())
             epoch_value_loss.append(value_loss.item())
+            epoch_kl_loss.append(kl_loss.item())
             
             self.global_step += 1
         
@@ -292,6 +312,7 @@ class TrainingManager:
         avg_total_loss = np.mean(epoch_total_loss)
         avg_policy_loss = np.mean(epoch_policy_loss)
         avg_value_loss = np.mean(epoch_value_loss)
+        avg_kl_loss = np.mean(epoch_kl_loss) if epoch_kl_loss else 0.0
         
         # Update metrics
         current_lr = self.optimizer.param_groups[0]['lr']
@@ -306,6 +327,7 @@ class TrainingManager:
             'avg_total_loss': avg_total_loss,
             'avg_policy_loss': avg_policy_loss,
             'avg_value_loss': avg_value_loss,
+            'avg_kl_loss': avg_kl_loss,
             'learning_rate': current_lr,
             'num_batches': len(dataloader)
         }
