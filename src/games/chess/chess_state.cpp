@@ -986,6 +986,18 @@ std::unique_ptr<core::IGameState> ChessState::clone() const {
     return std::make_unique<ChessState>(*this);
 }
 
+std::vector<std::unique_ptr<core::IGameState>> ChessState::batchClone(int count) const {
+    std::vector<std::unique_ptr<core::IGameState>> clones;
+    clones.reserve(count);
+    
+    // Use copy constructor for efficient cloning
+    for (int i = 0; i < count; ++i) {
+        clones.push_back(std::make_unique<ChessState>(*this));
+    }
+    
+    return clones;
+}
+
 void ChessState::copyFrom(const core::IGameState& source) {
     // Ensure source is a ChessState
     const ChessState* chess_source = dynamic_cast<const ChessState*>(&source);
@@ -2004,6 +2016,50 @@ ChessState::computeBatchEnhancedTensorRepresentations(const std::vector<const Ch
         results.push_back(state->getEnhancedTensorRepresentation());
     }
     return results;
+}
+
+std::vector<std::vector<uint64_t>> ChessState::getBitboards() const {
+    // Convert Chess board representation to bitboards
+    // Return complete bitboard representation for proper move validation
+    // Format: 14 bitboards total
+    // [0-5]: White pieces (pawn, knight, bishop, rook, queen, king)
+    // [6-11]: Black pieces (pawn, knight, bishop, rook, queen, king)  
+    // [12]: All white pieces combined
+    // [13]: All black pieces combined
+    
+    const int num_squares = 64;
+    const int num_bitboards = 14;
+    
+    // Initialize all bitboards
+    std::vector<std::vector<uint64_t>> bitboards(num_bitboards);
+    for (int i = 0; i < num_bitboards; ++i) {
+        bitboards[i].resize(1, 0ULL);  // 64 squares fit in one uint64_t
+    }
+    
+    // Fill individual piece bitboards
+    for (int square = 0; square < num_squares; ++square) {
+        Piece piece = board_[square];
+        if (!piece.is_empty()) {
+            uint64_t bit = 1ULL << square;
+            
+            // Determine bitboard index based on color and piece type
+            int base_idx = (piece.color == PieceColor::WHITE) ? 0 : 6;
+            int piece_idx = static_cast<int>(piece.type) - 1;  // PAWN=1 -> index 0
+            
+            if (piece_idx >= 0 && piece_idx < 6) {
+                bitboards[base_idx + piece_idx][0] |= bit;
+                
+                // Also set in combined bitboards
+                if (piece.color == PieceColor::WHITE) {
+                    bitboards[12][0] |= bit;  // All white pieces
+                } else {
+                    bitboards[13][0] |= bit;  // All black pieces
+                }
+            }
+        }
+    }
+    
+    return bitboards;
 }
 
 } // namespace chess

@@ -90,6 +90,31 @@ class GameType(Enum):
     GOMOKU = "gomoku"
 
 
+def create_game_interface(game_type: str = 'gomoku', board_size: Optional[int] = None, **kwargs) -> 'GameInterface':
+    """Create a game interface for the specified game type
+    
+    Args:
+        game_type: String name of the game type ('chess', 'go', 'gomoku')
+        board_size: Board size (for Go and Gomoku)
+        **kwargs: Additional game-specific options
+        
+    Returns:
+        GameInterface instance
+    """
+    # Convert string to GameType enum
+    game_type_map = {
+        'chess': GameType.CHESS,
+        'go': GameType.GO,
+        'gomoku': GameType.GOMOKU
+    }
+    
+    game_type_enum = game_type_map.get(game_type.lower())
+    if game_type_enum is None:
+        raise ValueError(f"Unknown game type: {game_type}. Choose from: {list(game_type_map.keys())}")
+    
+    return GameInterface(game_type_enum, board_size=board_size, **kwargs)
+
+
 class GameInterface:
     """Unified interface for all game types
     

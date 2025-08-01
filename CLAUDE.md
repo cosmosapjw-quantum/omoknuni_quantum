@@ -135,6 +135,7 @@ Always write one test at a time, make it run, then improve structure. Always run
 - Research explorations are archived in `archive/` to keep codebase clean
 - Modify existing files rather than creating new ones when possible
 - Follow the existing module structure and import patterns
+- Unless you are creating a new module with totally new separately features, always prioritize modifying existing files rather than creating unnecessary extra files just for fixing/modifying/improving functions and modules
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

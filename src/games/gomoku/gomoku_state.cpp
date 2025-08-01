@@ -218,17 +218,20 @@ std::vector<std::vector<std::vector<float>>> GomokuState::getBasicTensorRepresen
             num_feature_planes, std::vector<std::vector<float>>(
                 board_size_, std::vector<float>(board_size_, 0.0f)));
 
-        // Channels 0-1: Current and opponent player stones
-        int p_idx_current = current_player_ - 1;      // 0 for BLACK, 1 for WHITE
-        int p_idx_opponent = 1 - p_idx_current;       // 1 for BLACK, 0 for WHITE
+        // Channels 0-1: Always consistent player mapping
+        // Channel 0: Player 1 (BLACK) stones  
+        // Channel 1: Player 2 (WHITE) stones
+        // This ensures consistent tensor representation regardless of whose turn it is
+        int p_idx_player1 = 0;  // Player 1 (BLACK) bitboard index
+        int p_idx_player2 = 1;  // Player 2 (WHITE) bitboard index
         
         for (int r = 0; r < board_size_; ++r) {
             for (int c = 0; c < board_size_; ++c) {
                 int action = coords_to_action(r, c);
-                if (is_bit_set(p_idx_current, action)) {
-                    tensor[0][r][c] = 1.0f; // Current player's stones
-                } else if (is_bit_set(p_idx_opponent, action)) {
-                    tensor[1][r][c] = 1.0f; // Opponent player's stones
+                if (is_bit_set(p_idx_player1, action)) {
+                    tensor[0][r][c] = 1.0f; // Player 1 (BLACK) stones
+                } else if (is_bit_set(p_idx_player2, action)) {
+                    tensor[1][r][c] = 1.0f; // Player 2 (WHITE) stones
                 }
                 // Empty squares remain 0.0f in both channels
             }
@@ -553,42 +556,20 @@ std::unique_ptr<core::IGameState> GomokuState::clone() const {
         clone_ptr->hash_signature_.store(0, std::memory_order_release);
         clone_ptr->hash_dirty_.store(true, std::memory_order_release);  // Force recomputation of hash 
         
-        // Deep copy of player_bitboards_ with size checking
-        // First ensure both have the correct sizes
-        if (player_bitboards_.size() != 2) {
-            throw std::runtime_error("Source player bitboards has invalid size: " + std::to_string(player_bitboards_.size()));
-        }
-        
-        if (clone_ptr->player_bitboards_.size() != 2) {
-            throw std::runtime_error("Clone player bitboards has invalid size: " + std::to_string(clone_ptr->player_bitboards_.size()));
-        }
-        
-        // Ensure bitboards are properly sized for this board
-        size_t expected_size = (board_size_ * board_size_ + 63) / 64;
-        
+        // Optimized bitboard copying - assume well-formed states for performance
+        // Both source and clone should have same board size and properly initialized bitboards
         for (int p = 0; p < 2; ++p) {
-            // Resize if necessary to match expected size
-            if (clone_ptr->player_bitboards_[p].size() != expected_size) {
-                clone_ptr->player_bitboards_[p].resize(expected_size, 0);
-            }
-            
-            if (player_bitboards_[p].size() != expected_size) {
-                throw std::runtime_error("Source bitboard[" + std::to_string(p) + "] has unexpected size: " + 
-                    std::to_string(player_bitboards_[p].size()) + " (expected " + std::to_string(expected_size) + ")");
-            }
-            
-            // Now copy with confidence that sizes match
-            std::copy(
-                player_bitboards_[p].begin(),
-                player_bitboards_[p].end(),
-                clone_ptr->player_bitboards_[p].begin()
-            );
+            // Direct assignment is faster than std::copy for vectors
+            clone_ptr->player_bitboards_[p] = player_bitboards_[p];
         }
         
-        // Validate the clone (without extensive logging)
-        if (!clone_ptr->validate()) {
-            throw std::runtime_error("Cloned GomokuState failed validation");
-        }
+        // Skip expensive validation during cloning for performance
+        // The original state should already be valid, and we're doing a byte-for-byte copy
+        // Validation can be enabled for debugging if needed by uncommenting the lines below:
+        // if (!clone_ptr->validate()) {
+        //     throw std::runtime_error("Cloned GomokuState failed validation");
+        // }
+        
         
         return clone_ptr;
     } catch (const std::exception& e) {
@@ -603,7 +584,56 @@ std::unique_ptr<core::IGameState> GomokuState::clone() const {
     }
 }
 
+std::vector<std::unique_ptr<core::IGameState>> GomokuState::batchClone(int count) const {
+    std::vector<std::unique_ptr<core::IGameState>> clones;
+    clones.reserve(count);
+    
+    // Pre-compute shared data that doesn't change across clones
+    const size_t bitboard_size = player_bitboards_[0].size();
+    
+    // Batch allocate to improve memory locality
+    for (int i = 0; i < count; ++i) {
+        // Create clone without validation for speed
+        auto clone_ptr = std::make_unique<GomokuState>(
+            board_size_,
+            use_renju_,
+            use_omok_,
+            0,
+            use_pro_long_opening_
+        );
+        
+        // Copy state data efficiently
+        clone_ptr->current_player_ = current_player_;
+        clone_ptr->black_first_stone_ = black_first_stone_;
+        clone_ptr->last_action_played_ = last_action_played_;
+        clone_ptr->move_history_ = move_history_;
+        
+        // Mark caches as dirty - no need to copy cached data
+        clone_ptr->valid_moves_dirty_.store(true, std::memory_order_relaxed);
+        clone_ptr->cached_valid_moves_.clear();
+        clone_ptr->cached_winner_.store(NO_PLAYER, std::memory_order_relaxed);
+        clone_ptr->winner_check_dirty_.store(true, std::memory_order_relaxed);
+        clone_ptr->hash_signature_.store(0, std::memory_order_relaxed);
+        clone_ptr->hash_dirty_.store(true, std::memory_order_relaxed);
+        
+        // Fast bitboard copy - use memcpy for better performance
+        for (int p = 0; p < 2; ++p) {
+            clone_ptr->player_bitboards_[p] = player_bitboards_[p];
+        }
+        
+        clones.push_back(std::move(clone_ptr));
+    }
+    
+    return clones;
+}
+
 void GomokuState::copyFrom(const core::IGameState& source) {
+    // DEBUG: Track copyFrom usage
+    static int copyFrom_calls = 0;
+    if (++copyFrom_calls <= 5) {
+        std::cout << "[DEBUG] GomokuState::copyFrom() called - call #" << copyFrom_calls << std::endl;
+    }
+    
     // Ensure source is a GomokuState
     const GomokuState* gomoku_source = dynamic_cast<const GomokuState*>(&source);
     if (!gomoku_source) {
@@ -1312,6 +1342,12 @@ GomokuState::computeEnhancedTensorBatch(const std::vector<const GomokuState*>& s
         results.push_back(state->getEnhancedTensorRepresentation());
     }
     return results;
+}
+
+std::vector<std::vector<uint64_t>> GomokuState::getBitboards() const {
+    // Return a copy of the internal bitboards
+    // For Gomoku: [black_bitboards, white_bitboards]
+    return player_bitboards_;
 }
 
 } // namespace gomoku

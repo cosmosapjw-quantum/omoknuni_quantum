@@ -36,6 +36,7 @@ from mcts.utils.config_system import (
 )
 from mcts.neural_networks.replay_buffer import ReplayBuffer, GameExample
 from mcts.utils.training_monitor import TrainingMonitor
+from mcts.utils.data_cleanup_manager import DataCleanupManager
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -111,6 +112,12 @@ class UnifiedTrainingPipeline:
         self.training_monitor = TrainingMonitor(
             alert_threshold=alert_threshold,
             early_stopping_enabled=early_stopping_enabled
+        )
+        
+        # Initialize data cleanup manager
+        self.data_cleanup_manager = DataCleanupManager(
+            experiment_dir=self.experiment_dir,
+            config=config
         )
         
         # Initialize opponent buffer for population-based training
@@ -396,6 +403,7 @@ class UnifiedTrainingPipeline:
             temperature_threshold=self.config.mcts.temperature_threshold,  # Use configurable threshold
             timeout_seconds=int(self.config.arena.time_limit_seconds) if self.config.arena.time_limit_seconds else 300,
             device=self.config.mcts.device,
+            backend=getattr(self.config.arena, 'backend', self.config.mcts.backend),  # Use arena backend if specified, else MCTS backend
             save_game_records=self.config.arena.save_game_records
         )
         
@@ -443,7 +451,8 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"{'='*80}\n")
             
             # Phase 1: Self-play data generation
-            tqdm.write("[1/4] Generating self-play data...")
+            max_phases = 5 if self.data_cleanup_manager.should_cleanup(self.iteration) else 4
+            tqdm.write(f"[1/{max_phases}] Generating self-play data...")
             self_play_start = time.time()
             self_play_examples = self.generate_self_play_data()
             self_play_time = time.time() - self_play_start
@@ -461,7 +470,7 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"      Replay buffer size: {len(self.replay_buffer)}")
             
             # Phase 2: Neural network training  
-            tqdm.write("\n[2/4] Training neural network...")
+            tqdm.write(f"\n[2/{max_phases}] Training neural network...")
             train_start = time.time()
             train_stats = self.train_neural_network()
             train_time = time.time() - train_start
@@ -469,16 +478,34 @@ class UnifiedTrainingPipeline:
             tqdm.write(f"      Loss: {train_stats['loss']:.4f}, P-Loss: {train_stats['policy_loss']:.4f}, V-Loss: {train_stats['value_loss']:.4f}")
             
             # Phase 3: Arena evaluation (every epoch for better tracking)
-            tqdm.write("\n[3/4] Arena evaluation...")
+            tqdm.write(f"\n[3/{max_phases}] Arena evaluation...")
             arena_start = time.time()
             accepted = self.evaluate_model_with_elo()
             arena_time = time.time() - arena_start
             tqdm.write(f"      Arena completed in {arena_time:.1f}s")
             
             # Phase 4: Save checkpoint every iteration
-            tqdm.write("\n[4/4] Saving checkpoint...")
+            tqdm.write(f"\n[4/{max_phases}] Saving checkpoint...")
             self.save_checkpoint()
             tqdm.write("      Checkpoint saved.")
+            
+            # Phase 5: Data cleanup (if needed)
+            if self.data_cleanup_manager.should_cleanup(self.iteration):
+                tqdm.write("\n[5/5] Cleaning up old data...")
+                cleanup_start = time.time()
+                cleanup_stats = self.data_cleanup_manager.cleanup_all(self.iteration)
+                cleanup_time = time.time() - cleanup_start
+                
+                if cleanup_stats.get('total_space_freed_gb', 0) > 0:
+                    tqdm.write(f"      Freed {cleanup_stats['total_space_freed_gb']:.2f} GB in {cleanup_time:.1f}s")
+                else:
+                    tqdm.write(f"      No cleanup needed ({cleanup_time:.1f}s)")
+                
+                # Log cleanup statistics
+                if cleanup_stats:
+                    logger.info(f"Data cleanup statistics: {cleanup_stats}")
+            else:
+                tqdm.write("\n      Skipping cleanup (not due yet)")
             
             # Summary
             iteration_time = time.time() - iteration_start
@@ -1197,6 +1224,7 @@ class UnifiedTrainingPipeline:
                 num_simulations=10,  # Minimal simulations
                 wave_size=100,       # Small wave size
                 device=self.config.mcts.device,
+                backend=self.config.mcts.backend,  # Use configured backend
                 enable_quantum=False  # Keep it simple
             )
             
@@ -1205,7 +1233,16 @@ class UnifiedTrainingPipeline:
                 model=self.model,
                 device=self.config.mcts.device
             )
-            mcts = MCTS(mcts_config, evaluator)
+            
+            # Create MCTS based on backend
+            if self.config.mcts.backend == 'cpu':
+                from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
+                mcts = create_cpu_optimized_mcts(mcts_config, evaluator, None)
+            elif self.config.mcts.backend == 'hybrid':
+                from mcts.hybrid import create_hybrid_mcts
+                mcts = create_hybrid_mcts(mcts_config, evaluator, None)
+            else:
+                mcts = MCTS(mcts_config, evaluator)
             
             # Run a minimal search for kernel warmup (not compilation)
             logger.info("  🔥 Warming up kernels...")

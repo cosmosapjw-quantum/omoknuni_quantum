@@ -33,7 +33,8 @@ class SingleGPUEvaluator:
                  action_size: int = 225,
                  batch_size: int = 512,
                  use_mixed_precision: bool = True,
-                 use_tensorrt: bool = False):
+                 use_tensorrt: bool = False,
+                 enable_timing: bool = False):
         """Initialize single-GPU evaluator
         
         Args:
@@ -50,6 +51,7 @@ class SingleGPUEvaluator:
         self.batch_size = batch_size
         self.use_mixed_precision = use_mixed_precision and device == 'cuda'
         self.use_tensorrt = use_tensorrt
+        self.enable_timing = enable_timing
         
         # Flag to control output format (tensors vs numpy)
         self._return_torch_tensors = True
@@ -151,8 +153,8 @@ class SingleGPUEvaluator:
                 else:
                     state_tensor = states.to(self.device, non_blocking=True, dtype=torch.float32)
                 
-                # Record GPU time
-                if self.device.type == 'cuda':
+                # Record GPU time only if timing is enabled
+                if self.enable_timing and self.device.type == 'cuda':
                     torch.cuda.synchronize()
                     gpu_start = time.time()
                 
@@ -173,7 +175,7 @@ class SingleGPUEvaluator:
                 # Vectorized policy processing (all on GPU)
                 policies = self._process_policies_vectorized(policy_logits, legal_masks)
                 
-                if self.device.type == 'cuda':
+                if self.enable_timing and self.device.type == 'cuda':
                     torch.cuda.synchronize()
                     self.stats['gpu_time'] += time.time() - gpu_start
         
@@ -260,6 +262,6 @@ class SingleGPUEvaluator:
                 else:
                     self.model(dummy_states)
         
-        if self.device.type == 'cuda':
+        if self.enable_timing and self.device.type == 'cuda':
             torch.cuda.synchronize()
         logger.info("GPU warmup complete")

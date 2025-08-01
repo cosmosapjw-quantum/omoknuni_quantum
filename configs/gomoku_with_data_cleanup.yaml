@@ -1,0 +1,54 @@
+# Gomoku training configuration with automatic data cleanup
+# This configuration demonstrates how to use the data cleanup features
+# to prevent disk space issues during long training runs
+
+game:
+  game_type: "gomoku"
+  board_size: 15
+
+mcts:
+  num_simulations: 800
+  c_puct: 1.0
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  device: "cuda"
+  backend: "hybrid"
+
+network:
+  num_res_blocks: 5
+  num_filters: 128
+  input_channels: 5
+
+training:
+  num_iterations: 1000  # Long training run
+  num_games_per_iteration: 100
+  batch_size: 512
+  learning_rate: 0.01
+  checkpoint_interval: 10
+  
+  # Data cleanup configuration - prevents disk space issues
+  enable_data_cleanup: true
+  cleanup_interval: 5  # Cleanup every 5 iterations
+  
+  # Retention policies - adjust based on available disk space
+  keep_last_n_replay_buffers: 10   # Keep 10 most recent replay buffers (~18GB for gomoku)  
+  keep_last_n_checkpoints: 5       # Keep 5 most recent checkpoints (~5GB)
+  keep_last_n_arena_logs: 20       # Keep 20 most recent arena logs (~20MB)
+  keep_last_n_metrics: 50          # Keep 50 most recent metric files (~5MB)
+  keep_last_n_logs: 10             # Keep 10 most recent log files (~500MB)
+  
+  # Optional: Set maximum disk usage limit (uncomment to enable)
+  # max_disk_usage_gb: 50.0         # Trigger emergency cleanup if > 50GB
+  
+  # What to clean up (all enabled by default)
+  cleanup_arena_logs: true         # Clean up old arena evaluation logs
+  cleanup_metrics: false           # Keep all metrics for analysis
+  cleanup_logs: true               # Clean up old training logs
+
+arena:
+  num_games: 100
+  win_threshold: 0.55
+  mcts_simulations: 800
+
+log_level: "INFO"
+experiment_name: "gomoku_with_cleanup"

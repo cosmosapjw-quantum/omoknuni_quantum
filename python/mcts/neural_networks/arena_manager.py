@@ -37,6 +37,7 @@ class ArenaConfig:
     temperature_threshold: int = 0
     timeout_seconds: int = 300
     device: str = "cuda"
+    backend: str = "gpu"  # 'gpu', 'cpu', or 'hybrid'
     use_progress_bar: bool = True
     save_game_records: bool = False
     enable_tree_reuse: bool = False  # Disable to avoid memory issues
@@ -280,14 +281,20 @@ class ArenaMatch:
             c_puct=self.config.c_puct,
             temperature=self.config.temperature,
             device=self.config.device,
+            backend=self.config.backend,
             enable_subtree_reuse=self.config.enable_tree_reuse
         )
         
-        # Initialize MCTS for both players
-        mcts1 = MCTS(config=mcts_config, evaluator=self.evaluator1, 
-                     game_interface=self.game_interface)
-        mcts2 = MCTS(config=mcts_config, evaluator=self.evaluator2,
-                     game_interface=self.game_interface)
+        # Initialize MCTS for both players - use CPU optimized version if backend is CPU
+        if self.config.backend == 'cpu':
+            from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
+            mcts1 = create_cpu_optimized_mcts(mcts_config, self.evaluator1, self.game_interface)
+            mcts2 = create_cpu_optimized_mcts(mcts_config, self.evaluator2, self.game_interface)
+        else:
+            mcts1 = MCTS(config=mcts_config, evaluator=self.evaluator1, 
+                         game_interface=self.game_interface)
+            mcts2 = MCTS(config=mcts_config, evaluator=self.evaluator2,
+                         game_interface=self.game_interface)
         
         # Map player to MCTS (use 0-based indexing to match game interface)
         player_mcts = {0: mcts1, 1: mcts2}

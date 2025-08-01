@@ -1,0 +1,41 @@
+# Test configuration for hybrid mode with vectorized tree
+
+# Base settings
+experiment_name: "test_hybrid_vectorized"
+game: "gomoku"
+
+# Training settings  
+num_iterations: 2
+games_per_iteration: 5
+num_parallel_games: 1
+max_game_steps: 50
+
+# MCTS settings
+mcts:
+  backend: "hybrid"
+  num_simulations: 800
+  c_puct: 1.0
+  enable_virtual_loss: true
+  virtual_loss: 1.0
+  # CPU settings
+  cpu_threads: 12
+  # GPU settings  
+  gpu_batch_size: 512
+  wave_size: 512
+
+# Neural network
+network:
+  architecture: "resnet"
+  num_blocks: 4
+  filters: 64
+  
+# Training
+training:
+  batch_size: 512
+  learning_rate: 0.001
+  epochs_per_iteration: 1
+
+# Evaluation
+evaluation:
+  num_games: 10
+  win_threshold: 0.55

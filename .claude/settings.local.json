@@ -86,7 +86,14 @@
       "Bash(./run_physics_analysis.sh:*)",
       "WebFetch(domain:arxiv.org)",
       "Bash(/home/cosmosapjw/venv/bin/python tests/test_new_physics_modules_import.py)",
-      "Bash(LD_LIBRARY_PATH=./python:$LD_LIBRARY_PATH /home/cosmosapjw/venv/bin/python tests/test_new_physics_modules_import.py)"
+      "Bash(LD_LIBRARY_PATH=./python:$LD_LIBRARY_PATH /home/cosmosapjw/venv/bin/python tests/test_new_physics_modules_import.py)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -m pytest python/tests/test_mcts_config.py -v)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -m pytest python/tests/test_mcts_backend.py::TestMCTSBackendInitialization::test_mcts_gpu_backend_default -v -s)",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -c \"from tests.mock_evaluator import MockEvaluator; e = MockEvaluator(); print(dir(e))\")",
+      "Bash(PYTHONPATH=/home/cosmosapjw/omoknuni_quantum/python python -m pytest python/tests/test_mcts_backend.py -v -s)",
+      "Bash(OMP_NUM_THREADS=12 python python/benchmarks/basic_cpu_benchmark.py)",
+      "Bash(./scripts/compile_extensions.sh:*)",
+      "Bash(LD_LIBRARY_PATH=/home/cosmosapjw/omoknuni_quantum/python:$LD_LIBRARY_PATH python -m pytest test_mcts_comprehensive.py -v --tb=short -x)"
     ],
     "deny": []
   },

@@ -818,6 +818,18 @@ std::unique_ptr<core::IGameState> GoState::clone() const {
     return std::make_unique<GoState>(*this);
 }
 
+std::vector<std::unique_ptr<core::IGameState>> GoState::batchClone(int count) const {
+    std::vector<std::unique_ptr<core::IGameState>> clones;
+    clones.reserve(count);
+    
+    // Use copy constructor for efficient cloning
+    for (int i = 0; i < count; ++i) {
+        clones.push_back(std::make_unique<GoState>(*this));
+    }
+    
+    return clones;
+}
+
 void GoState::copyFrom(const core::IGameState& source) {
     // Ensure source is a GoState
     const GoState* go_source = dynamic_cast<const GoState*>(&source);
@@ -1631,6 +1643,40 @@ GoState::computeBatchEnhancedTensorRepresentations(const std::vector<const GoSta
         results.push_back(state->getEnhancedTensorRepresentation());
     }
     return results;
+}
+
+std::vector<std::vector<uint64_t>> GoState::getBitboards() const {
+    // Convert Go board representation to bitboards
+    // Go uses 3 states: empty (0), black (1), white (2)
+    // Format: 3 bitboards
+    // [0]: Black stones (player 1)
+    // [1]: White stones (player 2)
+    // [2]: All occupied positions (black | white) - useful for legal move checking
+    
+    int total_positions = board_size_ * board_size_;
+    int num_words = (total_positions + 63) / 64;
+    
+    // Initialize bitboards
+    std::vector<std::vector<uint64_t>> bitboards(3);
+    for (int i = 0; i < 3; ++i) {
+        bitboards[i].resize(num_words, 0ULL);
+    }
+    
+    // Fill bitboards based on board state
+    for (int pos = 0; pos < total_positions; ++pos) {
+        int stone = board_[pos];
+        if (stone == 1 || stone == 2) {  // Black or White
+            int word_idx = pos / 64;
+            int bit_idx = pos % 64;
+            uint64_t bit = 1ULL << bit_idx;
+            
+            int player_idx = stone - 1;  // 0 for black, 1 for white
+            bitboards[player_idx][word_idx] |= bit;
+            bitboards[2][word_idx] |= bit;  // All occupied positions
+        }
+    }
+    
+    return bitboards;
 }
 
 } // namespace go

@@ -25,7 +25,7 @@ class GameType(IntEnum):
 @dataclass
 class GPUGameStatesConfig:
     """Configuration for GPU game states"""
-    capacity: int = 4000000  # Maximum number of states - increased for physics analysis
+    capacity: int = 2000000  # Optimized capacity for MCTS performance
     game_type: GameType = GameType.GOMOKU
     board_size: int = 15  # For Go/Gomoku
     device: str = 'cuda'
@@ -169,8 +169,14 @@ class GPUGameStates:
         """Free allocated states
         
         Args:
-            indices: State indices to free
+            indices: State indices to free (can be tensor or numpy array)
         """
+        # Convert numpy array to tensor if needed
+        if not isinstance(indices, torch.Tensor):
+            indices = torch.tensor(indices, device=self.device, dtype=torch.int32)
+        elif indices.device != self.device:
+            indices = indices.to(self.device)
+        
         # Validate that states are actually allocated
         if not self.allocated_mask[indices].all():
             unallocated = indices[~self.allocated_mask[indices]]
@@ -245,7 +251,7 @@ class GPUGameStates:
         board[7, 4] = 12
         
     def clone_states(self, parent_indices: torch.Tensor, num_clones_per_parent: torch.Tensor) -> torch.Tensor:
-        """Clone multiple parent states
+        """Clone multiple parent states - OPTIMIZED VERSION
         
         Args:
             parent_indices: Indices of parent states to clone
@@ -254,27 +260,56 @@ class GPUGameStates:
         Returns:
             Tensor of clone indices
         """
-        # OPTIMIZATION: Avoid expensive sum() on GPU tensor
-        if num_clones_per_parent.is_cuda:
-            total_clones = int(num_clones_per_parent.sum().item())
-        else:
-            # For CPU tensors, sum is already fast but use item() for consistency
-            total_clones = int(num_clones_per_parent.sum().item())
+        # Ensure inputs are on the correct device
+        parent_indices = parent_indices.to(self.device)
+        num_clones_per_parent = num_clones_per_parent.to(self.device)
+        
+        # CRITICAL FIX: Ensure num_clones_per_parent matches parent_indices length
+        if num_clones_per_parent.numel() == 1 and parent_indices.numel() > 1:
+            # Broadcasting case - repeat the value
+            num_clones_per_parent = num_clones_per_parent.expand(parent_indices.numel())
+        elif num_clones_per_parent.numel() != parent_indices.numel():
+            raise ValueError(f"Size mismatch: parent_indices has {parent_indices.numel()} elements, "
+                           f"but num_clones_per_parent has {num_clones_per_parent.numel()}")
+        
+        # Calculate total clones needed
+        total_clones = int(num_clones_per_parent.sum().item())
+        if total_clones == 0:
+            return torch.tensor([], device=self.device, dtype=torch.long)
+            
+        # Allocate clone indices
         clone_indices = self.allocate_states(total_clones)
         
-        # Create mapping from clones to parents
+        # Create parent mapping
         parent_mapping = torch.repeat_interleave(parent_indices, num_clones_per_parent)
         
-        # Copy board states
-        self.boards[clone_indices] = self.boards[parent_mapping]
+        # Verify dimensions match
+        assert clone_indices.numel() == parent_mapping.numel(), \
+            f"Clone indices ({clone_indices.numel()}) != parent mapping ({parent_mapping.numel()})"
         
-        # Copy metadata
-        self.current_player[clone_indices] = self.current_player[parent_mapping]
-        self.move_count[clone_indices] = self.move_count[parent_mapping]
-        self.is_terminal[clone_indices] = self.is_terminal[parent_mapping]
-        self.winner[clone_indices] = self.winner[parent_mapping]
-        self.move_history[clone_indices] = self.move_history[parent_mapping]
-        self.full_move_history[clone_indices] = self.full_move_history[parent_mapping]
+        # Safe copy with bounds checking
+        if clone_indices.numel() > 0:
+            # Use index_select for better memory access pattern
+            parent_boards = self.boards.index_select(0, parent_mapping.long())
+            self.boards[clone_indices.long()] = parent_boards
+        
+            # OPTIMIZATION: For smaller tensors, batch them together if possible
+            # Create views for faster copying
+            parent_data = parent_mapping.long()
+            clone_data = clone_indices.long()
+            
+            # Batch copy all 1D metadata tensors at once
+            self.current_player[clone_data] = self.current_player[parent_data]
+            self.move_count[clone_data] = self.move_count[parent_data]
+            self.is_terminal[clone_data] = self.is_terminal[parent_data]
+            self.winner[clone_data] = self.winner[parent_data]
+            
+            # For 2D tensors, use more efficient copying
+            self.move_history[clone_data] = self.move_history[parent_data]
+        
+        # OPTIMIZATION: Skip full_move_history copy if not needed for current representation
+        if hasattr(self, '_use_enhanced_features') and self._use_enhanced_features:
+            self.full_move_history[clone_data] = self.full_move_history[parent_data]
         
         # Copy game-specific state
         if self.game_type == GameType.CHESS:
@@ -307,6 +342,10 @@ class GPUGameStates:
             if batch_size == 0:
                 return legal_mask
             
+            # Ensure state_indices is on the same device as boards
+            if hasattr(state_indices, 'device') and state_indices.device != self.boards.device:
+                state_indices = state_indices.to(self.boards.device)
+            
             # Vectorized check for empty squares
             boards = self.boards[state_indices]  # (batch, 15, 15)
             empty_mask = (boards == 0).view(batch_size, -1)  # (batch, 225)
@@ -322,6 +361,9 @@ class GPUGameStates:
                 return legal_mask
             
             # Check empty squares
+            # Ensure state_indices is on the same device as boards
+            if hasattr(state_indices, 'device') and state_indices.device != self.boards.device:
+                state_indices = state_indices.to(self.boards.device)
             boards = self.boards[state_indices]
             empty_mask = (boards == 0).view(batch_size, -1)
             
@@ -347,7 +389,7 @@ class GPUGameStates:
         return legal_mask
     
     def apply_moves(self, state_indices: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-        """Apply moves to states
+        """Apply moves to states - OPTIMIZED VERSION
         
         Args:
             state_indices: State indices to apply moves to
@@ -356,33 +398,29 @@ class GPUGameStates:
         Returns:
             New state indices (if cloning) or same indices (if in-place)
         """
-        # For now, apply moves in-place
-        # In production, might want to clone first
-        
         if self.game_type in [GameType.GOMOKU, GameType.GO]:
-            # Check for pass moves in Go
-            if self.game_type == GameType.GO:
-                pass_action = self.board_size * self.board_size
-                is_pass = actions == pass_action
-                non_pass_mask = ~is_pass
-            else:
-                non_pass_mask = torch.ones_like(actions, dtype=torch.bool)
-            
-            # Convert action to board position for non-pass moves
-            rows = actions // self.board_size
-            cols = actions % self.board_size
-            
-            # Place stones (only for non-pass moves)
-            batch_indices = torch.arange(len(state_indices), device=self.device)
+            # OPTIMIZATION: Batch all operations together
             current_players = self.current_player[state_indices]
             
-            # Vectorized board update - only update non-pass moves
-            if non_pass_mask.any():
-                non_pass_indices = state_indices[non_pass_mask]
-                non_pass_rows = rows[non_pass_mask]
-                non_pass_cols = cols[non_pass_mask]
-                non_pass_players = current_players[non_pass_mask]
-                self.boards[non_pass_indices, non_pass_rows, non_pass_cols] = non_pass_players
+            # For Gomoku, all moves are non-pass, skip the mask creation
+            if self.game_type == GameType.GOMOKU:
+                # Direct board position calculation
+                rows = actions // self.board_size
+                cols = actions % self.board_size
+                
+                # Direct board update without mask checking
+                self.boards[state_indices, rows, cols] = current_players
+            else:
+                # Go has pass moves
+                pass_action = self.board_size * self.board_size
+                non_pass_mask = actions != pass_action
+                
+                if non_pass_mask.any():
+                    non_pass_indices = state_indices[non_pass_mask]
+                    non_pass_actions = actions[non_pass_mask]
+                    rows = non_pass_actions // self.board_size
+                    cols = non_pass_actions % self.board_size
+                    self.boards[non_pass_indices, rows, cols] = current_players[non_pass_mask]
             
             # Update move history (rolling buffer for NN features)
             self.move_history[state_indices] = torch.roll(self.move_history[state_indices], -1, dims=1)
@@ -433,7 +471,7 @@ class GPUGameStates:
         pass
         
     def get_nn_features(self, state_indices: torch.Tensor) -> torch.Tensor:
-        """Get neural network features directly from GPU states
+        """Get neural network features directly from GPU states - OPTIMIZED VERSION
         
         Args:
             state_indices: State indices to get features for
@@ -450,13 +488,21 @@ class GPUGameStates:
             return self._get_enhanced_nn_features(state_indices)
         
         if self.game_type == GameType.GOMOKU:
-            # Create proper 19-channel AlphaZero representation (GPU implementation)
+            # OPTIMIZATION: Pre-allocate features tensor from cache
+            if not hasattr(self, '_feature_cache') or self._feature_cache.shape[0] < batch_size:
+                self._feature_cache = torch.zeros((batch_size * 2, 19, self.board_size, self.board_size), 
+                                                device=self.device, dtype=torch.float32)
+            
+            # Get boards and players in a single operation
+            # Ensure state_indices is on the same device as boards
+            if hasattr(state_indices, 'device') and state_indices.device != self.boards.device:
+                state_indices = state_indices.to(self.boards.device)
             boards = self.boards[state_indices]
             current_players = self.current_player[state_indices]
             
-            # Create 19 feature planes: current + opponent + player indicator + 8 moves × 2 players
-            features = torch.zeros((batch_size, 19, self.board_size, self.board_size), 
-                                 device=self.device, dtype=torch.float32)
+            # Use cached tensor slice
+            features = self._feature_cache[:batch_size]
+            features.zero_()  # Clear previous data
             
             # Channel 0: Current board state (all stones)
             features[:, 0] = (boards != 0).float()  # CRITICAL FIX: Use != 0 to include both players!
@@ -526,6 +572,9 @@ class GPUGameStates:
         elif self.game_type == GameType.GO:
             # Similar to Gomoku but with more planes (liberties, ko, etc.)
             # Simplified version
+            # Ensure state_indices is on the same device as boards
+            if hasattr(state_indices, 'device') and state_indices.device != self.boards.device:
+                state_indices = state_indices.to(self.boards.device)
             boards = self.boards[state_indices]
             features = torch.zeros((batch_size, 5, self.board_size, self.board_size), 
                                  device=self.device, dtype=torch.float32)

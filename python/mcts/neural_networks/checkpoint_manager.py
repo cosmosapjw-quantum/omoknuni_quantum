@@ -44,8 +44,8 @@ class CheckpointManager:
         
         # Extract relevant config
         self.checkpoint_every_n_iterations = config.training.checkpoint_interval
-        self.keep_last_n_checkpoints = getattr(config.training, 'checkpoint_keep_last', 5)
-        self.keep_last_n_replay_buffers = getattr(config.training, 'checkpoint_keep_last', 5)
+        self.keep_last_n_checkpoints = getattr(config.training, 'keep_last_n_checkpoints', 5)
+        self.keep_last_n_replay_buffers = getattr(config.training, 'keep_last_n_replay_buffers', 10)
     
     def save_checkpoint(
         self,
@@ -138,7 +138,7 @@ class CheckpointManager:
     def cleanup_old_replay_buffers(self):
         """Remove old replay buffers, keeping only the most recent ones"""
         replay_buffers = sorted(
-            self.checkpoint_dir.glob("replay_buffer_*.pkl"),
+            self.data_dir.glob("replay_buffer_*.pkl"),
             key=lambda p: int(p.stem.split('_')[2])
         )
         

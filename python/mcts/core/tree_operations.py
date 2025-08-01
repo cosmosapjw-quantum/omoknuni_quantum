@@ -64,30 +64,34 @@ class TreeOperations:
             self.tree.reset()
             return {}
             
-                # Use shift_root to efficiently reuse the subtree
+        # Use shift_root to efficiently reuse the subtree
         mapping = self.tree.shift_root(child_idx)
         
-        # CRITICAL FIX: Clear the new root's children
-        # The children from the old position are not valid in the new position
-        # MCTS will re-expand with correct legal moves
-        if mapping:
-            # Clear children of the new root (which is now node 0)
-            if hasattr(self.tree, 'children'):
-                # Reset the children table for root
-                self.tree.children[0, :] = -1
-            
-            # Also clear CSR storage for root
-            if hasattr(self.tree.csr_storage, 'row_ptr'):
-                # Set root to have no children in CSR format
+        # NOTE: DO NOT clear the root's children after shift_root!
+        # The whole point of tree reuse is to preserve the subtree structure.
+        # The children are still valid - they represent the same game positions
+        # relative to the new root state.
+        
+        # The shift_root operation has already:
+        # 1. Made the target child the new root (index 0) 
+        # 2. Preserved all its descendants with remapped indices
+        # 3. Updated all parent-child relationships correctly
+        # 4. Discarded nodes outside the subtree (siblings, old root)
+        
+        # The preserved children are still valid moves from the new root position
+        
+        # Important: If only the root was preserved (mapping size 1), 
+        # ensure it's properly initialized for the next search
+        if len(mapping) == 1:
+            # The root needs to be marked as not expanded so it will be
+            # expanded in the next search
+            self.tree.node_data.set_expanded(0, False)
+            # Also ensure the root has no children in the CSR structure
+            # This is important for proper expansion detection
+            if hasattr(self.tree, 'csr_storage') and hasattr(self.tree.csr_storage, 'row_ptr'):
+                # Set row_ptr[0] = row_ptr[1] = 0 to indicate no edges from root
                 self.tree.csr_storage.row_ptr[0] = 0
                 self.tree.csr_storage.row_ptr[1] = 0
-                
-            # Keep the visit count but ensure root will be expanded
-            # Don't reset visit count - it represents the value estimates we want to preserve
-            
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Tree reuse: Shifted to child {child_idx}, cleared root children for re-expansion")
         
         return mapping
         

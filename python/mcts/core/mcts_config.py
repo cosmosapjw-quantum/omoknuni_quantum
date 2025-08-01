@@ -7,6 +7,7 @@ Separated from main MCTS code for better maintainability and modularity.
 import torch
 from typing import Dict, Optional, Union
 from dataclasses import dataclass
+import multiprocessing as mp
 
 from ..gpu.gpu_game_states import GameType
 from .game_interface import GameType as LegacyGameType
@@ -41,12 +42,17 @@ class MCTSConfig:
     classical_only_mode: bool = False  # Aggressive fast-path for classical MCTS
     enable_fast_ucb: bool = True       # Use optimized UCB kernel when available
     
-    # Wave parallelization - CRITICAL for performance
+    # Multi-stream CUDA execution for 3000+ sims/sec target
+    enable_multi_stream: bool = True   # Enable multi-stream execution for phase overlap
+    num_cuda_streams: int = 4          # Number of CUDA streams for pipeline parallelism
+    stream_memory_pool_size: int = 256 # Memory pool size per stream (MB)
+    
+    # Wave parallelization - OPTIMIZED for performance and memory
     wave_size: Optional[int] = None  # Auto-determine if None
-    min_wave_size: int = 3072
-    max_wave_size: int = 3072  # Fixed size for best performance
-    wave_min_size: int = 256  # Minimum wave size for adaptive sizing
-    wave_max_size: int = 2048  # Maximum wave size for adaptive sizing
+    min_wave_size: int = 1024  # Balanced for GPU utilization
+    max_wave_size: int = 1024  # Optimal size for memory efficiency
+    wave_min_size: int = 512   # Minimum wave size for adaptive sizing
+    wave_max_size: int = 1024  # Maximum wave size for adaptive sizing
     wave_adaptive_sizing: bool = True
     wave_target_sims_per_second: int = 100000
     wave_target_gpu_utilization: float = 0.95
@@ -57,6 +63,7 @@ class MCTSConfig:
     
     # Device configuration
     device: str = 'cuda'
+    backend: str = 'gpu'  # 'gpu', 'cpu', or 'hybrid' - controls tree operation implementation
     
     # Game configuration
     game_type: Union[GameType, LegacyGameType] = GameType.GOMOKU
@@ -70,9 +77,9 @@ class MCTSConfig:
     virtual_loss: float = 1.0  # Positive value (will be negated when applied)
     # Note: virtual_loss_value parameter removed - use virtual_loss instead
     
-    # Memory configuration
-    memory_pool_size_mb: int = 2048
-    max_tree_nodes: int = 500000
+    # Memory configuration - OPTIMIZED for GPU performance
+    memory_pool_size_mb: int = 4096  # Increased for larger capacity
+    max_tree_nodes: int = 2000000    # Increased for deeper trees
     tree_memory_fraction: float = 0.4
     buffer_memory_fraction: float = 0.3
     max_tree_nodes_per_worker: int = 800000
@@ -84,17 +91,32 @@ class MCTSConfig:
     initial_capacity_factor: float = 0.5  # Pre-allocate 50% to avoid reallocations
     enable_memory_pooling: bool = True    # Use memory pools for efficiency
     
+    # Lazy GPU states configuration
+    use_lazy_gpu_states: bool = True  # Use lazy allocation to reduce memory overhead
+    initial_gpu_states_capacity: int = 10000  # Start with smaller capacity
+    gpu_states_growth_factor: float = 2.0  # Grow by 2x when expanding
+    
+    # Parallel MCTS configuration
+    use_parallel_mcts: bool = False  # Enable parallel MCTS workers
+    num_mcts_workers: int = 4  # Number of parallel MCTS workers
+    worker_batch_size: int = 32  # Batch size per worker
+    
     # Progressive expansion
     initial_children_per_expansion: int = 8
     max_children_per_node: int = 50
     progressive_expansion_threshold: int = 5
+    
+    # Progressive widening parameters for GPU optimization
+    progressive_widening_constant: float = 10.0  # More conservative for capacity management
+    progressive_widening_exponent: float = 0.5
+    initial_expansion_children: int = 8  # Reduced for better capacity utilization
     
     # CSR and sparse operations
     csr_max_actions: int = 225  # Minimum for 15x15 Gomoku
     csr_use_sparse_operations: bool = True
     
     # CPU thread configuration
-    cpu_threads_per_worker: int = 1
+    cpu_threads_per_worker: Optional[int] = None  # Will default to all cores minus 1
     
     # Batch and timing configuration
     batch_size: int = 256  # MCTS batch size
@@ -114,6 +136,12 @@ class MCTSConfig:
     # Subtree reuse configuration
     enable_subtree_reuse: bool = True  # Reuse search tree between moves
     subtree_reuse_min_visits: int = 10  # Min visits to preserve a subtree node
+    
+    # Adaptive tree reuse thresholds
+    adaptive_tree_reuse: bool = True  # Enable adaptive threshold based on simulation count
+    tree_reuse_min_child_visits: int = 50  # Minimum visits a child must have to consider reuse
+    tree_reuse_visit_ratio: float = 0.05  # Child must have at least 5% of total simulations
+    tree_reuse_absolute_threshold: int = 200  # Always reuse if child has this many visits
     
     # Debug options
     enable_debug_logging: bool = False
@@ -186,6 +214,10 @@ class MCTSConfig:
             return 100  # Default estimate
     
     def __post_init__(self):
+        # Validate backend parameter
+        if self.backend not in ('gpu', 'cpu', 'hybrid'):
+            raise ValueError(f"backend must be 'gpu', 'cpu', or 'hybrid', got '{self.backend}'")
+            
         # Convert legacy GameType if needed
         if isinstance(self.game_type, LegacyGameType):
             self.game_type = self._LEGACY_GAME_TYPE_MAP[self.game_type]
@@ -193,6 +225,11 @@ class MCTSConfig:
         # Set board size defaults based on game
         if self.board_size is None:
             self.board_size = self._DEFAULT_BOARD_SIZES.get(self.game_type, 15)
+    
+    def to_dict(self) -> Dict:
+        """Convert configuration to dictionary"""
+        from dataclasses import asdict
+        return asdict(self)
 
 
 def create_optimized_config(

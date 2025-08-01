@@ -19,10 +19,13 @@ class MockEvaluator:
     
     def __init__(self, 
                  game_type: str = 'gomoku',
-                 device: str = 'cpu',
+                 device: Union[str, torch.device] = 'cpu',
                  deterministic: bool = False,
                  fixed_value: float = 0.0,
-                 policy_temperature: float = 1.0):
+                 policy_temperature: float = 1.0,
+                 board_size: Optional[int] = None,
+                 batch_size: int = 32,
+                 use_amp: bool = False):
         """
         Initialize mock evaluator
         
@@ -34,22 +37,43 @@ class MockEvaluator:
             policy_temperature: Temperature for policy generation
         """
         self.game_type = game_type
-        self.device = torch.device(device)
+        self.device = torch.device(device) if isinstance(device, str) else device
         self.deterministic = deterministic
         self.fixed_value = fixed_value
         self.policy_temperature = policy_temperature
+        self.batch_size = batch_size
+        self.use_amp = use_amp
+        self._return_torch_tensors = True
         
-        # Action space sizes
-        self.action_spaces = {
-            'gomoku': 225,  # 15x15
-            'chess': 4096,  # 64x64 (from-to)
-            'go': 362,      # 19x19 + pass (default)
-        }
-        
-        self.action_space = self.action_spaces.get(game_type, 225)
-        
-        # Board size for Go/Gomoku
-        self.board_size = None
+        # Handle board size parameter
+        if board_size is not None:
+            self.board_size = board_size
+            # Calculate action space based on board size
+            if game_type == 'go':
+                self.action_space = board_size * board_size + 1  # +1 for pass
+            elif game_type == 'chess':
+                self.action_space = 20480  # 64*64*5 (with promotions)
+            else:  # gomoku and others
+                self.action_space = board_size * board_size
+        else:
+            # Default sizes
+            self.action_spaces = {
+                'gomoku': 225,  # 15x15
+                'chess': 20480,  # 64x64x5 (from-to with promotions)
+                'go': 362,      # 19x19 + pass (default)
+            }
+            
+            self.action_space = self.action_spaces.get(game_type, 225)
+            
+            # Default board sizes
+            if game_type == 'gomoku':
+                self.board_size = 15
+            elif game_type == 'go':
+                self.board_size = 19
+            elif game_type == 'chess':
+                self.board_size = 8
+            else:
+                self.board_size = 15  # default
         
         # Track evaluation count for debugging
         self.eval_count = 0
@@ -72,21 +96,26 @@ class MockEvaluator:
             states: Batch of game states
             
         Returns:
-            values: Value estimates for each state
             policies: Policy distributions for each state
+            values: Value estimates for each state
         """
         # Convert to tensor if needed
         if isinstance(states, np.ndarray):
             states = torch.from_numpy(states).float()
         
         states = states.to(self.device)
+        
+        # Handle single state without batch dimension
+        if states.ndim == 2:  # Single state (height, width)
+            states = states.unsqueeze(0)  # Add batch dimension
+        
         batch_size = states.shape[0]
         
         self.eval_count += batch_size
         
         if self.deterministic:
-            # Return fixed values
-            values = torch.full((batch_size, 1), self.fixed_value, device=self.device)
+            # Return fixed values - shape should be (batch_size,) not (batch_size, 1)
+            values = torch.full((batch_size,), self.fixed_value, device=self.device)
             
             # Center-biased policy for deterministic mode (better for gomoku)
             if self.game_type == 'gomoku' and hasattr(self, 'board_size'):
@@ -96,8 +125,8 @@ class MockEvaluator:
                 policies = torch.ones(batch_size, self.action_space, device=self.device)
                 policies = policies / self.action_space
         else:
-            # Random values between -1 and 1
-            values = torch.rand(batch_size, 1, device=self.device) * 2 - 1
+            # Random values between -1 and 1 - shape should be (batch_size,) not (batch_size, 1)
+            values = torch.rand(batch_size, device=self.device) * 2 - 1
             
             # Center-biased random policies for better MCTS behavior
             if self.game_type == 'gomoku' and hasattr(self, 'board_size'):
@@ -120,48 +149,89 @@ class MockEvaluator:
             for i in range(self.board_size):
                 for j in range(self.board_size):
                     action = i * self.board_size + j
-                    # Distance from center (Manhattan distance)
-                    dist = abs(i - center) + abs(j - center)
-                    # Higher probability for center squares
-                    prob = 1.0 / (1.0 + dist * 0.3)
+                    # Euclidean distance from center for smoother gradient
+                    dist = ((i - center) ** 2 + (j - center) ** 2) ** 0.5
+                    # Use much stronger exponential decay for higher variance
+                    # This creates a sharp peak at center
+                    prob = np.exp(-dist * 0.5)  # Stronger exponential decay
+                    # Add base probability to avoid zeros at edges
+                    prob = prob + 0.01
                     policies[:, action] = prob
             
             if add_noise:
-                # Add some random noise to make it less deterministic
-                noise = torch.randn_like(policies) * 0.1
+                # Add stronger random noise for more variation
+                noise = torch.randn_like(policies) * 0.5  # Increased noise
                 policies = policies + noise
                 policies = torch.relu(policies)  # Ensure non-negative
+                
+                # Add some random peaks to create more variation
+                for b in range(batch_size):
+                    # Add 3-5 random peaks
+                    num_peaks = torch.randint(3, 6, (1,)).item()
+                    for _ in range(num_peaks):
+                        peak_pos = torch.randint(0, self.action_space, (1,)).item()
+                        policies[b, peak_pos] += torch.rand(1).item() * 2.0
             
             # Normalize to valid probability distribution
             policies = policies / (policies.sum(dim=1, keepdim=True) + 1e-8)
             return policies
         else:
-            # Fallback for other games
+            # Fallback for other games - also add variation
             policies = torch.ones(batch_size, self.action_space, device=self.device)
-            return policies / self.action_space
+            if add_noise:
+                noise = torch.randn_like(policies) * 0.3
+                policies = policies + noise
+                policies = torch.relu(policies)
+            return policies / (policies.sum(dim=1, keepdim=True) + 1e-8)
     
-    def evaluate_batch(self, states: List[Union[np.ndarray, torch.Tensor]]) -> Tuple[np.ndarray, np.ndarray]:
+    def evaluate_batch(self, states_or_game_states, state_indices=None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Evaluate a batch of states (numpy interface)
         
         Args:
-            states: List of game state arrays or tensors
+            states_or_game_states: List of game state arrays/tensors OR GameStates object
+            state_indices: Optional tensor of state indices (for GameStates interface)
             
         Returns:
-            values: Array of value estimates
             policies: Array of policy distributions
+            values: Array of value estimates
         """
-        # Stack states, handling both numpy and tensor inputs
-        if isinstance(states[0], torch.Tensor):
-            states_tensor = torch.stack([s.float() for s in states])
+        # Handle hybrid mode interface: evaluator.evaluate_batch(game_states, state_indices)
+        if state_indices is not None:
+            # Extract features from game states using indices
+            if hasattr(states_or_game_states, 'get_features_batch'):
+                features = states_or_game_states.get_features_batch(state_indices)
+                states_tensor = features.float()
+            else:
+                # Fallback: create mock states based on batch size
+                batch_size = len(state_indices) if hasattr(state_indices, '__len__') else state_indices.shape[0]
+                states_tensor = torch.randn(batch_size, 3, self.board_size or 15, self.board_size or 15)
         else:
-            states_tensor = torch.stack([torch.from_numpy(s).float() for s in states])
+            # Original interface: just states
+            states = states_or_game_states
+            
+            # Handle numpy array directly (from get_nn_features_batch)
+            if isinstance(states, np.ndarray):
+                states_tensor = torch.from_numpy(states).float()
+            elif isinstance(states, torch.Tensor):
+                states_tensor = states.float()
+            else:
+                # Stack states, handling both numpy and tensor inputs
+                if isinstance(states[0], torch.Tensor):
+                    states_tensor = torch.stack([s.float() for s in states])
+                else:
+                    states_tensor = torch.stack([torch.from_numpy(s).float() for s in states])
         
         # Evaluate
         policies, values = self.evaluate(states_tensor)
         
-        # Convert back to numpy
-        return policies.cpu().numpy(), values.cpu().numpy()
+        # For hybrid mode (when state_indices is provided), return tensors
+        # For normal mode, return numpy arrays unless _return_torch_tensors is set
+        if state_indices is not None or getattr(self, '_return_torch_tensors', False):
+            return policies, values
+        else:
+            # Convert back to numpy for original interface
+            return policies.cpu().numpy(), values.cpu().numpy()
     
     def __call__(self, states: Union[torch.Tensor, np.ndarray, List[np.ndarray]]) -> Tuple[Union[torch.Tensor, np.ndarray], Union[torch.Tensor, np.ndarray]]:
         """
@@ -296,10 +366,15 @@ class BiasedMockEvaluator(MockEvaluator):
             states = torch.from_numpy(states).float()
         
         states = states.to(self.device)
+        
+        # Handle single state without batch dimension
+        if states.ndim == 2:  # Single state (height, width)
+            states = states.unsqueeze(0)  # Add batch dimension
+        
         batch_size = states.shape[0]
         
-        # Random values
-        values = torch.rand(batch_size, 1, device=self.device) * 2 - 1
+        # Random values - shape should be (batch_size,) not (batch_size, 1)
+        values = torch.rand(batch_size, device=self.device) * 2 - 1
         
         # Biased policies
         bias_mask = self.bias_mask.to(self.device)
@@ -307,7 +382,7 @@ class BiasedMockEvaluator(MockEvaluator):
         logits = logits + bias_mask.unsqueeze(0)
         policies = torch.softmax(logits, dim=1)
         
-        return values, policies
+        return policies, values
 
 
 class SequentialMockEvaluator(MockEvaluator):
@@ -332,10 +407,46 @@ class SequentialMockEvaluator(MockEvaluator):
             values.append(value)
             self.sequence_counter += 1
         
-        values = torch.tensor(values, device=self.device).unsqueeze(1)
+        values = torch.tensor(values, device=self.device)  # No unsqueeze - keep shape (batch_size,)
         
         # Uniform policies
         policies = torch.ones(batch_size, self.action_space, device=self.device)
         policies = policies / self.action_space
         
-        return values, policies
+        return policies, values  # Fixed: return (policies, values) not (values, policies)
+
+
+def create_mock_model(board_size: int = 9, device: str = 'cpu') -> torch.nn.Module:
+    """Create a mock PyTorch model for testing
+    
+    Args:
+        board_size: Board size for the game
+        device: Device to place model on
+        
+    Returns:
+        A mock torch.nn.Module that can be used as a model
+    """
+    class MockModel(torch.nn.Module):
+        def __init__(self, board_size: int, device: str):
+            super().__init__()
+            self.board_size = board_size
+            self.device = torch.device(device)
+            self.action_space = board_size * board_size
+            
+            # Dummy layers
+            self.conv1 = torch.nn.Conv2d(4, 32, 3, padding=1)
+            self.fc_value = torch.nn.Linear(32 * board_size * board_size, 1)
+            self.fc_policy = torch.nn.Linear(32 * board_size * board_size, self.action_space)
+            
+        def forward(self, x):
+            # Simple forward pass
+            x = torch.relu(self.conv1(x))
+            x_flat = x.view(x.size(0), -1)
+            
+            value = torch.tanh(self.fc_value(x_flat))
+            policy = torch.softmax(self.fc_policy(x_flat), dim=1)
+            
+            return policy, value
+    
+    model = MockModel(board_size, device)
+    return model.to(device)

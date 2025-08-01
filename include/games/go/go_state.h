@@ -86,6 +86,7 @@ public:
     std::vector<std::vector<std::vector<float>>> getEnhancedTensorRepresentation() const override;
     uint64_t getHash() const override;
     std::unique_ptr<core::IGameState> clone() const override;
+    std::vector<std::unique_ptr<core::IGameState>> batchClone(int count) const override;
     void copyFrom(const core::IGameState& source) override;
     std::string actionToString(int action) const override;
     std::optional<int> stringToAction(const std::string& moveStr) const override;
@@ -93,6 +94,7 @@ public:
     bool equals(const core::IGameState& other) const override;
     std::vector<int> getMoveHistory() const override;
     bool validate() const override;
+    std::vector<std::vector<uint64_t>> getBitboards() const override;
     
     // Go-specific methods
     /**

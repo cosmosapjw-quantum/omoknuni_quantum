@@ -75,6 +75,7 @@ public:
     std::vector<std::vector<std::vector<float>>> getBasicTensorRepresentation() const;
     uint64_t getHash() const override;
     std::unique_ptr<core::IGameState> clone() const override;
+    std::vector<std::unique_ptr<core::IGameState>> batchClone(int count) const override;
     void copyFrom(const core::IGameState& source) override;
     std::string actionToString(int action) const override;
     std::optional<int> stringToAction(const std::string& moveStr) const override;
@@ -82,6 +83,7 @@ public:
     bool equals(const core::IGameState& other) const override;
     std::vector<int> getMoveHistory() const override;
     bool validate() const override; // Basic validation of stone counts vs player turn
+    std::vector<std::vector<uint64_t>> getBitboards() const override;
 
     // --- Testing Specific Methods (use with caution) ---
     /** @brief Sets a stone for testing purposes. Does not check game rules. Invalidates caches. */

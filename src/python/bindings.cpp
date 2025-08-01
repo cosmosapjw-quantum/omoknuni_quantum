@@ -121,6 +121,7 @@ PYBIND11_MODULE(alphazero_py, m) {
         .def("to_string", &core::IGameState::toString)
         .def("get_move_history", &core::IGameState::getMoveHistory)
         .def("clone", &core::IGameState::clone)
+        .def("batch_clone", &core::IGameState::batchClone)
         .def("copy_from", &core::IGameState::copyFrom);
     
     // Game factory

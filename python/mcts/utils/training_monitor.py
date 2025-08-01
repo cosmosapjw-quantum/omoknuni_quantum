@@ -204,11 +204,11 @@ class TrainingMonitor:
                 warnings.append(f"🛑 EARLY STOPPING TRIGGERED: {stop_reason}")
                 return False, warnings
         
-        # Log current metrics
-        logger.info(f"Training metrics - Entropy: {metrics.policy_entropy:.3f}, "
-                   f"Value Var: {metrics.value_variance:.3f}, "
-                   f"Avg Length: {metrics.avg_game_length:.1f}, "
-                   f"Win Balance: {metrics.win_rate_balance:.2f}")
+        # Log current metrics (only in debug mode to avoid duplication)
+        logger.debug(f"Training metrics - Entropy: {metrics.policy_entropy:.3f}, "
+                    f"Value Var: {metrics.value_variance:.3f}, "
+                    f"Avg Length: {metrics.avg_game_length:.1f}, "
+                    f"Win Balance: {metrics.win_rate_balance:.2f}")
         
         return True, warnings
     

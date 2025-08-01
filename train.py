@@ -131,6 +131,7 @@ def main():
     print(f"Starting training for {config.game.game_type}")
     print(f"Experiment: {config.experiment_name}")
     print(f"Mode: Single-GPU")
+    print(f"Backend: {config.mcts.backend}")
     print(f"Games per iteration: {config.training.num_games_per_iteration}")
     print(f"Number of iterations: {config.num_iterations}")
     print(f"Device: {config.mcts.device}")

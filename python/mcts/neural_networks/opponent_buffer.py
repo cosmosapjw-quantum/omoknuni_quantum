@@ -102,7 +102,7 @@ class OpponentBuffer:
             # Keep diverse opponents - not just the strongest
             self._prune_buffer()
         
-        logger.info(f"Added opponent from iteration {iteration} with ELO {elo_rating:.0f} to buffer")
+        logger.debug(f"Added opponent from iteration {iteration} with ELO {elo_rating:.0f} to buffer")
         
     def _prune_buffer(self):
         """Prune buffer to maintain diversity"""
@@ -231,7 +231,7 @@ class OpponentBuffer:
             device=self.device
         )
         
-        logger.info(f"Loaded opponent from iteration {entry.iteration} with ELO {entry.elo_rating:.0f}")
+        logger.debug(f"Loaded opponent from iteration {entry.iteration} with ELO {entry.elo_rating:.0f}")
         
         return evaluator
         

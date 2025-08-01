@@ -1,0 +1,72 @@
+# Test configuration for CPU backend training
+experiment_name: "cpu_backend_test"
+num_iterations: 3
+
+mcts:
+  num_simulations: 1000
+  backend: "cpu"  # Use CPU backend
+  device: "cpu"
+  c_puct: 1.414
+  temperature: 1.0
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  wave_size: 64
+  cpu_wave_size: 128
+  num_threads: 4
+  max_tree_nodes: 200000
+  memory_pool_size_mb: 512
+  use_tensorrt: false
+  use_cuda_graphs: false
+  use_mixed_precision: false
+
+game:
+  game_type: "gomoku"
+  board_size: 15
+
+network:
+  model_type: "resnet"
+  num_res_blocks: 10
+  num_filters: 128  # Smaller for CPU
+  fc_hidden_size: 128
+  input_representation: "basic"
+  
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_games_per_iteration: 10  # Small for testing
+  epochs_per_iteration: 10
+  validation_interval: 5
+  checkpoint_interval: 1
+  max_buffer_size: 10000
+  sample_buffer_size: 1000
+  device: "cpu"
+  optimizer: "adam"
+  scheduler: "none"
+  
+self_play:
+  num_workers: 2
+  mcts_simulations: 100  # Small for testing
+  c_puct: 1.414
+  temperature: 1.0
+  temperature_threshold: 15
+  device: "cpu"
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  enable_progress_bar: true
+
+arena:
+  num_games: 10
+  mcts_simulations: 100
+  temperature: 0.1
+  device: "cpu"
+  save_game_records: false
+  enable_tree_reuse: false
+  backend: "cpu"
+
+logging:
+  log_level: "INFO"
+  enable_console: true
+  enable_file: true
+  tensorboard: true
+  log_interval: 10

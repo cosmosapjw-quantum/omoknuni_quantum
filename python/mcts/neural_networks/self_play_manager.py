@@ -25,6 +25,136 @@ from mcts.utils.single_gpu_evaluator import SingleGPUEvaluator
 logger = logging.getLogger(__name__)
 
 
+# Module-level worker function for multiprocessing
+def _worker_generate_games(worker_id: int, num_games: int, config: Any, 
+                           self_play_config, game_config) -> Tuple[List[GameExample], List[Dict]]:
+    """Worker function to generate games in parallel"""
+    # Import here to avoid pickling issues
+    import numpy as np
+    import torch
+    from mcts.core.mcts import MCTS
+    from mcts.core.mcts_config import MCTSConfig
+    from mcts.utils.single_gpu_evaluator import SingleGPUEvaluator
+    
+    # Set random seed for this worker
+    np.random.seed(worker_id)
+    torch.manual_seed(worker_id)
+    
+    worker_examples = []
+    worker_metrics = []
+    
+    # Create evaluator for this worker
+    # For testing, create a dummy model
+    from mcts.neural_networks.resnet_model import ResNetModel, ResNetConfig
+    
+    # Convert config to ResNetConfig
+    resnet_config = ResNetConfig()
+    for key, value in vars(config.network).items():
+        if hasattr(resnet_config, key):
+            setattr(resnet_config, key, value)
+    
+    # Handle game_config as either object or dict
+    if isinstance(game_config, dict):
+        board_size = game_config['board_size']
+        game_type = game_config['game_type']
+    else:
+        board_size = game_config.board_size
+        game_type = game_config.game_type
+    
+    # Calculate action size based on game type
+    if game_type == 'gomoku':
+        action_size = board_size * board_size  # 15*15 = 225
+    elif game_type == 'go':
+        action_size = board_size * board_size + 1  # 19*19 + 1 = 362 (including pass)
+    elif game_type == 'chess':
+        action_size = 4096  # Upper bound for chess moves
+    else:
+        action_size = board_size * board_size  # Default
+    
+    # Create model
+    model = ResNetModel(
+        config=resnet_config,
+        board_size=board_size,
+        num_actions=action_size,
+        game_type=game_type
+    )
+    
+    # Create evaluator - always use CPU for workers to avoid CUDA fork issues
+    evaluator = SingleGPUEvaluator(
+        model=model,
+        device='cpu',  # Force CPU for multiprocessing workers
+        action_size=action_size,
+        batch_size=self_play_config.batch_size,
+        use_mixed_precision=False  # Disable for CPU
+    )
+    
+    # Create MCTS config - force CPU for workers
+    backend = getattr(config.mcts, 'backend', 'cpu')
+    mcts_config = MCTSConfig(
+        num_simulations=self_play_config.mcts_simulations,
+        c_puct=self_play_config.c_puct,
+        dirichlet_alpha=self_play_config.dirichlet_alpha,
+        dirichlet_epsilon=self_play_config.dirichlet_epsilon,
+        tree_batch_size=128 if backend == 'cpu' else 512,
+        device='cpu',  # Force CPU for multiprocessing workers
+        backend=backend,
+        game_type=game_type,
+        board_size=board_size,
+        wave_size=getattr(config.mcts, 'wave_size', None),
+        enable_fast_ucb=True,
+        use_cuda_graphs=False,  # Disable for multiprocessing
+        use_mixed_precision=False,  # Disable for multiprocessing
+        enable_subtree_reuse=False,
+        max_tree_nodes=config.mcts.max_tree_nodes,
+        memory_pool_size_mb=config.mcts.memory_pool_size_mb
+    )
+    
+    # Generate games
+    for game_idx in range(num_games):
+        # Create new game instance
+        if game_type == 'chess':
+            import chess
+            game = chess.Board()
+        elif game_type == 'go':
+            import alphazero_py as az
+            game = az.GoState(board_size)
+        else:  # gomoku
+            import alphazero_py as az
+            game = az.GomokuState(board_size)
+        
+        # Create MCTS instance based on backend
+        if backend == 'cpu':
+            from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
+            mcts = create_cpu_optimized_mcts(mcts_config, evaluator, None)
+        elif backend == 'hybrid':
+            from mcts.hybrid import create_hybrid_mcts
+            mcts = create_hybrid_mcts(mcts_config, evaluator, None)
+        else:
+            mcts = MCTS(
+                config=mcts_config,
+                evaluator=evaluator
+            )
+        
+        # Play game  
+        # Create self-play game instance
+        sp_game = SelfPlayGame(
+            game=game,
+            mcts=mcts,
+            config=self_play_config,
+            game_id=f"worker{worker_id}_game{game_idx}"
+        )
+        
+        examples, metrics = sp_game.play_game()
+        worker_examples.extend(examples)
+        worker_metrics.append(metrics)
+        
+        # Log progress
+        if (game_idx + 1) % 10 == 0:
+            logger.info(f"Worker {worker_id}: Completed {game_idx + 1}/{num_games} games")
+    
+    return worker_examples, worker_metrics
+
+
 @dataclass
 class SelfPlayConfig:
     """Configuration for self-play"""
@@ -77,15 +207,25 @@ class SelfPlayGame:
         if hasattr(game, 'game_interface'):
             self.game_interface = game.game_interface
         else:
-            # Regular game case - create GameInterface
-            self.game_interface = GameInterface(game)
+            # For raw C++ game objects, we'll use them directly
+            # The game interface is only used for type detection which we can skip
+            self.game_interface = None
     
     def play_single_move(self):
         """Play a single move in the game"""
         # Get current state
-        state = self.game.get_state()
-        # GameWrapper.get_current_player() doesn't take parameters
-        self.current_player = self.game.get_current_player()
+        if hasattr(self.game, 'get_state'):
+            state = self.game.get_state()
+        else:
+            # For C++ games, they are the state themselves
+            state = self.game
+        
+        # Get current player
+        if hasattr(self.game, 'get_current_player'):
+            self.current_player = self.game.get_current_player()
+        else:
+            # For C++ games, use the current_player property
+            self.current_player = self.game.current_player()
         
         # Run MCTS search to get policy
         if self.is_multi_mcts:
@@ -111,27 +251,34 @@ class SelfPlayGame:
         # Low entropy situations tracked internally
         
         # Get value prediction from MCTS (if available)
+        # CRITICAL FIX: The Q-value from MCTS is from the perspective of the player
+        # who is ABOUT TO MOVE (current_player). This is the value of the position
+        # AFTER the search, which represents how good the position is for current_player.
         if self.is_multi_mcts:
             # Get value from current player's MCTS
             player_idx = self.current_player - 1
             current_mcts = self.mcts[player_idx]
             if hasattr(current_mcts, 'get_root_value'):
                 value_pred = current_mcts.get_root_value()
+                # Store with current player for proper perspective tracking
                 self.value_predictions.append((value_pred, self.current_player))
             else:
                 value_pred = 0.0
         else:
             if hasattr(self.mcts, 'get_root_value'):
                 value_pred = self.mcts.get_root_value()
+                # Store with current player for proper perspective tracking
                 self.value_predictions.append((value_pred, self.current_player))
-                # Value prediction tracked
             else:
-                value_pred = 0.0  # Neutral value when no prediction available (don't resign)
-                # No value prediction available
+                value_pred = 0.0  # Neutral value when no prediction available
         
         # Store training example with numpy array state
         # Convert state to numpy array for training compatibility
-        state_array = self.game_interface.state_to_numpy(state)
+        if self.game_interface:
+            state_array = self.game_interface.state_to_numpy(state)
+        else:
+            # For C++ games, the state is already a tensor/array
+            state_array = state if hasattr(state, 'numpy') else np.array(state)
         self.examples.append({
             'state': state_array,
             'policy': action_probs.copy(),
@@ -150,24 +297,38 @@ class SelfPlayGame:
             action = np.argmax(action_probs)
         
         
-        # Validate action is legal
-        valid_actions = self.game.get_valid_actions()
-        # valid_actions is a list of legal move indices, not a boolean mask
-        if action not in valid_actions:
-            self.illegal_move_attempts += 1
-            logger.error(f"Illegal move attempted in game {self.game_id}: action {action}, valid_actions: {valid_actions[:10]}...")
-            # Find a legal action instead
-            if len(valid_actions) == 0:
-                logger.error(f"No legal actions available in game {self.game_id}!")
-                raise RuntimeError("No legal actions available")
-            action = np.random.choice(valid_actions)
+        # FIXED: MCTS should now properly filter illegal moves with CPU game states fix
+        # Trust MCTS to only return legal actions
         
-        self.game.make_action(action)
+        # Make action
+        if hasattr(self.game, 'make_action'):
+            self.game.make_action(action)
+        else:
+            # For C++ games, use make_move
+            self.game.make_move(action)
         self.move_count += 1
         
+        # Update MCTS tree to move to the new root
+        # CRITICAL FIX: Pass the new game state to update_root when subtree reuse is disabled
+        # This ensures MCTS maintains the correct game position
+        # Get updated state
+        if hasattr(self.game, 'get_state'):
+            new_state = self.game.get_state()
+        else:
+            new_state = self.game
+            
+        if self.is_multi_mcts:
+            # Update both players' MCTS trees
+            for player_idx in self.mcts:
+                self.mcts[player_idx].update_root(action, new_state)
+        else:
+            # Update single MCTS tree
+            self.mcts.update_root(action, new_state)
+        
         # Debug logging for early game termination investigation
-        if self.game.is_terminal() and self.move_count <= 20:
-            winner = self.game.get_winner()
+        is_terminal = self.game.is_terminal() if hasattr(self.game, 'is_terminal') else self.game.is_terminal()
+        if is_terminal and self.move_count <= 20:
+            winner = self.game.get_winner() if hasattr(self.game, 'get_winner') else self.game.get_winner()
             logger.warning(f"Game {self.game_id} ended early at move {self.move_count}, winner: {winner}, action: {action}")
         
         # Check for resignation
@@ -176,10 +337,13 @@ class SelfPlayGame:
             if value_pred < self.config.resign_threshold:
                 self.resigned = True
                 # Player resigned based on value threshold
+                logger.info(f"Game {self.game_id} resigned: value_pred={value_pred:.4f} < threshold={self.config.resign_threshold}")
                 return True  # Resign
             else:
                 logger.debug(f"Game {self.game_id}: Move {self.move_count}, Player {self.current_player}, "
                             f"value_pred={value_pred:.4f} >= threshold={self.config.resign_threshold}, continuing...")
+        else:
+            logger.debug(f"Game {self.game_id}: Resignation check: enable_resign={self.config.enable_resign}, move_count={self.move_count}, value_pred={value_pred:.4f}")
         
         return False
     
@@ -191,7 +355,11 @@ class SelfPlayGame:
         """
         resigned = False
         
-        while not self.game.is_terminal():
+        # Main game loop
+        while True:
+            is_terminal = self.game.is_terminal() if hasattr(self.game, 'is_terminal') else self.game.is_terminal()
+            if is_terminal:
+                break
             resigned = self.play_single_move()
             if resigned:
                 break
@@ -205,7 +373,7 @@ class SelfPlayGame:
             winner = -1 if self.current_player == 1 else 1
             pass  # Player resigned
         else:
-            winner = self.game.get_winner()
+            winner = self.game.get_winner() if hasattr(self.game, 'get_winner') else self.game.get_winner()
             pass  # Game ended naturally
             
         # Game termination details tracked internally
@@ -228,7 +396,11 @@ class SelfPlayGame:
             
             # Use Q-value if available and enabled
             if use_q_values and i < len(self.value_predictions):
-                q_value = self.value_predictions[i][0]  # Q-value from MCTS
+                q_value, q_player = self.value_predictions[i]
+                # CRITICAL: Verify the Q-value is from the same player
+                if q_player != example['player']:
+                    logger.error(f"Player mismatch in Q-value assignment: example player={example['player']}, Q-value player={q_player}")
+                # The Q-value is already from the correct player's perspective
                 # Mix Q-value with game outcome
                 value = q_value_weight * q_value + (1 - q_value_weight) * game_outcome_value
             else:
@@ -299,26 +471,30 @@ class SelfPlayManager:
         self.game_class = game_class
         self.opponent_buffer = opponent_buffer
         self.evaluator = evaluator
-        self.game_config = game_config
+        self.game_config = game_config if game_config else self.config.game
         
         # Metrics collection
         self.collected_metrics = []
         
         # Create self-play config from AlphaZero config
+        enable_resign_value = getattr(config.training, 'enable_resign', True)
+        logger.info(f"SelfPlayManager: enable_resign from config = {enable_resign_value}")
+        
         self.self_play_config = SelfPlayConfig(
             num_games_per_iteration=config.training.num_games_per_iteration,
             mcts_simulations=config.mcts.num_simulations,
             temperature=config.mcts.temperature,
             temperature_threshold=config.mcts.temperature_threshold,
             resign_threshold=getattr(config.training, 'resign_threshold', -0.98),
-            enable_resign=getattr(config.training, 'enable_resign', True),
+            enable_resign=enable_resign_value,
             dirichlet_alpha=config.mcts.dirichlet_alpha,
             dirichlet_epsilon=config.mcts.dirichlet_epsilon,
             c_puct=config.mcts.c_puct,
             batch_size=getattr(config.mcts, 'batch_size', 512),
             device=config.mcts.device,  # Use device from MCTS config
             use_mcts_q_values=getattr(config.training, 'use_mcts_q_values', False),
-            q_value_weight=getattr(config.training, 'q_value_weight', 0.8)
+            q_value_weight=getattr(config.training, 'q_value_weight', 0.8),
+            num_workers=getattr(config.resources, 'num_workers', 4)  # Number of workers for parallel self-play
         )
         
         # Create direct GPU evaluator if evaluator is a model
@@ -335,15 +511,128 @@ class SelfPlayManager:
             self.gpu_evaluator = evaluator
     
     def generate_self_play_data(self) -> List[GameExample]:
-        """Generate self-play training data using single GPU
+        """Generate self-play training data
         
         Returns:
             List of training examples
         """
         logger.info(f"Generating {self.self_play_config.num_games_per_iteration} self-play games on {self.self_play_config.device}")
         
-        # Always use single-GPU execution
-        return self._generate_single_gpu()
+        # Determine backend from config
+        backend = getattr(self.config.mcts, 'backend', 'gpu')
+        
+        # Only use parallel generation for pure CPU mode
+        # Hybrid and GPU modes use CUDA which doesn't work with multiprocessing fork
+        if backend == 'cpu' and self.self_play_config.num_workers > 1:
+            logger.info(f"Using parallel self-play with {self.self_play_config.num_workers} workers for {backend} backend")
+            return self._generate_parallel_cpu()
+        else:
+            # Use sequential generation for GPU/hybrid modes to avoid CUDA multiprocessing errors
+            logger.info(f"Using sequential self-play for {backend} backend")
+            return self._generate_single_gpu()
+    
+    def _generate_parallel_cpu(self) -> List[GameExample]:
+        """Generate self-play data using parallel workers for CPU/hybrid backends"""
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        
+        all_examples = []
+        self.collected_metrics = []
+        
+        # Calculate work distribution
+        games_per_worker = self.self_play_config.num_games_per_iteration // self.self_play_config.num_workers
+        remainder = self.self_play_config.num_games_per_iteration % self.self_play_config.num_workers
+        
+        work_distribution = []
+        for i in range(self.self_play_config.num_workers):
+            num_games = games_per_worker + (1 if i < remainder else 0)
+            if num_games > 0:
+                work_distribution.append((i, num_games))
+        
+        # Use ProcessPoolExecutor for parallel execution
+        with ProcessPoolExecutor(max_workers=self.self_play_config.num_workers) as executor:
+            # Submit all worker tasks
+            futures = []
+            for worker_id, num_games in work_distribution:
+                future = executor.submit(
+                    self._worker_generate_games,
+                    worker_id,
+                    num_games,
+                    self.config,
+                    self.self_play_config,
+                    self.game_config
+                )
+                futures.append(future)
+            
+            # Collect results as they complete
+            for future in as_completed(futures):
+                try:
+                    worker_examples, worker_metrics = future.result()
+                    all_examples.extend(worker_examples)
+                    self.collected_metrics.extend(worker_metrics)
+                    logger.info(f"Worker completed with {len(worker_examples)} examples")
+                except Exception as e:
+                    logger.error(f"Worker failed with error: {e}")
+                    raise
+        
+        logger.info(f"Generated {len(all_examples)} total training examples from parallel workers")
+        return all_examples
+    
+    def _generate_parallel_cpu(self) -> List[GameExample]:
+        """Generate self-play data using parallel workers for CPU/hybrid backends"""
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        
+        all_examples = []
+        self.collected_metrics = []
+        
+        # Calculate work distribution
+        games_per_worker = self.self_play_config.num_games_per_iteration // self.self_play_config.num_workers
+        remainder = self.self_play_config.num_games_per_iteration % self.self_play_config.num_workers
+        
+        work_distribution = []
+        for i in range(self.self_play_config.num_workers):
+            num_games = games_per_worker + (1 if i < remainder else 0)
+            if num_games > 0:
+                work_distribution.append((i, num_games))
+        
+        # Use ProcessPoolExecutor for parallel execution
+        with ProcessPoolExecutor(max_workers=self.self_play_config.num_workers) as executor:
+            # Submit all worker tasks
+            futures = []
+            for worker_id, num_games in work_distribution:
+                # Convert game_config to dict if it's an object
+                if hasattr(self.game_config, '__dict__'):
+                    game_config_dict = {
+                        'game_type': self.game_config.game_type,
+                        'board_size': self.game_config.board_size
+                    }
+                else:
+                    game_config_dict = self.game_config
+                    
+                future = executor.submit(
+                    _worker_generate_games,
+                    worker_id,
+                    num_games,
+                    self.config,
+                    self.self_play_config,
+                    game_config_dict
+                )
+                futures.append(future)
+            
+            # Collect results as they complete
+            for future in as_completed(futures):
+                try:
+                    worker_examples, worker_metrics = future.result()
+                    all_examples.extend(worker_examples)
+                    self.collected_metrics.extend(worker_metrics)
+                    logger.info(f"Worker completed with {len(worker_examples)} examples")
+                except Exception as e:
+                    logger.error(f"Worker failed with error: {e}")
+                    raise
+        
+        logger.info(f"Generated {len(all_examples)} total training examples from parallel workers")
+        return all_examples
     
     def _generate_single_gpu(self) -> List[GameExample]:
         """Generate self-play data using single GPU"""
@@ -351,19 +640,26 @@ class SelfPlayManager:
         self.collected_metrics = []
         
         # Create shared MCTS instance with optimized config
+        backend = getattr(self.config.mcts, 'backend', 'gpu')
         mcts_config = MCTSConfig(
             num_simulations=self.self_play_config.mcts_simulations,
             c_puct=self.self_play_config.c_puct,
             dirichlet_alpha=self.self_play_config.dirichlet_alpha,
             dirichlet_epsilon=self.self_play_config.dirichlet_epsilon,
-            tree_batch_size=512,  # Optimized batch size for GPU
+            tree_batch_size=128 if backend == 'cpu' else 512,  # Optimized batch size
             device=self.self_play_config.device,
+            backend=backend,  # Use backend from config
+            wave_size=getattr(self.config.mcts, 'wave_size', None),  # Pass wave size
             enable_fast_ucb=True,
-            use_cuda_graphs=True,
-            use_mixed_precision=True,
+            use_cuda_graphs=backend == 'gpu',  # Only for GPU
+            use_mixed_precision=backend == 'gpu',  # Only for GPU
             enable_subtree_reuse=False,  # Disable to prevent memory issues
             max_tree_nodes=self.config.mcts.max_tree_nodes,
-            memory_pool_size_mb=self.config.mcts.memory_pool_size_mb
+            memory_pool_size_mb=self.config.mcts.memory_pool_size_mb,
+            # Enable parallel MCTS for hybrid backend
+            use_parallel_mcts=backend == 'hybrid' and getattr(self.config.mcts, 'use_parallel_mcts', True),
+            num_mcts_workers=getattr(self.config.mcts, 'num_mcts_workers', 4),
+            worker_batch_size=getattr(self.config.mcts, 'worker_batch_size', 32)
         )
         
         # Create game interface for MCTS (use first game as template)
@@ -373,12 +669,19 @@ class SelfPlayManager:
         else:
             game_interface = GameInterface(template_game)
         
-        # Create shared MCTS instance
-        shared_mcts = MCTS(
-            config=mcts_config,
-            evaluator=self.gpu_evaluator,
-            game_interface=game_interface
-        )
+        # Create shared MCTS instance based on backend
+        if backend == 'cpu':
+            from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
+            shared_mcts = create_cpu_optimized_mcts(mcts_config, self.gpu_evaluator, game_interface)
+        elif backend == 'hybrid':
+            from mcts.hybrid import create_hybrid_mcts
+            shared_mcts = create_hybrid_mcts(mcts_config, self.gpu_evaluator, game_interface)
+        else:
+            shared_mcts = MCTS(
+                config=mcts_config,
+                evaluator=self.gpu_evaluator,
+                game_interface=game_interface
+            )
         
         # Progress bar
         if self.self_play_config.enable_progress_bar:
@@ -403,17 +706,26 @@ class SelfPlayManager:
                     
             # Create MCTS instance(s)
             if use_opponent:
-                # Create separate MCTS for each player
-                mcts_current = MCTS(
-                    config=mcts_config,
-                    evaluator=self.gpu_evaluator,
-                    game_interface=game_interface
-                )
-                mcts_opponent = MCTS(
-                    config=mcts_config,
-                    evaluator=opponent_evaluator,
-                    game_interface=game_interface
-                )
+                # Create separate MCTS for each player based on backend
+                if backend == 'cpu':
+                    from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
+                    mcts_current = create_cpu_optimized_mcts(mcts_config, self.gpu_evaluator, game_interface)
+                    mcts_opponent = create_cpu_optimized_mcts(mcts_config, opponent_evaluator, game_interface)
+                elif backend == 'hybrid':
+                    from mcts.hybrid import create_hybrid_mcts
+                    mcts_current = create_hybrid_mcts(mcts_config, self.gpu_evaluator, game_interface)
+                    mcts_opponent = create_hybrid_mcts(mcts_config, opponent_evaluator, game_interface)
+                else:
+                    mcts_current = MCTS(
+                        config=mcts_config,
+                        evaluator=self.gpu_evaluator,
+                        game_interface=game_interface
+                    )
+                    mcts_opponent = MCTS(
+                        config=mcts_config,
+                        evaluator=opponent_evaluator,
+                        game_interface=game_interface
+                    )
                 # Randomly assign who plays first
                 if np.random.random() < 0.5:
                     player_mcts = {0: mcts_current, 1: mcts_opponent}

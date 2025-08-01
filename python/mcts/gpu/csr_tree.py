@@ -430,6 +430,9 @@ class CSRTree:
             # Need to resize children array
             self._resize_children_array(max_idx + 1)
         
+        # Ensure node_indices is on the same device as children
+        if hasattr(node_indices, 'device') and node_indices.device != self.children.device:
+            node_indices = node_indices.to(self.children.device)
         batch_children = self.children[node_indices]
         
         if max_children is not None and max_children < batch_children.shape[1]:
@@ -622,7 +625,7 @@ class CSRTree:
     # Tree operations
     
     def reset(self):
-        """Reset tree to initial state with only root node"""
+        """Reset tree to initial state (empty)"""
         # Reset components
         self.node_data.reset()
         self.csr_storage.reset()
@@ -630,6 +633,16 @@ class CSRTree:
         # Reset tree state
         self.num_nodes = 0
         self.num_edges = 0
+        
+        # CRITICAL: Also reset the node count in NodeDataManager
+        # This is needed because add_root checks node_data.num_nodes, not self.num_nodes
+        if hasattr(self.node_data, 'num_nodes'):
+            self.node_data.num_nodes = 0
+            
+        # Debug: Verify the reset worked
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"CSRTree.reset() completed: self.num_nodes={self.num_nodes}, node_data.num_nodes={getattr(self.node_data, 'num_nodes', 'N/A')}")
         
         # Clear children table completely to avoid stale data
         self.children.fill_(-1)
@@ -723,6 +736,52 @@ class CSRTree:
             'edge_utilization': self.csr_storage.get_edge_utilization(),
             'batch_enabled': self.config.enable_batched_ops
         }
+    
+    def get_node_count(self) -> int:
+        """Get total number of nodes in the tree"""
+        return self.num_nodes
+        
+    def prefetch_node_data(self, node_indices: torch.Tensor):
+        """Prefetch node data for improved memory access patterns"""
+        if self.node_data and hasattr(self.node_data, 'prefetch_node_data'):
+            self.node_data.prefetch_node_data(node_indices)
+    
+    def prefetch_children(self, node_indices: torch.Tensor):
+        """Prefetch children data for given nodes"""
+        if self.csr_storage and hasattr(self.csr_storage, 'prefetch_node_data'):
+            self.csr_storage.prefetch_node_data(node_indices)
+    
+    def prefetch_path(self, path_nodes: List[int]):
+        """Prefetch data along a traversal path for optimal memory access"""
+        if len(path_nodes) == 0:
+            return
+            
+        # Convert to tensor for efficient operations
+        node_tensor = torch.tensor(path_nodes, device=self.device, dtype=torch.int32)
+        
+        # Prefetch node statistics
+        self.prefetch_node_data(node_tensor)
+        
+        # Prefetch children data
+        self.prefetch_children(node_tensor)
+        
+        # Additional prefetching for next level (if we have children info)
+        next_level_nodes = []
+        for node_idx in path_nodes:
+            try:
+                children, _, _ = self.get_children(node_idx)
+                if children.numel() > 0:
+                    # Add first few children to prefetch list
+                    valid_children = children[children >= 0]
+                    if len(valid_children) > 0:
+                        next_level_nodes.extend(valid_children[:3].tolist())  # Prefetch 3 children max
+            except:
+                continue  # Skip if node has issues
+        
+        # Prefetch next level if we found any
+        if next_level_nodes:
+            next_level_tensor = torch.tensor(next_level_nodes, device=self.device, dtype=torch.int32)
+            self.prefetch_node_data(next_level_tensor)
         
     # Additional methods for full compatibility
     

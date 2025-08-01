@@ -183,6 +183,26 @@ public:
     virtual std::unique_ptr<IGameState> clone() const = 0;
     
     /**
+     * @brief Batch clone the current state multiple times
+     * 
+     * Creates multiple deep copies of the current game state efficiently.
+     * This is optimized for cloning the same state multiple times,
+     * sharing setup costs and potentially using vectorized operations.
+     * 
+     * @param count Number of clones to create
+     * @return Vector of unique pointers to new copies
+     */
+    virtual std::vector<std::unique_ptr<IGameState>> batchClone(int count) const {
+        // Default implementation - derived classes should override for better performance
+        std::vector<std::unique_ptr<IGameState>> clones;
+        clones.reserve(count);
+        for (int i = 0; i < count; ++i) {
+            clones.push_back(clone());
+        }
+        return clones;
+    }
+    
+    /**
      * @brief Copy the state from another game state instance
      * 
      * Copies all relevant fields from the source state to this state.
@@ -265,6 +285,17 @@ public:
         return sizeof(*this) +
                getMoveHistory().capacity() * sizeof(int);
     }
+    
+    /**
+     * @brief Get bitboard representation of the game state
+     * 
+     * Returns the internal bitboard representation for efficient operations.
+     * Each player's pieces are represented as a vector of uint64_t words.
+     * 
+     * @return Vector of bitboards for each player. Each inner vector contains uint64_t words.
+     *         For 2-player games: [player1_bitboards, player2_bitboards]
+     */
+    virtual std::vector<std::vector<uint64_t>> getBitboards() const = 0;
 
     /**
      * @brief Get the game type

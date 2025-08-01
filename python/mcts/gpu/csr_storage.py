@@ -19,6 +19,12 @@ class CSRStorageConfig:
     dtype_values: torch.dtype = torch.float32
     initial_capacity_factor: float = 0.1
     growth_factor: float = 1.5
+    
+    # Memory coalescing optimizations for 3000+ sims/sec target
+    enable_coalesced_layout: bool = True
+    memory_layout: str = 'blocked'  # 'blocked', 'interleaved', 'standard'
+    block_size: int = 128  # Block size for coalesced access (multiple of warp size)
+    prefetch_distance: int = 2  # Number of blocks to prefetch ahead
 
 
 class CSRStorage:
@@ -39,14 +45,21 @@ class CSRStorage:
         self.config = config
         self.device = torch.device(config.device if torch.cuda.is_available() else 'cpu')
         
-        # Initialize storage
-        self._initialize_storage(initial_nodes)
+        # Initialize storage with coalescing optimization
+        if config.enable_coalesced_layout:
+            self._initialize_coalesced_storage(initial_nodes)
+        else:
+            self._initialize_storage(initial_nodes)
         
         # Track edge count
         self.num_edges = 0
         
         # Flag for deferred row pointer updates
         self._needs_row_ptr_update = False
+        
+        # Memory layout tracking
+        self.memory_layout = config.memory_layout
+        self.coalesced_layout = config.enable_coalesced_layout
         
     def _initialize_storage(self, initial_nodes: int):
         """Initialize CSR storage arrays"""
@@ -76,6 +89,77 @@ class CSRStorage:
         
         # Current capacity
         self.edge_capacity = initial_edges
+        
+    def _initialize_coalesced_storage(self, initial_nodes: int):
+        """Initialize CSR storage with memory coalescing optimizations"""
+        # Determine initial edge capacity
+        if self.config.max_edges > 0:
+            initial_edges = int(self.config.max_edges * self.config.initial_capacity_factor)
+        else:
+            initial_edges = 50000
+        
+        # Align edge capacity to block boundaries for coalescing
+        block_size = self.config.block_size
+        initial_edges = ((initial_edges + block_size - 1) // block_size) * block_size
+        
+        # Initialize standard CSR arrays first
+        self.row_ptr = torch.zeros(initial_nodes + 1, device=self.device, 
+                                  dtype=self.config.dtype_indices)
+        
+        if self.config.memory_layout == 'blocked':
+            self._initialize_blocked_layout(initial_edges)
+        elif self.config.memory_layout == 'interleaved':
+            self._initialize_interleaved_layout(initial_edges)
+        else:
+            # Fall back to standard layout
+            self._initialize_standard_arrays(initial_edges)
+        
+        # Current capacity
+        self.edge_capacity = initial_edges
+        
+    def _initialize_blocked_layout(self, initial_edges: int):
+        """Initialize blocked memory layout for better coalescing"""
+        block_size = self.config.block_size
+        num_blocks = (initial_edges + block_size - 1) // block_size
+        
+        # Create blocked arrays where each block contains contiguous data
+        # Block structure: [col_indices_block][actions_block][priors_block]
+        elements_per_block = block_size * 3  # col_indices + actions + priors
+        total_elements = num_blocks * elements_per_block
+        
+        # Single large tensor for all blocked data
+        self.blocked_data = torch.zeros(total_elements, device=self.device, dtype=torch.float32)
+        
+        # Create views into the blocked data
+        self.col_indices = self.blocked_data[0::3][:initial_edges].view(self.config.dtype_indices)
+        self.edge_actions = self.blocked_data[1::3][:initial_edges].view(self.config.dtype_actions) 
+        self.edge_priors = self.blocked_data[2::3][:initial_edges]
+        
+        # Store block metadata for efficient access
+        self.block_size = block_size
+        self.num_blocks = num_blocks
+        
+    def _initialize_interleaved_layout(self, initial_edges: int):
+        """Initialize interleaved memory layout"""
+        # Interleave col_indices, actions, and priors for better cache utilization
+        # Layout: [col0, action0, prior0, col1, action1, prior1, ...]
+        interleaved_size = initial_edges * 3
+        
+        self.interleaved_data = torch.zeros(interleaved_size, device=self.device, dtype=torch.float32)
+        
+        # Create strided views
+        self.col_indices = self.interleaved_data[0::3].view(self.config.dtype_indices)
+        self.edge_actions = self.interleaved_data[1::3].view(self.config.dtype_actions)
+        self.edge_priors = self.interleaved_data[2::3]
+        
+    def _initialize_standard_arrays(self, initial_edges: int):
+        """Initialize standard separate arrays (fallback)"""
+        self.col_indices = torch.zeros(initial_edges, device=self.device,
+                                      dtype=self.config.dtype_indices)
+        self.edge_actions = torch.zeros(initial_edges, device=self.device,
+                                       dtype=self.config.dtype_actions)
+        self.edge_priors = torch.zeros(initial_edges, device=self.device,
+                                      dtype=self.config.dtype_values)
         
     def add_edge(self, parent_idx: int, child_idx: int, action: int, prior: float) -> int:
         """Add a single edge and return its index"""
@@ -115,6 +199,56 @@ class CSRStorage:
         self._needs_row_ptr_update = True
         
         return edge_indices
+        
+    def prefetch_node_data(self, node_indices: torch.Tensor):
+        """Prefetch data for improved memory access patterns"""
+        if not self.config.enable_coalesced_layout or self.device.type != 'cuda':
+            return
+            
+        # Get the data ranges that will be accessed
+        start_indices = self.row_ptr[node_indices]
+        end_indices = self.row_ptr[node_indices + 1]
+        
+        # Find min and max range for prefetching
+        if len(start_indices) > 0:
+            min_idx = start_indices.min().item()
+            max_idx = end_indices.max().item()
+            
+            # Expand range by prefetch distance
+            prefetch_distance = self.config.prefetch_distance * self.config.block_size
+            prefetch_start = max(0, min_idx - prefetch_distance)
+            prefetch_end = min(self.edge_capacity, max_idx + prefetch_distance)
+            
+            # Touch the data to trigger prefetching (this is a hint to the memory system)
+            if hasattr(self, 'blocked_data'):
+                # For blocked layout, prefetch the relevant blocks
+                _ = self.blocked_data[prefetch_start*3:prefetch_end*3].sum()
+            elif hasattr(self, 'interleaved_data'):
+                # For interleaved layout
+                _ = self.interleaved_data[prefetch_start*3:prefetch_end*3].sum()
+            else:
+                # For standard layout, prefetch all arrays
+                _ = self.col_indices[prefetch_start:prefetch_end].sum()
+                _ = self.edge_actions[prefetch_start:prefetch_end].sum()
+                _ = self.edge_priors[prefetch_start:prefetch_end].sum()
+    
+    def get_coalescing_info(self) -> dict:
+        """Get information about memory coalescing optimizations"""
+        info = {
+            'coalesced_layout': self.coalesced_layout,
+            'memory_layout': self.memory_layout,
+            'block_size': getattr(self, 'block_size', None),
+            'edge_capacity': self.edge_capacity,
+            'num_edges': self.num_edges
+        }
+        
+        if hasattr(self, 'blocked_data'):
+            info['blocked_data_size'] = self.blocked_data.numel()
+            info['num_blocks'] = getattr(self, 'num_blocks', None)
+        elif hasattr(self, 'interleaved_data'):
+            info['interleaved_data_size'] = self.interleaved_data.numel()
+            
+        return info
         
     def _grow_edge_storage(self, min_required: int):
         """Grow edge storage when capacity is exceeded"""

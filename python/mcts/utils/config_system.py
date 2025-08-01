@@ -105,6 +105,7 @@ class MCTSFullConfig:
     # Performance parameters
     min_wave_size: int = 256
     max_wave_size: int = 3072
+    wave_size: Optional[int] = None  # Explicit wave size for hybrid mode
     batch_size: int = 256
     tree_batch_size: int = 8  # Batch size for tree operations
     virtual_loss: float = 1.0
@@ -162,6 +163,7 @@ class MCTSFullConfig:
     # Device configuration
     device: str = "cuda"
     num_threads: int = 4
+    backend: str = "gpu"  # 'gpu', 'cpu', or 'hybrid'
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, handling enums"""
@@ -283,6 +285,9 @@ class TrainingFullConfig:
     games_per_worker: int = 25
     max_moves_per_game: int = 500
     temperature_threshold: int = 30  # Move threshold for temperature reduction
+    
+    # Resignation settings
+    enable_resign: bool = True  # Whether to enable resignation
     resign_threshold: float = -0.98  # FIXED: More conservative threshold (was -0.95)
     resign_check_moves: int = 10
     resign_start_iteration: int = 20  # FIXED: Start resignation later (was 10)
@@ -315,6 +320,19 @@ class TrainingFullConfig:
     save_dir: str = "checkpoints"
     tensorboard_dir: str = "runs"
     data_dir: str = "self_play_data"
+    
+    # Data cleanup configuration
+    enable_data_cleanup: bool = True
+    cleanup_interval: int = 5  # Cleanup every N iterations
+    keep_last_n_replay_buffers: int = 10  # Keep last N replay buffers
+    keep_last_n_checkpoints: int = 5  # Keep last N checkpoints
+    keep_last_n_arena_logs: int = 20  # Keep last N arena log files
+    keep_last_n_metrics: int = 50  # Keep last N metric files
+    max_disk_usage_gb: Optional[float] = None  # Maximum disk usage in GB (None = no limit)
+    cleanup_arena_logs: bool = True  # Clean up arena logs
+    cleanup_metrics: bool = False  # Keep metrics by default
+    cleanup_logs: bool = True  # Clean up old log files
+    keep_last_n_logs: int = 10  # Keep last N log files
     
     # Distributed training
     distributed: bool = False
