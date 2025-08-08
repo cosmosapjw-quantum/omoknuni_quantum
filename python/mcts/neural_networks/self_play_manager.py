@@ -104,7 +104,7 @@ def _worker_generate_games(worker_id: int, num_games: int, config: Any,
         enable_fast_ucb=True,
         use_cuda_graphs=False,  # Disable for multiprocessing
         use_mixed_precision=False,  # Disable for multiprocessing
-        enable_subtree_reuse=False,
+        enable_subtree_reuse=True,  # Enable for stronger play
         max_tree_nodes=config.mcts.max_tree_nodes,
         memory_pool_size_mb=config.mcts.memory_pool_size_mb
     )
@@ -127,8 +127,11 @@ def _worker_generate_games(worker_id: int, num_games: int, config: Any,
             from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
             mcts = create_cpu_optimized_mcts(mcts_config, evaluator, None)
         elif backend == 'hybrid':
-            from mcts.hybrid import create_hybrid_mcts
-            mcts = create_hybrid_mcts(mcts_config, evaluator, None)
+            # Use MCTS directly to avoid config modifications from create_hybrid_mcts
+            mcts = MCTS(
+                config=mcts_config,
+                evaluator=evaluator
+            )
         else:
             mcts = MCTS(
                 config=mcts_config,
@@ -164,6 +167,7 @@ class SelfPlayConfig:
     temperature_threshold: int = 30
     resign_threshold: float = -0.98
     enable_resign: bool = True
+    resign_min_move: int = 10  # Minimum move before allowing resignation
     dirichlet_alpha: float = 0.3
     dirichlet_epsilon: float = 0.25
     c_puct: float = 1.5
@@ -228,13 +232,25 @@ class SelfPlayGame:
             self.current_player = self.game.current_player()
         
         # Run MCTS search to get policy
+        # CRITICAL: Pass num_simulations explicitly to ensure correct number of simulations
+        num_simulations = self.config.mcts_simulations
+        
+        # Debug logging for first game and early moves
+        if self.game_id.endswith("_0") and self.move_count < 5:
+            logger.debug(f"Move {self.move_count}: Running MCTS search with {num_simulations} simulations")
+            
         if self.is_multi_mcts:
             # Use appropriate MCTS for current player (0-indexed)
             player_idx = self.current_player - 1
             current_mcts = self.mcts[player_idx]
-            action_probs = current_mcts.search(state)
+            action_probs = current_mcts.search(state, num_simulations=num_simulations)
         else:
-            action_probs = self.mcts.search(state)
+            action_probs = self.mcts.search(state, num_simulations=num_simulations)
+            
+        # Debug: Check if search actually happened
+        if self.game_id.endswith("_0") and self.move_count < 5:
+            logger.debug(f"Move {self.move_count}: Policy entropy: {-(action_probs * np.log(action_probs + 1e-8)).sum():.4f}")
+            logger.debug(f"Move {self.move_count}: Max prob: {action_probs.max():.4f}, Non-zero: {np.sum(action_probs > 0.001)}")
         
         
         # Calculate and store policy entropy
@@ -332,7 +348,8 @@ class SelfPlayGame:
             logger.warning(f"Game {self.game_id} ended early at move {self.move_count}, winner: {winner}, action: {action}")
         
         # Check for resignation
-        if self.config.enable_resign and self.move_count > 10:
+        resign_min_move = getattr(self.config, 'resign_min_move', 10)
+        if self.config.enable_resign and self.move_count > resign_min_move:
             # Use value_pred from above (now always defined)
             if value_pred < self.config.resign_threshold:
                 self.resigned = True
@@ -487,6 +504,7 @@ class SelfPlayManager:
             temperature_threshold=config.mcts.temperature_threshold,
             resign_threshold=getattr(config.training, 'resign_threshold', -0.98),
             enable_resign=enable_resign_value,
+            resign_min_move=getattr(config.training, 'resign_min_move', 10),
             dirichlet_alpha=config.mcts.dirichlet_alpha,
             dirichlet_epsilon=config.mcts.dirichlet_epsilon,
             c_puct=config.mcts.c_puct,
@@ -641,25 +659,69 @@ class SelfPlayManager:
         
         # Create shared MCTS instance with optimized config
         backend = getattr(self.config.mcts, 'backend', 'gpu')
+        
+        # Get game type and board size
+        if isinstance(self.game_config, dict):
+            game_type = self.game_config['game_type']
+            board_size = self.game_config['board_size']
+        else:
+            game_type = self.game_config.game_type
+            board_size = self.game_config.board_size
+            
         mcts_config = MCTSConfig(
+            # Core parameters
+            game_type=game_type,
+            board_size=board_size,
             num_simulations=self.self_play_config.mcts_simulations,
             c_puct=self.self_play_config.c_puct,
             dirichlet_alpha=self.self_play_config.dirichlet_alpha,
             dirichlet_epsilon=self.self_play_config.dirichlet_epsilon,
-            tree_batch_size=128 if backend == 'cpu' else 512,  # Optimized batch size
             device=self.self_play_config.device,
-            backend=backend,  # Use backend from config
-            wave_size=getattr(self.config.mcts, 'wave_size', None),  # Pass wave size
-            enable_fast_ucb=True,
-            use_cuda_graphs=backend == 'gpu',  # Only for GPU
-            use_mixed_precision=backend == 'gpu',  # Only for GPU
-            enable_subtree_reuse=False,  # Disable to prevent memory issues
+            backend=backend,
+            
+            # CRITICAL: Use config values, not hardcoded ones!
+            batch_size=getattr(self.config.mcts, 'batch_size', 256),
+            tree_batch_size=getattr(self.config.mcts, 'batch_size', 256),
+            
+            # Wave configuration - CRITICAL for performance
+            wave_size=getattr(self.config.mcts, 'wave_size', 256),
+            min_wave_size=getattr(self.config.mcts, 'min_wave_size', 128),
+            max_wave_size=getattr(self.config.mcts, 'max_wave_size', 512),
+            
+            # Progressive widening - use optimized values
+            progressive_widening_constant=getattr(self.config.mcts, 'progressive_widening_constant', 5.0),
+            progressive_widening_exponent=getattr(self.config.mcts, 'progressive_widening_exponent', 0.5),
+            initial_children_per_expansion=getattr(self.config.mcts, 'initial_children_per_expansion', 5),
+            initial_expansion_children=getattr(self.config.mcts, 'initial_children_per_expansion', 5),  # Both names for compatibility
+            
+            # Virtual loss
+            virtual_loss=getattr(self.config.mcts, 'virtual_loss', 3.0),
+            enable_virtual_loss=getattr(self.config.mcts, 'enable_virtual_loss', True),
+            
+            # Tree configuration
             max_tree_nodes=self.config.mcts.max_tree_nodes,
+            initial_tree_nodes=getattr(self.config.mcts, 'initial_tree_nodes', 500000),
             memory_pool_size_mb=self.config.mcts.memory_pool_size_mb,
-            # Enable parallel MCTS for hybrid backend
-            use_parallel_mcts=backend == 'hybrid' and getattr(self.config.mcts, 'use_parallel_mcts', True),
-            num_mcts_workers=getattr(self.config.mcts, 'num_mcts_workers', 4),
-            worker_batch_size=getattr(self.config.mcts, 'worker_batch_size', 32)
+            gpu_memory_fraction=getattr(self.config.mcts, 'gpu_memory_fraction', 0.8),
+            
+            # Optimizations
+            enable_fast_ucb=True,
+            use_cuda_graphs=backend == 'gpu',
+            use_mixed_precision=backend == 'gpu',
+            enable_subtree_reuse=True,  # CRITICAL: Enable for stronger play and longer games
+            subtree_reuse_min_visits=1,  # For when reuse is enabled elsewhere
+            
+            # Caching
+            cache_legal_moves=True,
+            cache_features=True,
+            
+            # Dynamic allocation
+            enable_dynamic_allocation=getattr(self.config.mcts, 'enable_dynamic_allocation', True),
+            
+            # Hybrid backend specific
+            use_cython_hybrid=backend == 'hybrid' and getattr(self.config.mcts, 'use_cython_hybrid', False),
+            use_genuine_hybrid=backend == 'hybrid' and getattr(self.config.mcts, 'use_genuine_hybrid', True),
+            hybrid_gpu_batch_size=getattr(self.config.mcts, 'hybrid_gpu_batch_size', 256)
         )
         
         # Create game interface for MCTS (use first game as template)
@@ -673,10 +735,9 @@ class SelfPlayManager:
         if backend == 'cpu':
             from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
             shared_mcts = create_cpu_optimized_mcts(mcts_config, self.gpu_evaluator, game_interface)
-        elif backend == 'hybrid':
-            from mcts.hybrid import create_hybrid_mcts
-            shared_mcts = create_hybrid_mcts(mcts_config, self.gpu_evaluator, game_interface)
         else:
+            # For hybrid and GPU backends, create MCTS directly (like example_self_play.py)
+            # This avoids issues with create_hybrid_mcts modifying config values
             shared_mcts = MCTS(
                 config=mcts_config,
                 evaluator=self.gpu_evaluator,
@@ -707,25 +768,18 @@ class SelfPlayManager:
             # Create MCTS instance(s)
             if use_opponent:
                 # Create separate MCTS for each player based on backend
-                if backend == 'cpu':
-                    from mcts.cpu.cpu_mcts_wrapper import create_cpu_optimized_mcts
-                    mcts_current = create_cpu_optimized_mcts(mcts_config, self.gpu_evaluator, game_interface)
-                    mcts_opponent = create_cpu_optimized_mcts(mcts_config, opponent_evaluator, game_interface)
-                elif backend == 'hybrid':
-                    from mcts.hybrid import create_hybrid_mcts
-                    mcts_current = create_hybrid_mcts(mcts_config, self.gpu_evaluator, game_interface)
-                    mcts_opponent = create_hybrid_mcts(mcts_config, opponent_evaluator, game_interface)
-                else:
-                    mcts_current = MCTS(
-                        config=mcts_config,
-                        evaluator=self.gpu_evaluator,
-                        game_interface=game_interface
-                    )
-                    mcts_opponent = MCTS(
-                        config=mcts_config,
-                        evaluator=opponent_evaluator,
-                        game_interface=game_interface
-                    )
+                # Always use MCTS directly (like example_self_play.py does)
+                # This avoids issues with factory functions modifying config values
+                mcts_current = MCTS(
+                    config=mcts_config,
+                    evaluator=self.gpu_evaluator,
+                    game_interface=game_interface
+                )
+                mcts_opponent = MCTS(
+                    config=mcts_config,
+                    evaluator=opponent_evaluator,
+                    game_interface=game_interface
+                )
                 # Randomly assign who plays first
                 if np.random.random() < 0.5:
                     player_mcts = {0: mcts_current, 1: mcts_opponent}
@@ -897,11 +951,11 @@ class SelfPlayManager:
             
             class GameWrapper:
                 def __init__(self):
-                    game_type = GameType[game_config['game_type'].upper()]
-                    self.game_interface = GameInterface(
-                        game_type,
-                        board_size=game_config['board_size'],
-                        input_representation=game_config['input_representation']
+                    # CRITICAL FIX: Use create_game_interface instead of GameInterface directly
+                    from mcts.core.game_interface import create_game_interface
+                    self.game_interface = create_game_interface(
+                        game_config['game_type'],
+                        board_size=game_config['board_size']
                     )
                     self.state = self.game_interface.create_initial_state()
                     self.action_size = game_config['board_size'] * game_config['board_size']
@@ -1142,14 +1196,16 @@ def _worker_process_with_gpu_service_deprecated(worker_id: int,
         all_examples = []
         for game_idx in range(num_games):
             # Create game instance
-            game_type = GameType[game_config['game_type'].upper()]
+            # CRITICAL FIX: GameInterface expects string, not GameType enum!
+            game_type_str = game_config['game_type']  # Keep as string for GameInterface
             
             class GameWrapper:
                 def __init__(self):
-                    self.game_interface = GameInterface(
-                        game_type,
-                        board_size=game_config['board_size'],
-                        input_representation=game_config['input_representation']
+                    # CRITICAL FIX: Use create_game_interface instead of GameInterface directly
+                    from mcts.core.game_interface import create_game_interface
+                    self.game_interface = create_game_interface(
+                        game_config['game_type'],
+                        board_size=game_config['board_size']
                     )
                     self.state = self.game_interface.create_initial_state()
                     self.action_size = game_config['board_size'] * game_config['board_size']

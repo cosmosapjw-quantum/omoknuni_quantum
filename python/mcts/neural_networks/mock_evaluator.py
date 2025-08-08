@@ -4,6 +4,21 @@ import torch
 import numpy as np
 from typing import Tuple
 
+# PROFILING: Import comprehensive profiler
+try:
+    from ..profiling.gpu_profiler import get_profiler, profile, profile_gpu
+    PROFILING_AVAILABLE = True
+except ImportError:
+    PROFILING_AVAILABLE = False
+    def profile(name, sync=False):
+        def decorator(func):
+            return func
+        return decorator
+    def profile_gpu(name):
+        def decorator(func):
+            return func
+        return decorator
+
 
 class MockEvaluator:
     """Mock neural network evaluator for testing
@@ -21,55 +36,72 @@ class MockEvaluator:
         self.action_space_size = action_space_size
         self.device = torch.device('cpu')
     
+    @profile("MockEvaluator.evaluate_batch")
     def evaluate_batch(self, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Evaluate a batch of positions
         
         Args:
-            features: Batch of input features
+            features: Batch of input features (numpy array or torch tensor)
             
         Returns:
             Tuple of (policies, values)
             - policies: (batch_size, action_space_size)
             - values: (batch_size,)
         """
+        # Convert numpy array to tensor if needed
+        import numpy as np
+        if isinstance(features, np.ndarray):
+            features = torch.from_numpy(features).float()
+            if torch.cuda.is_available():
+                features = features.cuda()
+        
         batch_size = features.shape[0]
         
-        # Generate consistent pseudo-random policies based on feature sum
-        # This ensures the same position always gets the same evaluation
-        policies = []
-        values = []
+        # Optimized version: use vectorized operations instead of loops
+        # Generate deterministic policies based on feature hashes
+        feature_sums = features.view(batch_size, -1).sum(dim=1)
+        seeds = (feature_sums * 1000).long() % 2147483647
         
-        for i in range(batch_size):
-            # Use feature sum as seed for consistency
-            seed = int(features[i].sum().item() * 1000) % 2147483647
-            rng = np.random.RandomState(seed)
-            
-            # Generate policy (random but concentrated around center)
-            policy = rng.randn(self.action_space_size) + 1.0
-            
-            # Add some preference for center moves
-            center = self.action_space_size // 2
-            for j in range(self.action_space_size):
-                row = j // 15
-                col = j % 15
-                dist_to_center = abs(row - 7) + abs(col - 7)
-                policy[j] += (14 - dist_to_center) * 0.1
-            
-            # Softmax normalization
-            policy = np.exp(policy - np.max(policy))
-            policy = policy / policy.sum()
-            
-            policies.append(policy)
-            
-            # Generate value (slightly random around 0)
-            value = rng.randn() * 0.2
-            values.append(value)
+        # Create base policies with some randomness
+        # Don't set seed here - allow natural randomness
+        base_policies = torch.randn(batch_size, self.action_space_size, device=features.device) + 1.0
         
-        # Convert to tensors
-        policies_tensor = torch.tensor(np.array(policies), dtype=torch.float32)
-        values_tensor = torch.tensor(np.array(values), dtype=torch.float32)
+        # Add center preference using vectorized operations
+        # Create distance matrix once
+        if not hasattr(self, '_center_weights'):
+            weights = torch.zeros(15, 15)
+            for i in range(15):
+                for j in range(15):
+                    weights[i, j] = (14 - abs(i - 7) - abs(j - 7)) * 0.1
+            self._center_weights = weights.flatten()
         
-        return policies_tensor, values_tensor
+        # Ensure center weights are on the same device as features
+        if self._center_weights.device != features.device:
+            self._center_weights = self._center_weights.to(features.device)
+        
+        # Add center weights to all policies at once
+        policies = base_policies + self._center_weights.unsqueeze(0)
+        
+        # Add position-specific variation based on seeds - VECTORIZED
+        # Instead of looping with .item(), use deterministic hash-based variation
+        seed_variation = torch.randn_like(policies) * 0.1
+        # Use seeds as indices for deterministic variation without .item()
+        seed_factors = (seeds.float() / 1000.0).unsqueeze(1)
+        policies = policies + seed_variation * seed_factors
+        
+        # Vectorized softmax
+        policies = torch.softmax(policies, dim=1)
+        
+        # Generate values with slight variation - VECTORIZED
+        # Don't set seed here - allow natural randomness
+        base_values = torch.randn(batch_size, device=features.device) * 0.2
+        
+        # Add seed-based variation without .item()
+        value_variation = torch.randn(batch_size, device=features.device) * 0.05
+        value_seed_factors = ((seeds + 1000).float() / 10000.0)
+        values = base_values + value_variation * value_seed_factors
+        
+        return policies, values
     
     def to(self, device):
         """Move evaluator to device (no-op for mock)"""

@@ -57,9 +57,10 @@ class UCBSelector:
             torch.zeros_like(child_values)
         )
         
-        # Calculate exploration term
+        # CRITICAL FIX: Calculate exploration term to exactly match CPU implementation  
+        # CPU uses: exploration = c_puct * priors[idx] * sqrt_parent / (visits + 1)
         sqrt_parent = torch.sqrt(torch.tensor(parent_visits, dtype=torch.float32, device=self.device))
-        exploration = c_puct * child_priors * sqrt_parent / (1 + child_visits.float())
+        exploration = c_puct * child_priors * sqrt_parent / (child_visits.float() + 1.0)
         
         # UCB scores
         ucb_scores = q_values + exploration
@@ -110,9 +111,10 @@ class UCBSelector:
         if visited_mask.any():
             q_values[visited_mask] = children_values[visited_mask] / children_visits[visited_mask]
             
-        # Calculate exploration term
+        # CRITICAL FIX: Calculate exploration term to exactly match CPU implementation
+        # CPU uses: exploration = c_puct * priors[idx] * sqrt_parent / (visits + 1)
         sqrt_parent = torch.sqrt(parent_visits.float()).unsqueeze(1)
-        exploration = c_puct * children_priors * sqrt_parent / (1 + children_visits.float())
+        exploration = c_puct * children_priors * sqrt_parent / (children_visits.float() + 1.0)
         
         # UCB scores
         ucb_scores = q_values + exploration

@@ -14,6 +14,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# PROFILING: Import comprehensive profiler
+try:
+    from ..profiling.gpu_profiler import get_profiler, profile, profile_gpu
+    PROFILING_AVAILABLE = True
+except ImportError:
+    PROFILING_AVAILABLE = False
+    def profile(name, sync=False):
+        def decorator(func):
+            return func
+        return decorator
+    def profile_gpu(name):
+        def decorator(func):
+            return func
+        return decorator
+
 
 class GameType(IntEnum):
     """Game type enumeration"""
@@ -55,13 +70,15 @@ class GPUGameStates:
     All operations are performed on GPU without CPU transfers.
     """
     
-    def __init__(self, config: GPUGameStatesConfig):
+    def __init__(self, config: GPUGameStatesConfig, game_interface=None):
         """Initialize GPU game states
         
         Args:
             config: Configuration for game states
+            game_interface: Optional C++ game interface for terminal detection
         """
         self.config = config
+        self.game_interface = game_interface
         # Fall back to CPU if CUDA requested but not available
         if config.device == 'cuda' and not torch.cuda.is_available():
             self.device = torch.device('cpu')
@@ -322,6 +339,7 @@ class GPUGameStates:
             
         return clone_indices
     
+    @profile("GPUGameStates.get_legal_moves_mask")
     def get_legal_moves_mask(self, state_indices: torch.Tensor) -> torch.Tensor:
         """Get legal moves mask for multiple states
         
@@ -450,8 +468,8 @@ class GPUGameStates:
     def _check_terminal_states(self, state_indices: torch.Tensor, last_moves: torch.Tensor):
         """Check if states are terminal after moves"""
         if self.game_type == GameType.GOMOKU:
-            # Check for five in a row
-            self._check_gomoku_wins(state_indices, last_moves)
+            # Check for game-specific win conditions
+            self._check_game_specific_wins(state_indices, last_moves)
         elif self.game_type == GameType.GO:
             # Check for captures, ko, passes
             self._check_go_terminal(state_indices)
@@ -459,17 +477,60 @@ class GPUGameStates:
             # Chess terminal checking
             pass
             
-    def _check_gomoku_wins(self, state_indices: torch.Tensor, last_moves: torch.Tensor):
-        """Check for Gomoku wins (five in a row)"""
-        # This is a simplified version - would need full implementation
-        # Check around last move for five in a row
-        pass
+    def _check_game_specific_wins(self, state_indices: torch.Tensor, last_moves: torch.Tensor):
+        """Check for game-specific win conditions"""
+        if len(state_indices) == 0:
+            return
+            
+        # Use fast terminal detection
+        from ..utils.fast_terminal_check import FastTerminalChecker
+        if not hasattr(self, '_fast_checker'):
+            # Initialize fast checker with game type info
+            variant_rules = {}
+            if self.game_interface and hasattr(self.game_interface, 'use_renju'):
+                variant_rules['use_renju'] = self.game_interface.use_renju
+            if self.game_interface and hasattr(self.game_interface, 'use_omok'):
+                variant_rules['use_omok'] = self.game_interface.use_omok
+            
+            # Convert GameType enum to string if needed
+            game_type_str = 'gomoku'
+            if hasattr(self.game_type, 'value'):
+                if isinstance(self.game_type.value, str):
+                    game_type_str = self.game_type.value.lower()
+                else:
+                    # GameType enum with integer value
+                    game_type_str = self.game_type.name.lower()
+            elif hasattr(self.game_type, 'name'):
+                game_type_str = self.game_type.name.lower()
+                
+            self._fast_checker = FastTerminalChecker(
+                game_type_str,
+                self.board_size,
+                variant_rules,
+                game_interface=self.game_interface
+            )
+        
+        # Get boards for these states
+        boards = self.boards[state_indices]
+        
+        # Fast GPU terminal check
+        is_terminal_batch, winner_batch = self._fast_checker.check_terminal_gpu(
+            boards, last_moves, state_indices=state_indices
+        )
+        
+        # Update terminal states and winners
+        self.is_terminal[state_indices] = is_terminal_batch
+        self.winner[state_indices] = winner_batch
         
     def _check_go_terminal(self, state_indices: torch.Tensor):
         """Check for Go terminal states"""
-        # Simplified - would check for two passes, no legal moves, etc.
-        pass
+        if len(state_indices) == 0:
+            return
+            
+        # Delegate to fast terminal checker which handles Go rules
+        self._check_game_specific_wins(state_indices, None)
         
+    @profile("GPUGameStates.get_nn_features")
     def get_nn_features(self, state_indices: torch.Tensor) -> torch.Tensor:
         """Get neural network features directly from GPU states - OPTIMIZED VERSION
         
@@ -513,6 +574,9 @@ class GPUGameStates:
             # Channels 2-17: Previous 8 moves for each player (16 channels) - VECTORIZED
             if hasattr(self, 'full_move_history'):
                 move_counts = self.move_count[state_indices]
+                # Ensure move_counts is at least 1D
+                if move_counts.dim() == 0:
+                    move_counts = move_counts.unsqueeze(0)
                 max_history = self.full_move_history.shape[1]
                 
                 # Create mask for valid moves (vectorized across all batches)
@@ -522,6 +586,9 @@ class GPUGameStates:
                 # Get move history for all states in batch
                 # Shape: (batch_size, max_history)
                 batch_move_history = self.full_move_history[state_indices]
+                # Ensure batch_move_history is 2D
+                if batch_move_history.dim() == 1:
+                    batch_move_history = batch_move_history.unsqueeze(0)
                 
                 # Only process last 8 moves - create indices for the most recent moves
                 # Shape: (batch_size, 8)

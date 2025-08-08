@@ -250,6 +250,35 @@ class NodeDataManager:
         
         self.num_nodes = end_idx
         return indices
+    
+    def allocate_nodes_vectorized(self, child_indices: torch.Tensor, priors: torch.Tensor,
+                                 parent_indices: torch.Tensor, actions: torch.Tensor) -> None:
+        """Vectorized node allocation for multiple children
+        
+        Args:
+            child_indices: Pre-allocated child indices
+            priors: Prior probabilities for each child
+            parent_indices: Parent index for each child
+            actions: Action that led to each child
+        """
+        num_children = child_indices.shape[0]
+        if num_children == 0:
+            return
+        
+        # Ensure we have enough storage
+        max_idx = child_indices.max().item()
+        while max_idx >= len(self.visit_counts):
+            self._grow_storage()
+        
+        # Vectorized initialization - ensure dtype compatibility
+        self.visit_counts[child_indices] = 0
+        self.value_sums[child_indices] = 0.0
+        self.node_priors[child_indices] = priors
+        self.parent_indices[child_indices] = parent_indices.to(torch.int32)
+        self.parent_actions[child_indices] = actions.to(self.config.dtype_indices)
+        self.virtual_loss_counts[child_indices] = 0
+        self.flags[child_indices] = 0
+        self.phases[child_indices] = 0.0
         
     def _grow_storage(self):
         """Grow storage capacity when needed"""

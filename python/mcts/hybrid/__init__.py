@@ -1,42 +1,22 @@
 """Hybrid MCTS - High-Performance CPU/GPU Implementation
 
-This module provides optimized components for hybrid CPU/GPU MCTS:
-- Fast Cython tree operations (36M+ selections/sec)
-- Lock-free SPSC queues
-- Thread-local buffers
-- Memory pools
-- SIMD UCB calculations
+This module provides the hybrid CPU/GPU MCTS implementation with
+Cython-optimized tree operations for maximum performance.
 """
 
-from .optimized_tree import OptimizedTree
-from .spsc_queue import SPSCQueue
-from .thread_local_buffers import ThreadLocalBuffer, ThreadLocalBufferManager
-from .memory_pool import ObjectPool, ThreadLocalMemoryPool
-from .simd_ucb import SIMDUCBCalculator
-from .cpu_wave_search import CPUWaveSearch
-
-# Try to import Cython module
+# Try to import Cython hybrid backend
 try:
-    from .cython_tree_ops_fast import FastCythonTree
-    CYTHON_AVAILABLE = True
+    from .cython_hybrid_backend import CythonHybridBackend
+    CYTHON_HYBRID_AVAILABLE = True
 except ImportError:
-    CYTHON_AVAILABLE = False
+    CYTHON_HYBRID_AVAILABLE = False
 
-from .hybrid_mcts_factory import create_hybrid_mcts, create_fast_hybrid_mcts
-from .fast_hybrid_mcts import FastHybridMCTS
+from .hybrid_mcts_factory import create_hybrid_mcts
+from .hybrid_wave_search import HybridWaveSearch
 
 __all__ = [
-    'OptimizedTree',
-    'SPSCQueue',
-    'ThreadLocalBuffer',
-    'ThreadLocalBufferManager',
-    'ObjectPool',
-    'ThreadLocalMemoryPool',
-    'SIMDUCBCalculator',
-    'CPUWaveSearch',
-    'FastCythonTree',
-    'CYTHON_AVAILABLE',
+    'CythonHybridBackend',
+    'CYTHON_HYBRID_AVAILABLE',
     'create_hybrid_mcts',
-    'create_fast_hybrid_mcts',
-    'FastHybridMCTS'
+    'HybridWaveSearch'
 ]

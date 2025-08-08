@@ -18,6 +18,7 @@ from .base_neural_evaluator import BaseNeuralEvaluator
 from .nn_framework import ModelLoader, BaseGameModel, ModelMetadata
 from .resnet_model import ResNetModel, create_resnet_for_game
 from mcts.utils.config_system import AlphaZeroConfig, NeuralNetworkConfig
+from ..gpu.gpu_memory_pool import get_memory_pool, TensorCache
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,21 @@ class ResNetEvaluator(BaseNeuralEvaluator):
                     channels = input_channels if input_channels is not None else 18
                     model = create_resnet_for_game(game_type, input_channels=channels)
         
-        # Initialize base class with model
+        # Set attributes needed by base class warm-up BEFORE calling super().__init__
+        self.eval_count = 0  # Legacy counter for compatibility
+        self.use_amp = getattr(config, 'use_mixed_precision', True) if config else True
+        self.input_channels = getattr(model, 'input_channels', 19)  # Expose for MCTS
+        
+        # Pre-initialize attributes that warm-up might access
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._batch_cache = {}
+        self._preallocated_outputs = {}
+        
+        # Need device before super init
+        self.device = torch.device(device if device else 'cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Initialize base class with model (this calls warm-up)
         super().__init__(
             model=model,
             config=config,
@@ -132,30 +147,122 @@ class ResNetEvaluator(BaseNeuralEvaluator):
             device=device
         )
         
-        # ResNet-specific configuration
-        self.use_amp = getattr(config, 'use_mixed_precision', True) if config else True
-        self.eval_count = 0  # Legacy counter for compatibility
+        # Initialize memory pool and tensor cache after base init
+        self.memory_pool = get_memory_pool(self.device, {
+            'board_size': getattr(model, 'board_size', 15),
+            'channels': getattr(model, 'input_channels', 19)
+        })
+        self.tensor_cache = TensorCache(max_size=5000, device=self.device)
         
-        # Cache statistics (if caching is implemented)
-        self._cache_hits = 0
-        self._cache_misses = 0
-        self._batch_cache = {}
+        # Pre-allocate output tensors
+        self._preallocate_output_tensors()
+        
+        # Apply JIT compilation for performance optimization
+        self._apply_jit_optimization()
+        
+        # Enable aggressive mixed precision settings
+        if self.device.type == 'cuda' and self.use_amp:
+            # Enable TensorFloat-32 for Ampere GPUs
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            # Use fastest cuDNN algorithm
+            torch.backends.cudnn.benchmark = True
+    
+    def _apply_jit_optimization(self):
+        """Apply JIT compilation to the model for improved performance"""
+        try:
+            # Check if model supports JIT compilation
+            if hasattr(self.model, 'eval'):
+                self.model.eval()  # Ensure model is in eval mode
+                
+            # Try to compile with torch.jit.script
+            # Only compile if not already compiled
+            if not isinstance(self.model, torch.jit.ScriptModule):
+                logger.info("Applying JIT compilation to ResNet model...")
+                
+                # Create a dummy input for tracing
+                dummy_input = torch.randn(
+                    1, self.model.input_channels if hasattr(self.model, 'input_channels') else 19,
+                    self.model.board_size if hasattr(self.model, 'board_size') else 15,
+                    self.model.board_size if hasattr(self.model, 'board_size') else 15,
+                    device=self.device
+                )
+                
+                try:
+                    # Try scripting first (more general)
+                    self.model = torch.jit.script(self.model)
+                    logger.info("Successfully applied torch.jit.script compilation")
+                except Exception as script_error:
+                    logger.warning(f"torch.jit.script failed: {script_error}, trying trace...")
+                    try:
+                        # Fall back to tracing if scripting fails
+                        self.model = torch.jit.trace(self.model, dummy_input)
+                        logger.info("Successfully applied torch.jit.trace compilation")
+                    except Exception as trace_error:
+                        logger.warning(f"JIT compilation failed: {trace_error}")
+                        logger.info("Continuing with standard PyTorch model")
+                
+                # Warm up the JIT-compiled model
+                if isinstance(self.model, torch.jit.ScriptModule):
+                    with torch.no_grad():
+                        for _ in range(3):
+                            _ = self.model(dummy_input)
+                    torch.cuda.synchronize() if self.device.type == 'cuda' else None
+                    
+        except Exception as e:
+            logger.warning(f"JIT optimization failed: {e}")
+            logger.info("Continuing without JIT compilation")
+    
+    def _preallocate_output_tensors(self):
+        """Pre-allocate output tensors for common batch sizes"""
+        common_batch_sizes = [1, 8, 16, 32, 64, 128, 256, 512, 1024]
+        action_size = getattr(self, 'action_size', 225)  # 15x15 for Gomoku
+        
+        for batch_size in common_batch_sizes:
+            # Pre-allocate policy and value tensors
+            policy_tensor = self.memory_pool.allocate((batch_size, action_size), dtype=torch.float32)
+            value_tensor = self.memory_pool.allocate((batch_size,), dtype=torch.float32)
+            
+            self._preallocated_outputs[batch_size] = {
+                'policy': policy_tensor,
+                'value': value_tensor
+            }
     
     def _forward_model(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through ResNet model"""
+        """Forward pass through ResNet model with memory pooling"""
         from .nn_framework import safe_autocast
         
+        batch_size = states.shape[0]
         # Update legacy counter
-        self.eval_count += states.shape[0]
+        self.eval_count += batch_size
+        
+        # Use pre-allocated output tensors if available
+        if batch_size in self._preallocated_outputs:
+            policy_out = self._preallocated_outputs[batch_size]['policy']
+            value_out = self._preallocated_outputs[batch_size]['value']
+        else:
+            policy_out = None
+            value_out = None
         
         # Forward pass with autocast for mixed precision
         with safe_autocast(device=self.device, enabled=self.use_amp):
             log_policies, values = self.model(states)
         
         # Convert log probabilities to probabilities
-        policies = torch.exp(log_policies)
+        if policy_out is not None:
+            # Use pre-allocated tensor
+            torch.exp(log_policies, out=policy_out[:batch_size])
+            policies = policy_out[:batch_size]
+        else:
+            policies = torch.exp(log_policies)
         
-        return policies, values.squeeze(-1)
+        # Handle values
+        values = values.squeeze(-1)
+        if value_out is not None and values.shape[0] == batch_size:
+            value_out[:batch_size].copy_(values)
+            values = value_out[:batch_size]
+        
+        return policies, values
     
     
     @torch.no_grad()
@@ -184,6 +291,16 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         # Track evaluations
         batch_size = states_tensor.shape[0]
         self.eval_count += batch_size
+        
+        # Check tensor cache first
+        cache_key = hash(states_tensor.data_ptr())
+        cached_result = self.tensor_cache.get(cache_key)
+        if cached_result is not None:
+            self._cache_hits += 1
+            policies, values = cached_result
+            return policies.clone(), values.clone()
+        
+        self._cache_misses += 1
         
         # Ensure tensor is on correct device and dtype
         states_tensor = states_tensor.to(self.device)
@@ -220,6 +337,9 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         # Squeeze value dimension
         values = values.squeeze(-1)
         
+        # Cache the result
+        self.tensor_cache.put(cache_key, (policies.clone(), values.clone()))
+        
         # Return GPU tensors (no CPU transfer!)
         return policies, values
     
@@ -251,6 +371,7 @@ class ResNetEvaluator(BaseNeuralEvaluator):
         self._cache_hits = 0
         self._cache_misses = 0
         self._batch_cache.clear()
+        self.tensor_cache.clear()
     
     def save_checkpoint(self, path: str, additional_data: Optional[Dict[str, Any]] = None):
         """Save model checkpoint with evaluator config

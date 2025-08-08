@@ -49,11 +49,15 @@ class MCTSConfig:
     
     # Wave parallelization - OPTIMIZED for performance and memory
     wave_size: Optional[int] = None  # Auto-determine if None
-    min_wave_size: int = 1024  # Balanced for GPU utilization
-    max_wave_size: int = 1024  # Optimal size for memory efficiency
+    min_wave_size: int = 1024  # Balanced for GPU utilization  
+    max_wave_size: int = 1024  # Optimal size for memory efficiency (GPU default)
     wave_min_size: int = 512   # Minimum wave size for adaptive sizing
     wave_max_size: int = 1024  # Maximum wave size for adaptive sizing
     wave_adaptive_sizing: bool = True
+    
+    # CPU-specific optimizations (overridden when backend='cpu')
+    cpu_optimal_wave_size: int = 32   # Optimal for single-threaded CPU backend
+    cpu_threads_per_worker: Optional[int] = None  # Auto-determine (1 for optimal performance)
     wave_target_sims_per_second: int = 100000
     wave_target_gpu_utilization: float = 0.95
     wave_num_pipelines: int = 3
@@ -80,6 +84,11 @@ class MCTSConfig:
     # Memory configuration - OPTIMIZED for GPU performance
     memory_pool_size_mb: int = 4096  # Increased for larger capacity
     max_tree_nodes: int = 2000000    # Increased for deeper trees
+    initial_tree_nodes: int = 100000  # Increased to handle 1000+ simulations per search
+    tree_growth_factor: float = 2.0  # PHASE 3.2: Double capacity when needed
+    enable_dynamic_allocation: bool = True  # PHASE 3.2: Enable dynamic memory growth
+    gc_threshold: float = 0.8  # PHASE 3.2: Garbage collect at 80% capacity
+    use_gpu_tree_reuse: bool = False  # GPU-FRIENDLY TREE REUSE: Disabled - still debugging
     tree_memory_fraction: float = 0.4
     buffer_memory_fraction: float = 0.3
     max_tree_nodes_per_worker: int = 800000
@@ -90,6 +99,11 @@ class MCTSConfig:
     gpu_memory_fraction: float = 0.9
     initial_capacity_factor: float = 0.5  # Pre-allocate 50% to avoid reallocations
     enable_memory_pooling: bool = True    # Use memory pools for efficiency
+    
+    # Memory optimization features (3000+ sims/sec optimizations)
+    enable_pinned_memory: bool = True     # Use pinned memory for 27.23x faster CPU-GPU transfers
+    enable_async_evaluation: bool = True  # Async evaluation pipeline for reduced sync points
+    enable_coalesced_access: bool = True  # Coalesced memory access for 5.7x speedup
     
     # Lazy GPU states configuration
     use_lazy_gpu_states: bool = True  # Use lazy allocation to reduce memory overhead
@@ -114,6 +128,10 @@ class MCTSConfig:
     # CSR and sparse operations
     csr_max_actions: int = 225  # Minimum for 15x15 Gomoku
     csr_use_sparse_operations: bool = True
+    
+    # PHASE 2.3 OPTIMIZATION: Memory coalescing optimization
+    use_blocked_csr_layout: bool = True  # Enable blocked memory layout for better cache utilization
+    block_size: int = 128  # Optimized for RTX 3060 Ti L2 cache (4MB)
     
     # CPU thread configuration
     cpu_threads_per_worker: Optional[int] = None  # Will default to all cores minus 1
@@ -142,6 +160,11 @@ class MCTSConfig:
     tree_reuse_min_child_visits: int = 50  # Minimum visits a child must have to consider reuse
     tree_reuse_visit_ratio: float = 0.05  # Child must have at least 5% of total simulations
     tree_reuse_absolute_threshold: int = 200  # Always reuse if child has this many visits
+    
+    # Enhanced tree reuse configuration for optimization
+    enable_efficient_tree_reuse: bool = True  # Enable optimized tree reuse for performance
+    tree_reuse_validation_level: str = 'minimal'  # Validation level: 'minimal', 'standard', 'full'
+    disable_tree_reuse_for_hybrid: bool = False  # OPTIMIZATION: Keep tree reuse enabled for all backends
     
     # Debug options
     enable_debug_logging: bool = False
@@ -187,6 +210,23 @@ class MCTSConfig:
     go_eye_boost: float = 7.0            # Eye formation
     go_corner_boost: float = 2.0         # Corner moves bonus
     
+    # Hybrid backend configuration
+    use_cython_hybrid: bool = False       # Use Cython-optimized hybrid backend (fastest)
+    use_genuine_hybrid: bool = False      # Use genuine hybrid backend (stable)
+    use_fixed_hybrid: bool = True         # Use fixed hybrid backend with proper optimizations
+    use_optimized_hybrid: bool = False    # Use optimized hybrid backend
+    use_optimized_fixed_hybrid: bool = False  # Use highly optimized fixed hybrid
+    use_unified_memory: bool = False      # Use CUDA Unified Memory for zero-copy access
+    use_cuda_streams: bool = True         # Use CUDA streams for async execution
+    enable_work_stealing: bool = False    # Enable work stealing between CPU and GPU
+    hybrid_cpu_batch_size: int = 32      # Batch size for CPU operations
+    hybrid_gpu_batch_size: int = 256     # Batch size for GPU operations
+    hybrid_load_balance_interval: int = 100  # Rebalance every N waves
+    hybrid_target_gpu_utilization: float = 0.85  # Target GPU utilization
+    hybrid_target_cpu_utilization: float = 0.75  # Target CPU utilization
+    hybrid_pipeline_depth: int = 3       # Pipeline depth for async execution
+    hybrid_num_buffers: int = 3          # Number of buffers for triple buffering
+    
     def get_or_create_quantum_config(self):
         """Placeholder for quantum config (disabled)"""
         return None
@@ -214,6 +254,18 @@ class MCTSConfig:
             return 100  # Default estimate
     
     def __post_init__(self):
+        # Auto-configure for Cython hybrid backend
+        if self.use_cython_hybrid and self.backend == 'hybrid':
+            # Optimal settings for Cython backend
+            self.use_genuine_hybrid = False
+            self.use_fixed_hybrid = False
+            self.use_optimized_hybrid = False
+            self.hybrid_gpu_batch_size = 1024  # Larger batches for Cython backend
+            self.batch_size = max(self.batch_size, 1024)
+            self.inference_batch_size = max(self.inference_batch_size, 1024)
+            if self.wave_size is None or self.wave_size < 512:
+                self.wave_size = 512  # Optimal for Cython backend
+        
         # Validate backend parameter
         if self.backend not in ('gpu', 'cpu', 'hybrid'):
             raise ValueError(f"backend must be 'gpu', 'cpu', or 'hybrid', got '{self.backend}'")

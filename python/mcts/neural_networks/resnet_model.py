@@ -169,6 +169,7 @@ class ResNetModel(BaseGameModel):
         self.config = config
         self.board_size = board_size
         self.num_actions = num_actions
+        self.input_channels = config.input_channels  # Expose for MCTS to detect
         
         # Initial convolutional layer
         self.conv_input = nn.Conv2d(

@@ -61,6 +61,19 @@ class CPUOptimizedMCTSWrapper(MCTS):
         super().__init__(config, evaluator, game_interface)
         
         logger.info("Initialized CPU-optimized MCTS wrapper")
+    
+    def get_stats(self):
+        """Get MCTS statistics"""
+        # Check if parent class has stats
+        if hasattr(self, 'stats'):
+            return self.stats
+        else:
+            # Return basic stats if not available
+            return {
+                'total_simulations': getattr(self, 'total_simulations', 0),
+                'last_search_sims_per_second': getattr(self, 'last_search_sims_per_second', 0),
+                'tree_nodes': self.tree.get_num_nodes() if hasattr(self.tree, 'get_num_nodes') else 0
+            }
 
 
 def create_cpu_optimized_mcts(config: MCTSConfig, evaluator, game_interface) -> MCTS:

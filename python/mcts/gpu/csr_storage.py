@@ -199,6 +199,107 @@ class CSRStorage:
         self._needs_row_ptr_update = True
         
         return edge_indices
+    
+    def add_edges_vectorized(self, parent_indices: torch.Tensor, child_indices: torch.Tensor,
+                           actions: torch.Tensor, priors: torch.Tensor) -> None:
+        """Fully vectorized edge addition for multiple parent-child pairs
+        
+        Args:
+            parent_indices: Parent node indices [num_edges]
+            child_indices: Child node indices [num_edges]  
+            actions: Actions that led to children [num_edges]
+            priors: Prior probabilities [num_edges]
+        """
+        num_new_edges = parent_indices.shape[0]
+        if num_new_edges == 0:
+            return
+        
+        # Ensure we have enough storage
+        if self.num_edges + num_new_edges > self.edge_capacity:
+            self._grow_edge_storage(self.num_edges + num_new_edges)
+        
+        # Add edges in batch
+        start_idx = self.num_edges
+        end_idx = start_idx + num_new_edges
+        
+        self.col_indices[start_idx:end_idx] = child_indices.to(self.config.dtype_indices)
+        self.edge_actions[start_idx:end_idx] = actions.to(self.config.dtype_actions)
+        self.edge_priors[start_idx:end_idx] = priors.to(self.config.dtype_values)
+        
+        # Update row pointers for CSR format - this requires careful handling
+        # 
+        # CSR FORMAT CONSTRAINTS:
+        # 1. row_ptr[i] = starting index of node i's edges in col_indices
+        # 2. All edges for a node must be contiguous in memory
+        # 3. row_ptr[i+1] - row_ptr[i] = number of edges for node i
+        # 4. row_ptr must be monotonically non-decreasing
+        #
+        # CHALLENGE: When adding edges from multiple parents in arbitrary order,
+        # we're appending to the end of edge arrays, which violates constraint #2
+        # if any parent already has edges stored elsewhere.
+        
+        # SOLUTION APPROACH:
+        # 1. If all parents are new (have no existing edges), we can update row_ptr directly
+        # 2. Otherwise, we must rebuild the entire CSR structure to maintain contiguity
+        
+        # Check if we can do a fast update (all parents have no existing edges)
+        can_fast_update = True
+        unique_parents = torch.unique(parent_indices)
+        
+        for parent in unique_parents:
+            parent_idx = parent.item()
+            if parent_idx < len(self.row_ptr) - 1:
+                # Check if this parent already has edges
+                existing_start = self.row_ptr[parent_idx].item()
+                existing_end = self.row_ptr[parent_idx + 1].item()
+                if existing_end > existing_start:
+                    # Parent already has edges - cannot do fast update
+                    can_fast_update = False
+                    break
+        
+        if can_fast_update:
+            # Fast path: Update row pointers for new edges
+            # Group edges by parent to maintain contiguity
+            parent_indices_cpu = parent_indices.cpu()
+            
+            # Sort edges by parent to ensure contiguity
+            sorted_indices = torch.argsort(parent_indices)
+            sorted_parents = parent_indices[sorted_indices]
+            
+            # Reorder the edges we just added to maintain CSR constraint
+            if start_idx < end_idx:
+                self.col_indices[start_idx:end_idx] = self.col_indices[start_idx:end_idx][sorted_indices]
+                self.edge_actions[start_idx:end_idx] = self.edge_actions[start_idx:end_idx][sorted_indices]
+                self.edge_priors[start_idx:end_idx] = self.edge_priors[start_idx:end_idx][sorted_indices]
+            
+            # Now update row pointers for each unique parent
+            current_edge_idx = start_idx
+            for parent in unique_parents:
+                parent_idx = parent.item()
+                # Count edges for this parent
+                parent_edge_count = (sorted_parents == parent).sum().item()
+                
+                if parent_edge_count > 0:
+                    # Ensure row_ptr array is large enough
+                    while parent_idx + 1 >= len(self.row_ptr):
+                        # Extend row_ptr array
+                        new_size = max(parent_idx + 2, int(len(self.row_ptr) * 1.5))
+                        new_row_ptr = torch.full((new_size,), self.num_edges, 
+                                                device=self.device, dtype=torch.int32)
+                        new_row_ptr[:len(self.row_ptr)] = self.row_ptr
+                        self.row_ptr = new_row_ptr
+                    
+                    # Update row pointers
+                    self.row_ptr[parent_idx] = current_edge_idx
+                    current_edge_idx += parent_edge_count
+                    self.row_ptr[parent_idx + 1] = current_edge_idx
+        else:
+            # Slow path: Mark for complete rebuild
+            # The rebuild will happen later to maintain CSR constraints
+            self._needs_row_ptr_update = True
+        
+        # Update total edge count
+        self.num_edges = end_idx
         
     def prefetch_node_data(self, node_indices: torch.Tensor):
         """Prefetch data for improved memory access patterns"""

@@ -76,3 +76,7 @@ docs/_templates/
 
 # Archive
 archive/
+
+# Build directories
+build_cpp/
+build_torch_cuda/

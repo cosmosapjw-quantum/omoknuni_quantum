@@ -8,6 +8,18 @@ import sys
 import os
 import time
 import warnings
+import torch
+
+# CRITICAL PERFORMANCE OPTIMIZATIONS (from example_self_play.py)
+# These provide ~30% speedup in neural network inference
+torch.set_float32_matmul_precision('high')
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
+# Reduce memory fragmentation and prevent CPU-GPU sync due to VRAM pressure
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:256'
+# Force garbage collection to prevent memory buildup
+os.environ['PYTORCH_CUDA_ALLOC_SYNC'] = '1'
 
 # Single-GPU mode - no multiprocessing needed
 

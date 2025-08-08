@@ -96,6 +96,18 @@ class MCTSGPUAccelerator:
         logger.debug("Fused select+expand not available, using separate operations")
         return None
     
+    def fused_select_expand_optimized(self, *args, **kwargs):
+        """PHASE 2.1 OPTIMIZATION: Optimized fused select+expand with 4x reduced overhead"""
+        if hasattr(self._kernel_interface, 'fused_select_expand_optimized'):
+            return self._kernel_interface.fused_select_expand_optimized(*args, **kwargs)
+        # Try regular version
+        if hasattr(self._kernel_interface, 'fused_select_expand'):
+            logger.debug("Optimized fused kernel not available, using regular version")
+            return self._kernel_interface.fused_select_expand(*args, **kwargs)
+        # Fallback to separate operations
+        logger.debug("Fused select+expand not available, using separate operations")
+        return None
+    
     
     def find_expansion_nodes(self, *args, **kwargs):
         """Find expansion nodes"""
@@ -258,6 +270,32 @@ class ConsolidatedKernelInterface:
     def batched_add_children(self, *args, **kwargs):
         return self.kernels.batched_add_children(*args, **kwargs)
     
+    def batch_apply_virtual_loss(self, node_indices, virtual_loss_counts):
+        """Apply virtual loss to nodes using optimized CUDA kernel"""
+        return self.kernels.batch_apply_virtual_loss(node_indices, virtual_loss_counts)
+    
+    def warp_aggregated_virtual_loss(self, node_indices, virtual_loss_counts):
+        """Apply virtual losses using warp-aggregated atomics for reduced contention"""
+        if hasattr(self.kernels, 'warp_aggregated_virtual_loss'):
+            return self.kernels.warp_aggregated_virtual_loss(node_indices, virtual_loss_counts)
+        else:
+            # Fallback to standard batch apply
+            return self.kernels.batch_apply_virtual_loss(node_indices, virtual_loss_counts)
+    
+    def batch_remove_virtual_loss(self, node_indices, virtual_loss_counts):
+        """Remove virtual loss from nodes using optimized CUDA kernel"""
+        return self.kernels.batch_remove_virtual_loss(node_indices, virtual_loss_counts)
+    
+    def parallel_select_with_virtual_loss(self, parent_nodes, children, visit_counts, 
+                                         virtual_loss_counts, value_sums, priors, 
+                                         child_actions, c_puct, virtual_loss_value):
+        """Parallel UCB selection with integrated virtual loss"""
+        return self.kernels.parallel_select_with_virtual_loss(
+            parent_nodes, children, visit_counts, virtual_loss_counts,
+            value_sums, priors, None, None, child_actions, c_puct, 
+            virtual_loss_value, 0.0
+        )
+    
     def fused_select_expand(self, *args, **kwargs):
         # Convert kwargs to positional args for C++ binding
         if kwargs:
@@ -274,6 +312,13 @@ class ConsolidatedKernelInterface:
                 prior_probs, is_expanded, max_depth, c_puct
             )
         return self.kernels.fused_select_expand(*args)
+    
+    def fused_select_expand_optimized(self, *args, **kwargs):
+        """PHASE 2.1 OPTIMIZATION: Use optimized fused kernel with 4x reduced overhead"""
+        if hasattr(self.kernels, 'fused_select_expand_optimized'):
+            return self.kernels.fused_select_expand_optimized(*args, **kwargs)
+        # Fallback to regular version
+        return self.fused_select_expand(*args, **kwargs)
     
     def batched_dirichlet_noise(self, *args, **kwargs):
         return self.kernels.batched_dirichlet_noise(*args, **kwargs)

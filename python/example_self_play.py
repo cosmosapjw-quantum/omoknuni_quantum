@@ -13,25 +13,38 @@ import logging
 import torch
 import numpy as np
 from pathlib import Path
+import argparse
+import time
 
 # CRITICAL OPTIMIZATION: Apply PyTorch performance settings
 torch.set_float32_matmul_precision('high')
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.benchmark = True
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:512'
-import argparse
-import time
+# Reduce memory fragmentation and prevent CPU-GPU sync due to VRAM pressure
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:256'
+# Force garbage collection to prevent memory buildup
+os.environ['PYTORCH_CUDA_ALLOC_SYNC'] = '1'
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent))
 
 from mcts.core.mcts import MCTS
 from mcts.core.mcts_config import MCTSConfig
-from mcts.gpu.gpu_game_states import GameType
 from mcts.neural_networks.resnet_model import ResNetModel, ResNetConfig
+from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
 from mcts.utils.single_gpu_evaluator import SingleGPUEvaluator
 from mcts.core.game_interface import create_game_interface
+
+# Import GameType conditionally based on backend
+def get_game_type(backend):
+    if backend == 'cpu':
+        # For CPU backend, use string directly
+        return 'gomoku'
+    else:
+        # For GPU backend, import GameType
+        from mcts.gpu.gpu_game_states import GameType
+        return GameType.GOMOKU
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +54,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_self_play(backend='gpu', num_games=10, num_simulations=400):
+def run_self_play(backend='gpu', num_games=10, num_simulations=400, use_cython=False):
     """Run self-play with specified backend
     
     Args:
@@ -54,49 +67,74 @@ def run_self_play(backend='gpu', num_games=10, num_simulations=400):
     game_type = 'gomoku'
     board_size = 15
     
-    # Create MCTS configuration with optimized settings
+    # Create MCTS configuration with optimized settings for 3000+ sims/sec
     config = MCTSConfig(
         board_size=board_size,
-        game_type=GameType.GOMOKU,
+        game_type=get_game_type(backend),
         backend=backend,
-        device='cuda' if backend == 'gpu' else 'cpu',
+        device='cuda' if backend in ['gpu', 'hybrid'] else 'cpu',
         num_simulations=num_simulations,
         c_puct=1.4,
-        # Wave-based parallelization - optimized for 3000+ sims/sec
-        wave_size=4096 if backend == 'gpu' else 32,  # Optimal wave size found through testing
-        min_wave_size=2048 if backend == 'gpu' else 32,
-        max_wave_size=4096 if backend == 'gpu' else 64,
-        # Tree configuration
-        max_tree_nodes=500000,
+        # Wave-based parallelization
+        wave_size=2048 if backend == 'gpu' else 256 if backend == 'hybrid' else 32,
+        min_wave_size=512 if backend == 'gpu' else 128 if backend == 'hybrid' else 32,
+        max_wave_size=4096 if backend == 'gpu' else 512 if backend == 'hybrid' else 64,
+        # Tree configuration - optimized for available VRAM to prevent sync issues
+        max_tree_nodes=5000000 if backend == 'gpu' else 500000 if backend == 'hybrid' else 100000,
+        initial_tree_nodes=500000 if backend == 'gpu' else 500000 if backend == 'hybrid' else 10000,  # Hybrid needs more capacity for state management
         # GPU-specific optimizations
         enable_kernel_fusion=backend == 'gpu',
         use_cuda_graphs=backend == 'gpu',
         use_tensor_cores=backend == 'gpu',
-        wave_async_expansion=True,   # Use optimized AsyncWaveSearch for 3000+ sims/sec
+        wave_async_expansion=True if backend == 'gpu' else False,   # AsyncWaveSearch for GPU only
+        enable_subtree_reuse=True,  # Enable tree reuse for both GPU and CPU backends
+        subtree_reuse_min_visits=1,  # Minimal threshold to maximize tree reuse
         enable_fast_ucb=backend == 'gpu',
         use_mixed_precision=backend == 'gpu',
         enable_multi_stream=backend == 'gpu',
         num_cuda_streams=8 if backend == 'gpu' else 1,  # More streams for better overlap
         stream_memory_pool_size=512 if backend == 'gpu' else 0,
-        # Memory optimization
+        # Memory optimization - reduced to prevent VRAM pressure
         enable_memory_pooling=backend == 'gpu',
-        memory_pool_size_mb=4096 if backend == 'gpu' else 0,
-        gpu_memory_fraction=0.9 if backend == 'gpu' else 0.0,
-        # Fast batch processing
-        gpu_batch_timeout=0.001 if backend == 'gpu' else 0.1,  # 1ms for minimal latency
+        memory_pool_size_mb=2048 if backend == 'gpu' else 0,  # Reduced pool size
+        gpu_memory_fraction=0.8 if backend == 'gpu' else 0.0,  # Leave 20% free for stability
+        # Fast batch processing - reduced timeout
+        gpu_batch_timeout=0.0005 if backend == 'gpu' else 0.1,  # 0.5ms for minimal latency
         # Caching optimizations
         cache_legal_moves=True,
         cache_features=True,
-        # Progressive widening settings
-        progressive_widening_constant=10.0,
+        # Progressive widening settings - reduced to decrease CPU overhead
+        progressive_widening_constant=5.0,  # Reduced from 10.0
         progressive_widening_exponent=0.5,
-        initial_expansion_children=10,
+        initial_expansion_children=5,  # Reduced from 10
         # Virtual loss for parallelization
         virtual_loss=3.0,
         # Batch size for neural network
-        batch_size=2048 if backend == 'gpu' else 256,
-        inference_batch_size=2048 if backend == 'gpu' else 256,
+        batch_size=1024 if backend == 'gpu' else 256 if backend == 'hybrid' else 256,
+        inference_batch_size=1024 if backend == 'gpu' else 256 if backend == 'hybrid' else 256,
+        # Dynamic allocation for better memory usage
+        enable_dynamic_allocation=True,
     )
+    
+    # Enable appropriate hybrid backend
+    if backend == 'hybrid':
+        if use_cython:
+            # Use Cython-optimized hybrid backend for maximum performance
+            config.use_cython_hybrid = True
+            config.use_genuine_hybrid = False
+            config.use_fixed_hybrid = False
+            config.batch_size = 1024  # Larger batches for Cython backend
+            config.inference_batch_size = 1024
+            config.hybrid_gpu_batch_size = 1024
+            logger.info("Using Cython-optimized hybrid backend (target: 10,000 sims/sec)")
+        else:
+            # Use genuine hybrid for stable performance
+            config.use_cython_hybrid = False
+            config.use_genuine_hybrid = True
+            config.use_fixed_hybrid = False
+            config.use_simple_hybrid = False
+            config.use_optimized_hybrid = False
+            logger.info("Using genuine hybrid backend")
     
     # Neural network configuration
     num_res_blocks = 10
@@ -137,80 +175,41 @@ def run_self_play(backend='gpu', num_games=10, num_simulations=400):
     # Create optimized evaluator with pinned memory
     logger.info(f"Creating optimized evaluator with device={device}, batch_size={config.inference_batch_size}")
     
-    if backend == 'gpu':
-        # Use optimized evaluator with pinned memory for GPU backend
-        class OptimizedEvaluator(SingleGPUEvaluator):
-            """Evaluator with pinned memory and async transfers"""
-            
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                
-                # Pre-allocate pinned memory buffers for 2x faster transfers
-                self.pinned_input = torch.zeros(
-                    (self.batch_size, 19, 15, 15),
-                    dtype=torch.float32,
-                    pin_memory=True
-                )
-                
-                self.pinned_policy = torch.zeros(
-                    (self.batch_size, 225),
-                    dtype=torch.float32,
-                    pin_memory=True
-                )
-                
-                self.pinned_value = torch.zeros(
-                    (self.batch_size, 1),
-                    dtype=torch.float32,
-                    pin_memory=True
-                )
-                
-                # Create transfer stream for async operations
-                self.transfer_stream = torch.cuda.Stream()
-                logger.info("Allocated pinned memory buffers for optimized transfers")
-            
-            def evaluate_batch(self, states):
-                """Evaluate with optimized pinned memory transfers"""
-                batch_size = len(states) if isinstance(states, list) else states.shape[0]
-                
-                # Use pinned memory buffer
-                if isinstance(states, torch.Tensor):
-                    # Copy to pinned memory
-                    self.pinned_input[:batch_size].copy_(states)
-                    gpu_states = self.pinned_input[:batch_size].to(self.device, non_blocking=True)
-                else:
-                    gpu_states = torch.from_numpy(states).to(self.device)
-                
-                # Mixed precision for tensor cores
-                if hasattr(self, 'use_mixed_precision') and self.use_mixed_precision:
-                    gpu_states = gpu_states.half()
-                
-                # Evaluate with autocast
-                with torch.cuda.amp.autocast():
-                    with torch.no_grad():
-                        policies, values = self.model(gpu_states)
-                
-                return policies, values
-        
-        evaluator = OptimizedEvaluator(
-            model=model,
-            device=device,
-            batch_size=config.inference_batch_size,
-            use_mixed_precision=True
-        )
-    else:
-        evaluator = SingleGPUEvaluator(
-            model=model,
-            device=device,
-            batch_size=config.inference_batch_size
-        )
+    # Use ResNetEvaluator for all backends - it automatically optimizes based on device
+    # For GPU backend, it includes:
+    # - Pinned memory buffers (27.23x speedup)
+    # - Non-blocking transfers
+    # - Mixed precision support
+    # - Optimized memory access patterns
+    evaluator = ResNetEvaluator(
+        model=model,
+        game_type=game_type,
+        device=str(device)
+    )
+    
+    # Override batch size for self-play to match optimized config
+    evaluator.batch_size = config.inference_batch_size
+    
+    # Re-initialize pinned memory buffers with new batch size (only allocates on GPU)
+    evaluator._init_pinned_memory_buffers()
+    
+    # OPTIMIZATION: Enable persistent batching context (Phase 1.4)
+    # Pre-allocate buffers for entire game length to avoid reallocation
+    if hasattr(evaluator, 'enable_persistent_batching'):
+        evaluator.enable_persistent_batching(True)
+        evaluator.allocate_game_length_buffers(max_moves=100)
     
     # Enable direct tensor returns for GPU efficiency
     evaluator._return_torch_tensors = True
     
     # Create MCTS instance
+    # Create MCTS instance once
     logger.info("Creating MCTS instance...")
     mcts = MCTS(config, evaluator)
     logger.info("MCTS instance created successfully")
+    
+    # Create game interface for state management
+    game_interface = create_game_interface(game_type, board_size=board_size)
     
     # Play games and collect statistics
     all_examples = []
@@ -219,59 +218,63 @@ def run_self_play(backend='gpu', num_games=10, num_simulations=400):
     for game_idx in range(num_games):
         logger.info(f"\nPlaying game {game_idx + 1}/{num_games}...")
         
-        # Initialize game state
-        state = np.zeros((board_size, board_size), dtype=np.int8)
+        # Clear MCTS tree for new game
+        if game_idx > 0:
+            logger.info("Clearing MCTS tree for new game...")
+            mcts.clear()
+        
+        # Reset game interface for new game
+        game_interface.reset()
+        
+        # Use game_interface state directly - no double state management
+        state = game_interface.create_initial_state()
+        
         current_player = 1
         move_count = 0
         game_start = time.time()
         move_times = []
         sims_per_sec_list = []
+        game_over = False
+        winner = 0
         
-        # Play one game
-        while True:
-            try:
-                move_start = time.time()
+        # Play one game - optimized loop
+        while move_count < 225:  # Max moves for 15x15 board
+            # Check terminal state before search to avoid unnecessary computation
+            if game_interface.is_terminal(state):
+                winner = game_interface.get_winner(state)
+                break
                 
-                # Run MCTS search
-                logger.debug(f"Running MCTS search with {num_simulations} simulations...")
-                policy = mcts.search(state, num_simulations=num_simulations)
-                logger.debug("MCTS search completed")
-            except Exception as e:
-                logger.error(f"Error during MCTS search: {e}")
-                import traceback
-                traceback.print_exc()
-                raise
+            move_start = time.time()
             
-            # Select action based on policy
-            if move_count < 15:  # Use temperature for exploration in early game
-                action = mcts.select_action(state, temperature=1.0)
-            else:  # Play deterministically in late game
-                action = mcts.select_action(state, temperature=0.1)
+            # Run MCTS search - state is already GPU-friendly
+            policy = mcts.search(state, num_simulations=num_simulations)
             
+            # Optimized action selection - no redundant computations
+            if move_count < 15:  # Early game exploration
+                # Direct sampling with temperature=1.0 (no need to modify policy)
+                action = int(np.random.choice(len(policy), p=policy))
+            else:  # Late game exploitation
+                # Apply temperature=0.1 efficiently
+                temp_policy = policy ** 10.0  # Equivalent to (policy ** (1/0.1))
+                temp_policy = temp_policy / temp_policy.sum()
+                action = int(np.argmax(temp_policy))
+            
+            # Timing and stats
             move_time = time.time() - move_start
             move_times.append(move_time)
             sims_per_sec = num_simulations / move_time if move_time > 0 else 0
             sims_per_sec_list.append(sims_per_sec)
             
-            # Convert action to coordinates
-            row = action // board_size
-            col = action % board_size
+            # Single state update - game_interface handles everything
+            state = game_interface.apply_move(state, action)
             
-            # Apply move
-            state[row, col] = current_player
+            # Update tree root with new state
+            mcts.update_root(action, new_state=state)
             
-            # Update tree root for reuse
-            mcts.update_root(action)
-            
-            # Check for game end (simplified - just check if board is getting full)
+            # Increment move count (player switching not needed for stats)
             move_count += 1
-            if move_count >= 50 or np.sum(state == 0) < 20:
-                break
-                
-            # Switch player
-            current_player = -current_player
             
-            # Log progress
+            # Log progress with reduced frequency
             if move_count % 10 == 0:
                 logger.info(f"  Move {move_count}: {sims_per_sec:.0f} sims/sec")
         
@@ -281,13 +284,17 @@ def run_self_play(backend='gpu', num_games=10, num_simulations=400):
         metrics.append({
             'game_length': move_count,
             'game_time': game_time,
-            'avg_time_per_move': np.mean(move_times),
-            'avg_simulations_per_second': np.mean(sims_per_sec_list),
-            'winner': current_player  # Simplified - last player to move
+            'avg_time_per_move': np.mean(move_times) if move_times else 0.0,
+            'avg_simulations_per_second': np.mean(sims_per_sec_list) if sims_per_sec_list else 0.0,
+            'winner': winner  # Actual winner from game logic
         })
         
-        logger.info(f"Game {game_idx + 1} completed: {move_count} moves in {game_time:.1f}s ")
-        logger.info(f"Average: {np.mean(sims_per_sec_list):.0f} sims/sec")
+        winner_str = "Player 1" if winner == 1 else ("Player 2" if winner == -1 else "Draw")
+        logger.info(f"Game {game_idx + 1} completed: {move_count} moves in {game_time:.1f}s - Winner: {winner_str}")
+        if sims_per_sec_list:
+            logger.info(f"Average: {np.mean(sims_per_sec_list):.0f} sims/sec")
+        else:
+            logger.info("No moves were made in this game")
     
     # Display aggregate results
     logger.info(f"\n=== Self-Play Results ===")
@@ -324,6 +331,8 @@ def main():
                         help='MCTS simulations per move (default: 400)')
     parser.add_argument('--compare', action='store_true',
                         help='Compare all backends')
+    parser.add_argument('--use-cython', action='store_true',
+                        help='Use Cython-optimized hybrid backend (only with --backend hybrid)')
     
     args = parser.parse_args()
     
@@ -376,7 +385,8 @@ def main():
             run_self_play(
                 backend=args.backend,
                 num_games=args.games,
-                num_simulations=args.simulations
+                num_simulations=args.simulations,
+                use_cython=args.use_cython
             )
         except Exception as e:
             logger.error(f"Error during self-play: {e}")

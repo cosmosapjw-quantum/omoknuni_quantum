@@ -7,20 +7,22 @@ Includes operations for tree management, node manipulation, and subtree reuse.
 import torch
 from typing import Dict, Optional, Tuple, Any
 
-from ..gpu.csr_tree import CSRTree
-
 
 class TreeOperations:
     """Handles tree-specific operations for MCTS"""
     
-    def __init__(self, tree: CSRTree, config: Any, device: torch.device):
+    def __init__(self, tree: Any, config: Any, device: torch.device):
         """Initialize tree operations
         
         Args:
-            tree: CSR tree structure
+            tree: Tree structure (CSRTree for GPU, CythonTree for CPU)
             config: MCTS configuration
             device: Torch device
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"TreeOperations.__init__ called with tree={type(tree).__name__}, device={device}")
+        
         self.tree = tree
         self.config = config
         self.device = device
@@ -28,9 +30,20 @@ class TreeOperations:
         # Track last action for subtree reuse
         self.last_selected_action = None
         
+        logger.info("TreeOperations initialization completed")
+        
     def clear(self):
         """Clear and reset the tree"""
-        self.tree.reset()
+        if hasattr(self.tree, 'reset'):
+            self.tree.reset()
+        else:
+            # CPU backend - reset manually
+            if hasattr(self.tree, 'num_nodes'):
+                self.tree.num_nodes = 1
+            if hasattr(self.tree, 'visit_counts'):
+                self.tree.visit_counts.fill(0)
+            if hasattr(self.tree, 'value_sums'):
+                self.tree.value_sums.fill(0)
         self.last_selected_action = None
             
     def reset_tree(self):
@@ -53,19 +66,41 @@ class TreeOperations:
             return None
             
         # Find the child node corresponding to the action
-        child_idx = self.tree.get_child_by_action(0, new_root_action)
+        if hasattr(self.tree, 'get_child_by_action'):
+            child_idx = self.tree.get_child_by_action(0, new_root_action)
+        else:
+            # CPU backend - find child manually
+            children, actions, _ = self.tree.get_children(0)
+            child_idx = None
+            for i, action in enumerate(actions):
+                if action == new_root_action:
+                    child_idx = children[i]
+                    break
+        
         if child_idx is None:
             return None
             
         # Check if the subtree is worth preserving
-        subtree_visits = self.tree.node_data.visit_counts[child_idx].item()
-        if subtree_visits < self.config.subtree_reuse_min_visits:
+        if hasattr(self.tree, 'node_data'):
+            # GPU backend
+            subtree_visits = self.tree.node_data.visit_counts[child_idx].item()
+        else:
+            # CPU backend
+            subtree_visits = self.tree.visit_counts[child_idx]
+            
+        min_visits = getattr(self.config, 'subtree_reuse_min_visits', 10)
+        if subtree_visits < min_visits:
             # Not worth preserving - just reset the tree
-            self.tree.reset()
-            return {}
+            self.clear()
+            return None
             
         # Use shift_root to efficiently reuse the subtree
-        mapping = self.tree.shift_root(child_idx)
+        if hasattr(self.tree, 'shift_root'):
+            mapping = self.tree.shift_root(child_idx)
+        else:
+            # CPU backend doesn't support shift_root yet - just reset
+            self.clear()
+            return None
         
         # NOTE: DO NOT clear the root's children after shift_root!
         # The whole point of tree reuse is to preserve the subtree structure.
@@ -82,16 +117,18 @@ class TreeOperations:
         
         # Important: If only the root was preserved (mapping size 1), 
         # ensure it's properly initialized for the next search
-        if len(mapping) == 1:
-            # The root needs to be marked as not expanded so it will be
-            # expanded in the next search
-            self.tree.node_data.set_expanded(0, False)
-            # Also ensure the root has no children in the CSR structure
-            # This is important for proper expansion detection
-            if hasattr(self.tree, 'csr_storage') and hasattr(self.tree.csr_storage, 'row_ptr'):
-                # Set row_ptr[0] = row_ptr[1] = 0 to indicate no edges from root
-                self.tree.csr_storage.row_ptr[0] = 0
-                self.tree.csr_storage.row_ptr[1] = 0
+        if mapping and len(mapping) == 1:
+            # GPU backend specific handling
+            if hasattr(self.tree, 'node_data'):
+                # The root needs to be marked as not expanded so it will be
+                # expanded in the next search
+                self.tree.node_data.set_expanded(0, False)
+                # Also ensure the root has no children in the CSR structure
+                # This is important for proper expansion detection
+                if hasattr(self.tree, 'csr_storage') and hasattr(self.tree.csr_storage, 'row_ptr'):
+                    # Set row_ptr[0] = row_ptr[1] = 0 to indicate no edges from root
+                    self.tree.csr_storage.row_ptr[0] = 0
+                    self.tree.csr_storage.row_ptr[1] = 0
         
         return mapping
         
@@ -104,11 +141,14 @@ class TreeOperations:
         Returns:
             Mapping from old node indices to new indices
         """
-        # Use the efficient shift_root method from CSRTree
-        # This preserves the entire subtree structure and remaps indices
-        mapping = self.tree.shift_root(new_root_idx)
-        
-        return mapping
+        if hasattr(self.tree, 'shift_root'):
+            # Use the efficient shift_root method from CSRTree
+            # This preserves the entire subtree structure and remaps indices
+            mapping = self.tree.shift_root(new_root_idx)
+            return mapping
+        else:
+            # CPU backend doesn't support shift_root yet
+            return {}
         
 
     def get_root_children_info(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -126,8 +166,23 @@ class TreeOperations:
                     torch.tensor([], dtype=torch.int32), 
                     torch.tensor([], dtype=torch.float32))
                     
-        visits = self.tree.node_data.visit_counts[children_indices]
-        values = self.tree.node_data.value_sums[children_indices] / (visits + 1e-8)
+        # Handle both GPU and CPU backends
+        if hasattr(self.tree, 'visit_counts'):
+            # CPU backend - access properties directly
+            visit_counts = self.tree.visit_counts
+            value_sums = self.tree.value_sums
+            
+            # Convert to torch tensors for consistency
+            visits = torch.tensor([visit_counts[idx] for idx in children_indices], dtype=torch.int32)
+            values = torch.tensor([value_sums[idx] / (visit_counts[idx] + 1e-8) for idx in children_indices], dtype=torch.float32)
+        elif self.tree.node_data is not None:
+            # GPU backend
+            visits = self.tree.node_data.visit_counts[children_indices]
+            values = self.tree.node_data.value_sums[children_indices] / (visits + 1e-8)
+        else:
+            # Fallback - should not happen
+            visits = torch.zeros(len(children_indices), dtype=torch.int32)
+            values = torch.zeros(len(children_indices), dtype=torch.float32)
         
         return actions, visits, values
         
@@ -141,6 +196,16 @@ class TreeOperations:
         Returns:
             Index of best child or None if no children
         """
+        # Handle CPU backend with direct method
+        if hasattr(self.tree, 'select_best_child'):
+            # CythonTree has its own select_best_child method
+            best_child = self.tree.select_best_child(node_idx)
+            return best_child if best_child >= 0 else None
+            
+        # GPU backend with CSR storage
+        if not hasattr(self.tree, 'csr_storage'):
+            return None
+            
         # Check bounds to prevent IndexError
         if node_idx < 0 or node_idx >= len(self.tree.csr_storage.row_ptr):
             return None

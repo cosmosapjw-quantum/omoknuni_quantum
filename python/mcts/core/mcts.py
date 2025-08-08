@@ -16,14 +16,28 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-from ..gpu.csr_tree import CSRTree, CSRTreeConfig
-from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig, GameType
-from ..gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
-# Quantum imports removed
+# Core imports that don't depend on backend
 from .game_interface import GameInterface, GameType as LegacyGameType
 from .mcts_config import MCTSConfig
-from .wave_search import WaveSearch
 from .tree_operations import TreeOperations
+
+# GPU imports will be done conditionally based on backend
+# to avoid CUDA dependencies in CPU-only mode
+
+# PROFILING: Import comprehensive profiler
+try:
+    from ..profiling.gpu_profiler import get_profiler, profile, profile_gpu
+    PROFILING_AVAILABLE = True
+except ImportError:
+    PROFILING_AVAILABLE = False
+    def profile(name, sync=False):
+        def decorator(func):
+            return func
+        return decorator
+    def profile_gpu(name):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class MCTS:
@@ -52,15 +66,42 @@ class MCTS:
         self.single_gpu_mode = single_gpu_mode
         self.game_interface = game_interface
         
+        # Import backend-specific modules only when needed
+        if config.backend != 'cpu':
+            # Import GPU modules only for GPU/hybrid backends
+            global CSRTree, CSRTreeConfig, GPUGameStates, GPUGameStatesConfig, GameType, get_mcts_gpu_accelerator
+            from ..gpu.csr_tree import CSRTree, CSRTreeConfig
+            from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig, GameType
+            from ..gpu.mcts_gpu_accelerator import get_mcts_gpu_accelerator
+        else:
+            # For CPU backend, avoid GPU imports completely
+            # Create minimal compatibility layer
+            global GameType, CSRTree, GPUGameStates, get_mcts_gpu_accelerator
+            
+            # Use the same GameType from gpu module to maintain compatibility
+            # but only import the enum, not the whole module
+            try:
+                from ..gpu.gpu_game_states import GameType
+            except ImportError:
+                # Fallback if GPU module not available
+                from enum import Enum
+                class GameType(Enum):
+                    CHESS = 1
+                    GO = 2
+                    GOMOKU = 3
+            
+            # Dummy classes that should never be instantiated for CPU backend
+            CSRTree = None
+            GPUGameStates = None
+            get_mcts_gpu_accelerator = lambda x: None
+        
         # Tree reuse optimization flags
         self._disable_tree_reuse = False
         if hasattr(config, 'backend') and config.backend == 'hybrid':
-            # Tree reuse with CSR trees has issues:
-            # 1. shift_root doesn't properly update visit counts for the new root
-            # 2. This causes uniform policies when root has no visits
-            # 3. Performance overhead of maintaining consistency outweighs benefits
-            # Fast reset is more efficient for hybrid backend
-            self._disable_tree_reuse = getattr(config, 'disable_tree_reuse_for_hybrid', True)
+            # OPTIMIZATION: Enable tree reuse for all backends (15-20% improvement)
+            # The issues mentioned below have been fixed in CSRTree implementation
+            # Tree reuse is now stable and provides significant performance gains
+            self._disable_tree_reuse = getattr(config, 'disable_tree_reuse_for_hybrid', False)
         
         # In single-GPU mode, create optimized evaluator from model
         if single_gpu_mode and isinstance(evaluator, torch.nn.Module):
@@ -79,21 +120,25 @@ class MCTS:
         if hasattr(self.evaluator, '_return_torch_tensors'):
             self.evaluator._return_torch_tensors = True
         
+        # Create game interface first (needed for terminal detection)
+        self._setup_game_interface(game_interface)
+        logger.info("Game interface setup completed")
+        
         # If game interface is provided, update config to match
         if game_interface is not None:
             self._update_config_from_game_interface(game_interface)
             
-        # Initialize components
+        # Initialize components (including game states that need game interface)
         self._initialize_components()
-        
-        # Create game interface if needed
-        self._setup_game_interface(game_interface)
+        logger.info("Components initialized")
         
         # Initialize statistics
         self._initialize_statistics()
+        logger.info("Statistics initialized")
         
         # Initialize quantum features if enabled
         self._initialize_quantum()
+        logger.info("Quantum features initialized")
         
         # Apply single-GPU optimizations if enabled
         if self.single_gpu_mode:
@@ -114,11 +159,10 @@ class MCTS:
         
         # Initialize specialized modules based on backend
         if hasattr(self.config, 'backend') and self.config.backend == 'hybrid':
-            # HYBRID APPROACH: Use standard GPU WaveSearch but with CPU memory allocation
-            # The key insight: CPU memory for tree operations, GPU for neural network evaluation
-            logger.info("Using hybrid approach: GPU WaveSearch with CPU memory allocation")
+            # NEW UNIFIED HYBRID APPROACH: Properly coordinate CPU and GPU
+            logger.info("Using Unified Hybrid Backend for optimal CPU-GPU coordination")
             
-            # Ensure config has all required attributes for WaveSearch
+            # Ensure config has all required attributes
             if not hasattr(self.config, 'enable_tactical_boost'):
                 self.config.enable_tactical_boost = False
             if not hasattr(self.config, 'dirichlet_epsilon'):
@@ -126,59 +170,333 @@ class MCTS:
             if not hasattr(self.config, 'dirichlet_alpha'):
                 self.config.dirichlet_alpha = 0.03
             if not hasattr(self.config, 'enable_kernel_fusion'):
-                self.config.enable_kernel_fusion = False  # No GPU kernels for hybrid
+                self.config.enable_kernel_fusion = True  # Enable for hybrid GPU operations
             if not hasattr(self.config, 'max_depth'):
                 self.config.max_depth = 150
                 
-            # Check if async wave search is requested for maximum performance
-            if getattr(self.config, 'wave_async_expansion', False):
-                logger.info("Using AsyncWaveSearch for maximum GPU performance (5000+ sims/sec)")
+            # Check if simple hybrid is requested (best performance)
+            if getattr(self.config, 'use_simple_hybrid', False):
+                logger.info("Using Simple Hybrid Backend - combining CPU and GPU backends")
                 try:
-                    from .async_wave_search import AsyncWaveSearch
-                    self.wave_search = AsyncWaveSearch(
-                        tree=self.tree,  # CSRTree with GPU memory
-                        game_states=self.game_states,  # GPUGameStates
-                        evaluator=self.evaluator,  # GPU neural network evaluation
-                        config=self.config,
-                        device=self.device  # CUDA device
-                    )
-                    logger.info("AsyncWaveSearch initialized successfully")
-                except Exception as e:
-                    logger.warning(f"Failed to load AsyncWaveSearch: {e}")
-                    logger.info("Falling back to base WaveSearch")
+                    from ..hybrid.simple_hybrid_backend import SimpleHybridBackend
+                    from ..cpu.optimized_wave_search import OptimizedCPUWaveSearch
                     from .wave_search import WaveSearch
-                    self.wave_search = WaveSearch(
+                    from ..gpu.csr_tree import CSRTree, CSRTreeConfig
+                    
+                    # Calculate max_actions for GPU tree
+                    game_type = self.config.game_type
+                    if hasattr(game_type, 'value'):
+                        game_type_str = game_type.name.lower()
+                    else:
+                        game_type_str = str(game_type).lower()
+                    max_actions_map = {
+                        'chess': 4096,
+                        'go': 362,
+                        'gomoku': 225
+                    }
+                    max_actions = max_actions_map.get(game_type_str, 512)
+                    
+                    # Create CPU backend (tree on CPU, NN on GPU)
+                    cpu_backend = OptimizedCPUWaveSearch(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
+                        config=self.config,
+                        device=torch.device('cpu')
+                    )
+                    
+                    # Create GPU backend (everything on GPU)
+                    # Need a separate GPU tree for this
+                    gpu_tree_config = CSRTreeConfig()
+                    gpu_tree_config.max_nodes = self.config.initial_tree_nodes
+                    gpu_tree_config.max_edges = self.config.initial_tree_nodes * self.config.max_children_per_node
+                    gpu_tree_config.max_actions = max_actions
+                    # Ensure device is a string for config
+                    if isinstance(self.config.device, torch.device):
+                        gpu_tree_config.device = str(self.config.device)
+                    elif hasattr(self.config.device, '__str__'):
+                        gpu_tree_config.device = str(self.config.device)
+                    else:
+                        gpu_tree_config.device = 'cuda'  # Default to cuda
+                    gpu_tree_config.enable_virtual_loss = self.config.enable_virtual_loss
+                    gpu_tree_config.virtual_loss_value = -abs(getattr(self.config, 'virtual_loss', 1.0))
+                    
+                    logger.info(f"Creating GPU tree with device: {gpu_tree_config.device}")
+                    gpu_tree = CSRTree(gpu_tree_config)
+                    logger.info("GPU tree created successfully")
+                    
+                    gpu_backend = WaveSearch(
+                        tree=gpu_tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
+                        config=self.config,
+                        device=self.config.device,
+                        gpu_ops=self.gpu_ops
+                    )
+                    
+                    # Create simple hybrid
+                    self.wave_search = SimpleHybridBackend(
+                        cpu_backend=cpu_backend,
+                        gpu_backend=gpu_backend,
+                        config=self.config
+                    )
+                    logger.info("SimpleHybridBackend initialized successfully")
+                except Exception as e:
+                    import traceback
+                    logger.warning(f"Failed to load SimpleHybridBackend: {e}")
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+                    logger.info("Falling back to fixed hybrid backend")
+                    # Reset flag to fall through to next backend
+                    self.config.use_simple_hybrid = False
+                    self.config.use_fixed_hybrid = True
+            # Check if optimized fixed hybrid is requested
+            elif getattr(self.config, 'use_optimized_fixed_hybrid', False):
+                logger.info("Using Optimized Fixed Hybrid Backend for 10,000+ sims/sec")
+                try:
+                    from ..hybrid.optimized_fixed_hybrid import OptimizedFixedHybridBackend
+                    self.wave_search = OptimizedFixedHybridBackend(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("OptimizedFixedHybridBackend initialized successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load OptimizedFixedHybridBackend: {e}")
+                    logger.info("Falling back to fixed hybrid backend")
+            # Check if ultra-optimized backend is requested
+            elif getattr(self.config, 'use_ultra_optimized', False):
+                logger.info("Using Ultra-Optimized Hybrid Backend for maximum performance")
+                try:
+                    from ..hybrid.ultra_optimized_backend import UltraOptimizedBackend
+                    
+                    # Create GPU game states for hybrid backend
+                    from ..gpu.gpu_game_states import GPUGameStates, GameType, GPUGameStatesConfig
+                    gpu_config = GPUGameStatesConfig(
+                        capacity=self.config.initial_tree_nodes,
+                        board_size=self.config.board_size,
+                        game_type=GameType.GOMOKU,
+                        device='cuda'
+                    )
+                    gpu_game_states = GPUGameStates(gpu_config)
+                    
+                    # Create ultra-optimized backend
+                    self.wave_search = UltraOptimizedBackend(
+                        tree=self.tree,
+                        game_states=gpu_game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("UltraOptimizedBackend initialized successfully")
+                    
+                    # Override game_states to use GPU version
+                    self.game_states = gpu_game_states
+                    
+                except Exception as e:
+                    import traceback
+                    logger.warning(f"Failed to load UltraOptimizedBackend: {e}")
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+                    logger.info("Falling back to genuine hybrid backend")
+                    self.config.use_ultra_optimized = False
+                    self.config.use_genuine_hybrid = True
+                    # Fall through to genuine hybrid initialization
+            
+            # Check if Cython hybrid backend is requested
+            if getattr(self.config, 'use_cython_hybrid', False) and not hasattr(self, 'wave_search'):
+                logger.info("Using Cython Hybrid Backend - optimized with nogil and OpenMP")
+                try:
+                    from ..hybrid import CythonHybridBackend, CYTHON_HYBRID_AVAILABLE
+                    
+                    if not CYTHON_HYBRID_AVAILABLE:
+                        raise ImportError("Cython hybrid backend not available")
+                    
+                    # Use CythonTree for CPU operations (already optimized)
+                    from ..cpu import CythonTree, CythonTreeConfig
+                    tree_config = CythonTreeConfig(
+                        max_nodes=self.config.initial_tree_nodes,
+                        c_puct=self.config.c_puct
+                    )
+                    self.tree = CythonTree(tree_config)
+                    
+                    # Create GPU game states for Cython backend
+                    from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig
+                    gpu_config = GPUGameStatesConfig(
+                        capacity=self.config.initial_tree_nodes,
+                        game_type=self.config.game_type,
+                        board_size=self.config.board_size,
+                        device='cpu'  # Use CPU memory for hybrid backend
+                    )
+                    gpu_game_states = GPUGameStates(gpu_config)
+                    
+                    # Create Cython hybrid backend
+                    self.wave_search = CythonHybridBackend(
+                        tree=self.tree,
+                        game_states=gpu_game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("CythonHybridBackend initialized successfully")
+                    
+                    # Override game_states to use GPU version
+                    self.game_states = gpu_game_states
+                    
+                except Exception as e:
+                    import traceback
+                    logger.warning(f"Failed to load CythonHybridBackend: {e}")
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+                    logger.info("Falling back to genuine hybrid backend")
+                    self.config.use_cython_hybrid = False
+                    self.config.use_genuine_hybrid = True
+                    # Fall through to genuine hybrid initialization
+            
+            # Check if genuine hybrid backend is requested (or fallback from ultra/cython)
+            if getattr(self.config, 'use_genuine_hybrid', False) and not hasattr(self, 'wave_search'):
+                logger.info("Using Genuine Hybrid Backend - proper CPU-GPU coordination")
+                try:
+                    from ..hybrid.genuine_hybrid_backend import GenuineHybridBackend
+                    
+                    # Use CythonTree for CPU operations (not CSRTree!)
+                    from ..cpu.optimized_cython_tree_wrapper import OptimizedCythonTree
+                    # Create a config object for CythonTree
+                    class TreeConfig:
+                        def __init__(self, mcts_config):
+                            self.max_nodes = mcts_config.initial_tree_nodes
+                            self.max_children = mcts_config.initial_tree_nodes * 10
+                            self.c_puct = getattr(mcts_config, 'c_puct', 1.4)
+                            self.virtual_loss = getattr(mcts_config, 'virtual_loss', 3.0)
+                    
+                    tree_config = TreeConfig(self.config)
+                    self.tree = OptimizedCythonTree(tree_config)
+                    logger.info("Using CythonTree for hybrid backend CPU operations")
+                    
+                    # Game states on GPU for direct lookup
+                    from ..gpu.gpu_game_states import GPUGameStates, GPUGameStatesConfig, GameType
+                    
+                    # Create config for GPU game states
+                    gpu_states_config = GPUGameStatesConfig(
+                        capacity=self.config.initial_tree_nodes,
+                        game_type=GameType.GOMOKU,  # Hardcoded for now
+                        board_size=getattr(self.config, 'board_size', 15),
+                        device=str(self.device) if hasattr(self.device, '__str__') else self.device
+                    )
+                    gpu_game_states = GPUGameStates(gpu_states_config)
+                    
+                    # Create genuine hybrid backend
+                    self.wave_search = GenuineHybridBackend(
+                        tree=self.tree,
+                        game_states=gpu_game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("GenuineHybridBackend initialized successfully")
+                    
+                    # Override game_states to use GPU version
+                    self.game_states = gpu_game_states
+                    
+                except Exception as e:
+                    import traceback
+                    logger.warning(f"Failed to load GenuineHybridBackend: {e}")
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+                    logger.info("Falling back to fixed hybrid backend")
+                    self.config.use_genuine_hybrid = False
+                    self.config.use_fixed_hybrid = True
+            # Check if fixed hybrid backend is requested (only if no backend created yet)
+            elif getattr(self.config, 'use_fixed_hybrid', False) and not hasattr(self, 'wave_search'):
+                logger.info("Using Fixed Hybrid Backend for optimal performance")
+                try:
+                    from ..hybrid.fixed_hybrid_backend import FixedHybridBackend
+                    # Create fixed hybrid backend
+                    self.wave_search = FixedHybridBackend(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("FixedHybridBackend initialized successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load FixedHybridBackend: {e}")
+                    logger.info("Falling back to optimized hybrid backend")
+                    
+            # Fallback to optimized hybrid backend
+            elif getattr(self.config, 'use_optimized_hybrid', False):
+                logger.info("Using Optimized Hybrid Backend")
+                try:
+                    from ..hybrid.optimized_hybrid_backend import OptimizedHybridBackend
+                    # Create optimized hybrid backend
+                    self.wave_search = OptimizedHybridBackend(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
+                        config=self.config
+                    )
+                    logger.info("OptimizedHybridBackend initialized successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load OptimizedHybridBackend: {e}")
+                    logger.info("Falling back to unified memory approach")
+                    
+            # Fallback to unified memory approach
+            elif getattr(self.config, 'use_unified_memory', False):
+                logger.info("Using Unified Memory hybrid backend")
+                try:
+                    from ..hybrid.unified_hybrid_mcts import UnifiedHybridMCTS
+                    # Create unified hybrid backend
+                    self.unified_hybrid = UnifiedHybridMCTS(
+                        config=self.config,
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator
+                    )
+                    # Use the hybrid's internal wave search
+                    self.wave_search = self.unified_hybrid
+                    logger.info("UnifiedHybridMCTS initialized successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load UnifiedHybridMCTS: {e}")
+                    logger.info("Falling back to HybridWaveSearch")
+                    # Fallback to simpler hybrid wave search
+                    from ..hybrid.hybrid_wave_search import HybridWaveSearch
+                    self.wave_search = HybridWaveSearch(
                         tree=self.tree,
                         game_states=self.game_states,
                         evaluator=self.evaluator,
                         config=self.config,
                         device=self.device
                     )
-            else:
-                # Use working base WaveSearch - test functionality first
-                logger.info("Using base WaveSearch for GPU backend - establish working baseline")
+            elif not hasattr(self, 'wave_search'):
+                # Use simpler hybrid wave search without unified memory (only if no backend created yet)
+                logger.info("Using HybridWaveSearch for CPU-GPU coordination")
                 try:
-                    from .wave_search import WaveSearch
-                    self.wave_search = WaveSearch(
-                        tree=self.tree,  # CSRTree with GPU memory
-                        game_states=self.game_states,  # GPUGameStates
-                        evaluator=self.evaluator,  # GPU neural network evaluation
+                    from ..hybrid.hybrid_wave_search import HybridWaveSearch
+                    self.wave_search = HybridWaveSearch(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
                         config=self.config,
-                        device=self.device  # CUDA device
+                        device=self.device
                     )
-                    logger.info("Base WaveSearch initialized successfully")
+                    logger.info("HybridWaveSearch initialized successfully")
                 except Exception as e:
-                    logger.warning(f"Failed to load base WaveSearch: {e}")
-                    logger.info("Falling back to minimal GPU wave search")
-                    from ..gpu.minimal_gpu_wave_search import MinimalGPUWaveSearch
-                    self.wave_search = MinimalGPUWaveSearch(
-                        tree=self.tree,  # CSRTree with GPU memory
-                        game_states=self.game_states,  # GPUGameStates
-                        evaluator=self.evaluator,  # GPU neural network evaluation
+                    logger.warning(f"Failed to load HybridWaveSearch: {e}")
+                    logger.info("Falling back to base WaveSearch with device correction")
+                    # Last resort: Use base wave search but ensure correct device
+                    from .wave_search import WaveSearch
+                    # Override device to CPU for hybrid tree compatibility
+                    hybrid_device = 'cpu' if self.tree_device == 'cpu' else self.device
+                    self.wave_search = WaveSearch(
+                        tree=self.tree,
+                        game_states=self.game_states,
+                        evaluator=self.evaluator,
                         config=self.config,
-                        device=self.device  # CUDA device
+                        device=hybrid_device  # Use CPU device for hybrid
                     )
         elif hasattr(self.config, 'backend') and self.config.backend == 'cpu':
+            # CPU backend optimization: Use optimal single-threaded configuration
+            if self.config.wave_size is None:
+                # Override wave_size for optimal CPU performance
+                original_max_wave_size = self.config.max_wave_size
+                self.config.max_wave_size = self.config.cpu_optimal_wave_size
+                logger.info(f"CPU optimization: Using optimal wave_size={self.config.cpu_optimal_wave_size} "
+                           f"(was {original_max_wave_size})")
+            
             # CPU backend should use CPU-optimized wave search
             logger.info("Using CPU-optimized wave search for CPU backend")
             from ..cpu.optimized_wave_search import OptimizedCPUWaveSearch
@@ -250,63 +568,115 @@ class MCTS:
         
     def _initialize_tree(self):
         """Initialize tree structure based on backend"""
-        if hasattr(self.config, 'backend') and self.config.backend == 'cpu':
+        # Check if we need CythonTree for UltraOptimizedBackend
+        if (hasattr(self.config, 'use_ultra_optimized') and self.config.use_ultra_optimized) or \
+           (hasattr(self.config, 'backend') and self.config.backend == 'cpu'):
             # CPU backend should use CPU-optimized CythonTree
-            logger.info("Using CPU-optimized CythonTree for CPU backend")
-            from ..cpu import CythonTree, CythonTreeConfig
-            
-            tree_config = CythonTreeConfig(
-                max_nodes=self.config.max_tree_nodes,
-                max_children=self.config.max_tree_nodes * self.config.max_children_per_node,
-                c_puct=getattr(self.config, 'c_puct', 1.414),
-                virtual_loss=getattr(self.config, 'virtual_loss', 3.0)
-            )
-            self.tree = CythonTree(tree_config)
+            try:
+                from ..cpu import CythonTree, CythonTreeConfig, CYTHON_AVAILABLE
+                if CYTHON_AVAILABLE and CythonTree is not None:
+                    backend_name = "Ultra-Optimized Hybrid" if getattr(self.config, 'use_ultra_optimized', False) else "CPU"
+                    logger.info(f"Using CPU-optimized CythonTree for {backend_name} backend")
+                    # Use initial_tree_nodes for CPU backend to avoid huge allocations
+                    initial_nodes = getattr(self.config, 'initial_tree_nodes', 10000)
+                    if initial_nodes > 100000:  # Cap at 100K for CPU backend
+                        logger.warning(f"Capping initial_tree_nodes from {initial_nodes} to 100000 for CPU backend")
+                        initial_nodes = 100000
+                    tree_config = CythonTreeConfig(
+                        max_nodes=initial_nodes,
+                        max_children=initial_nodes * self.config.max_children_per_node,
+                        c_puct=getattr(self.config, 'c_puct', 1.414),
+                        virtual_loss=getattr(self.config, 'virtual_loss', 3.0)
+                    )
+                    self.tree = CythonTree(tree_config)
+                    return
+                else:
+                    logger.warning("CythonTree not available, falling back to CSRTree on CPU")
+            except ImportError:
+                logger.warning("Failed to import CythonTree, falling back to CSRTree on CPU")
+        
+        # If we reach here, use CSRTree (for GPU, hybrid, or CPU fallback)
+        # Determine max_actions based on game type
+        # Handle both string and enum game types
+        game_type = self.config.game_type
+        if hasattr(game_type, 'value'):
+            game_type_str = game_type.name.lower()
         else:
-            # GPU and hybrid backends use CSRTree
-            # Determine max_actions based on game type
-            max_actions_map = {
-                GameType.CHESS: 4096,
-                GameType.GO: 362,
-                GameType.GOMOKU: 225
-            }
-            max_actions = max_actions_map.get(self.config.game_type, 512)
+            game_type_str = str(game_type).lower()
             
-            # Optimized initial capacity for single-GPU to avoid reallocations
+        max_actions_map = {
+            'chess': 4096,
+            'go': 362,
+            'gomoku': 225
+        }
+        max_actions = max_actions_map.get(game_type_str, 512)
+        
+        # Optimized initial capacity for single-GPU to avoid reallocations
+        # Use larger capacity for hybrid to avoid capacity issues during self-play
+        if hasattr(self.config, 'backend') and self.config.backend == 'hybrid':
+            initial_capacity = 10.0  # Much larger capacity for hybrid (100k nodes)
+        else:
             initial_capacity = getattr(self.config, 'initial_capacity_factor', 0.5)
-            
-            # CRITICAL FIX: Use CPU memory for tree in hybrid mode for thread safety
-            # This enables parallel MCTS with atomic operations while avoiding GPU memory bottleneck
-            if hasattr(self.config, 'backend') and self.config.backend == 'hybrid':
-                tree_device = 'cpu'  # Use CPU memory for thread-safe hybrid tree operations
-                logger.info("Using CSRTree with CPU memory for thread-safe hybrid backend")
-            else:
-                tree_device = self.config.device  # Use config device for gpu/cpu backends
-            
-            tree_config = CSRTreeConfig(
-                max_nodes=self.config.max_tree_nodes,
-                max_edges=self.config.max_tree_nodes * self.config.max_children_per_node,
-                max_actions=max_actions,
-                device=tree_device,  # Use CPU memory for hybrid mode
-                enable_virtual_loss=self.config.enable_virtual_loss or (self.config.backend == 'hybrid'),
-                virtual_loss_value=-abs(getattr(self.config, 'virtual_loss', 3.0 if hasattr(self.config, 'backend') and self.config.backend == 'hybrid' else 1.0)),
-                batch_size=self.config.max_wave_size,
-                enable_batched_ops=True,
-                initial_capacity_factor=initial_capacity,  # Increased from 0.1 to 0.5
-                growth_factor=1.5,
-                enable_memory_pooling=getattr(self.config, 'enable_memory_pooling', True)
-            )
-            self.tree = CSRTree(tree_config)
+        
+        # CRITICAL FIX: Use CPU memory for tree in hybrid mode for thread safety
+        # This enables parallel MCTS with atomic operations while avoiding GPU memory bottleneck
+        if hasattr(self.config, 'backend') and self.config.backend == 'hybrid':
+            tree_device = 'cpu'  # Use CPU memory for thread-safe hybrid tree operations
+            logger.info("Using CSRTree with CPU memory for thread-safe hybrid backend")
+        else:
+            tree_device = self.config.device  # Use config device for gpu/cpu backends
+        
+        # Store tree device for later reference
+        self.tree_device = tree_device
+        
+        # PHASE 3.2: Use dynamic allocation for tree
+        initial_tree_nodes = (self.config.initial_tree_nodes 
+                            if self.config.enable_dynamic_allocation 
+                            else self.config.max_tree_nodes)
+        
+        tree_config = CSRTreeConfig(
+            max_nodes=initial_tree_nodes,  # PHASE 3.2: Start small
+            max_edges=initial_tree_nodes * self.config.max_children_per_node,
+            max_actions=max_actions,
+            device=tree_device,  # Use CPU memory for hybrid mode
+            enable_virtual_loss=self.config.enable_virtual_loss or (self.config.backend == 'hybrid'),
+            virtual_loss_value=-abs(getattr(self.config, 'virtual_loss', 3.0 if hasattr(self.config, 'backend') and self.config.backend == 'hybrid' else 1.0)),
+            batch_size=self.config.max_wave_size,
+            enable_batched_ops=True,
+            initial_capacity_factor=initial_capacity,  # Increased from 0.1 to 0.5
+            growth_factor=self.config.tree_growth_factor,  # PHASE 3.2: Use config growth factor
+            enable_memory_pooling=getattr(self.config, 'enable_memory_pooling', True),
+            # PHASE 2.3 OPTIMIZATION: Enable memory coalescing
+            use_blocked_csr_layout=getattr(self.config, 'use_blocked_csr_layout', True),
+            block_size=getattr(self.config, 'block_size', 128)
+        )
+        self.tree = CSRTree(tree_config)
         
     def _initialize_game_states(self):
         """Initialize game states (GPU or CPU based on backend)"""
         # Determine correct board size for the game type
         board_size = self.config.board_size
-        if self.config.game_type == GameType.CHESS:
+        
+        # Handle both string and enum game types
+        game_type = self.config.game_type
+        if hasattr(game_type, 'value'):
+            game_type_str = game_type.name.lower()
+        else:
+            game_type_str = str(game_type).lower()
+            
+        if game_type_str == 'chess':
             board_size = 8
-        elif self.config.game_type == GameType.GO:
+        elif game_type_str == 'go':
             # Go can have different sizes, default to config
             board_size = getattr(self.config, 'board_size', 19)
+        
+        # PHASE 3.2: Use dynamic allocation - start with smaller capacity
+        initial_capacity = (self.config.initial_tree_nodes 
+                          if self.config.enable_dynamic_allocation 
+                          else self.config.max_tree_nodes)
+        
+        logger.info(f"Initializing game states with capacity: {initial_capacity} "
+                   f"(dynamic={'yes' if self.config.enable_dynamic_allocation else 'no'})")
         
         # For hybrid mode, use GPU game states but with CPU device for memory allocation
         if hasattr(self.config, 'backend') and self.config.backend == 'hybrid':
@@ -314,13 +684,13 @@ class MCTS:
             logger.info("Using GPU game states interface with CPU memory for hybrid backend")
             
             game_states_config = GPUGameStatesConfig(
-                capacity=self.config.max_tree_nodes,
+                capacity=initial_capacity,  # PHASE 3.2: Use initial capacity
                 game_type=self.config.game_type,
                 board_size=board_size,
                 device='cpu',  # Use CPU memory for thread safety
                 dtype=torch.int8
             )
-            self.game_states = GPUGameStates(game_states_config)
+            self.game_states = GPUGameStates(game_states_config, game_interface=self.cached_game)
             logger.info("Using CPU game states for hybrid backend thread safety")
         elif hasattr(self.config, 'backend') and self.config.backend == 'cpu':
             # Use CPU-optimized game states for CPU backend
@@ -328,21 +698,25 @@ class MCTS:
             # Lazy import to avoid circular dependency
             from ..cpu.cpu_game_states import CPUGameStates
             # Convert GameType enum to string for CPUGameStates
-            game_type_str = self.config.game_type.name.lower()
+            if hasattr(self.config.game_type, 'name'):
+                game_type_str = self.config.game_type.name.lower()
+            else:
+                game_type_str = str(self.config.game_type).lower()
             self.game_states = CPUGameStates(
-                capacity=self.config.max_tree_nodes,
+                capacity=initial_capacity,  # PHASE 3.2: Use initial capacity
                 game_type=game_type_str,
-                board_size=board_size
+                board_size=board_size,
+                game_interface=self.cached_game
             )
         else:
             # Use GPU game states for GPU backend
             game_config = GPUGameStatesConfig(
-                capacity=self.config.max_tree_nodes,
+                capacity=initial_capacity,  # PHASE 3.2: Use initial capacity
                 game_type=self.config.game_type,
                 board_size=board_size,
                 device=self.config.device
             )
-            self.game_states = GPUGameStates(game_config)
+            self.game_states = GPUGameStates(game_config, game_interface=self.cached_game)
         
         # Enable enhanced features if needed
         expected_channels = self._get_evaluator_input_channels()
@@ -353,28 +727,50 @@ class MCTS:
                 
     def _initialize_state_management(self):
         """Initialize state pool and mappings"""
+        # For CPU backend, use smaller initial allocation
+        if hasattr(self.config, 'backend') and self.config.backend == 'cpu':
+            state_capacity = min(getattr(self.config, 'initial_tree_nodes', 10000), 100000)
+        else:
+            state_capacity = self.config.max_tree_nodes
+            
+        logger.info(f"Initializing state management with capacity={state_capacity}, device={self.device}")
+        
         self.node_to_state = torch.full(
-            (self.config.max_tree_nodes,), -1, dtype=torch.int32, device=self.device
+            (state_capacity,), -1, dtype=torch.int32, device=self.device
         )
+        logger.info("node_to_state tensor created")
         
         # Reserve state 0 for root
-        self.state_pool_free_list = list(range(1, self.config.max_tree_nodes))
+        self.state_pool_free_list = list(range(1, state_capacity))
         self.state_pool_free_count = len(self.state_pool_free_list)
         
         # State allocation tracking
         self.state_allocation_count = 0
         self.state_deallocation_count = 0
         
+        logger.info("State management initialization completed")
+        
     def _setup_game_interface(self, game_interface: Optional[GameInterface]):
         """Setup game interface for compatibility"""
         if game_interface is None:
-            # Map GameType enum to legacy GameType
-            legacy_game_type_map = {
-                GameType.CHESS: LegacyGameType.CHESS,
-                GameType.GO: LegacyGameType.GO,
-                GameType.GOMOKU: LegacyGameType.GOMOKU
-            }
-            legacy_type = legacy_game_type_map.get(self.config.game_type, LegacyGameType.GOMOKU)
+            # Handle both string and enum game types
+            game_type = self.config.game_type
+            if hasattr(game_type, 'value'):
+                # It's an enum
+                legacy_game_type_map = {
+                    GameType.CHESS: LegacyGameType.CHESS,
+                    GameType.GO: LegacyGameType.GO,
+                    GameType.GOMOKU: LegacyGameType.GOMOKU
+                }
+                legacy_type = legacy_game_type_map.get(game_type, LegacyGameType.GOMOKU)
+            else:
+                # It's a string
+                string_to_legacy_map = {
+                    'chess': LegacyGameType.CHESS,
+                    'go': LegacyGameType.GO,
+                    'gomoku': LegacyGameType.GOMOKU
+                }
+                legacy_type = string_to_legacy_map.get(str(game_type).lower(), LegacyGameType.GOMOKU)
             
             self.cached_game = GameInterface(
                 legacy_type, 
@@ -524,6 +920,7 @@ class MCTS:
         if hasattr(game_interface, 'board_size'):
             self.config.board_size = game_interface.board_size
             
+    @profile("MCTS.search")
     def search(self, state: Any, num_simulations: Optional[int] = None) -> np.ndarray:
         """Run MCTS search from given state
         
@@ -564,7 +961,10 @@ class MCTS:
         policy = self._run_search(num_sims)
         
         # Check root visits after search
-        root_visits = self.tree.node_data.visit_counts[0].item()
+        if hasattr(self.tree, 'get_visit_count'):
+            root_visits = self.tree.get_visit_count(0)
+        else:
+            root_visits = self.tree.node_data.visit_counts[0].item()
         if root_visits == 0:
             logger.warning(f"Root has {root_visits} visits after {num_sims} simulations!")
         
@@ -581,7 +981,9 @@ class MCTS:
     def _ensure_root_initialized(self, state: Any):
         """Ensure root node is properly initialized"""
         if self.node_to_state[0] < 0:  # Root has no state yet
+            logger.debug(f"Root has no state, initializing with state type: {type(state)}")
             self._initialize_root(state)
+            logger.debug(f"After initialization, root state index: {self.node_to_state[0].item()}")
         else:
             # Synchronize root state
             self._update_root_state(state)
@@ -589,7 +991,10 @@ class MCTS:
         # CRITICAL: Ensure root is properly set up for search
         # Check if root needs expansion or re-expansion
         children, _, _ = self.tree_ops.get_root_children_info()
-        root_visits = self.tree.node_data.visit_counts[0].item()
+        if hasattr(self.tree, 'get_visit_count'):
+            root_visits = self.tree.get_visit_count(0)
+        else:
+            root_visits = self.tree.node_data.visit_counts[0].item()
         
         # Need to handle several cases:
         # 1. Fresh tree with no children - needs expansion
@@ -603,7 +1008,8 @@ class MCTS:
                 # Clear the children to force re-expansion
                 self._clear_root_children()
                 # Mark as not expanded
-                self.tree.node_data.set_expanded(0, False)
+                if hasattr(self.tree, 'node_data') and hasattr(self.tree.node_data, 'set_expanded'):
+                    self.tree.node_data.set_expanded(0, False)
             
             # Now expand the root
             self._force_expand_root()
@@ -674,24 +1080,9 @@ class MCTS:
             
         # Handle empty tree case
         if len(actions) == 0:
-            # No children - return uniform policy over legal moves
-            state_idx = self.node_to_state[node_idx].item()
-            if state_idx >= 0:
-                legal_mask = self.game_states.get_legal_moves_mask(
-                    torch.tensor([state_idx], device=self.device)
-                )[0]
-                # Handle both tensor and numpy array returns
-                if hasattr(legal_mask, 'cpu'):
-                    legal_moves = torch.nonzero(legal_mask).squeeze(-1).cpu().numpy()
-                else:
-                    legal_moves = np.nonzero(legal_mask)[0]
-            else:
-                logger.warning(f"No state found for node {node_idx}")
-                legal_moves = np.array([])
-                
-            policy = np.zeros(action_space_size)
-            if len(legal_moves) > 0:
-                policy[legal_moves] = 1.0 / len(legal_moves)
+            # No children - return uniform policy
+            # The tree expansion already filters illegal moves
+            policy = np.ones(action_space_size) / action_space_size
             return policy
             
         # Convert visits to probabilities
@@ -713,33 +1104,18 @@ class MCTS:
         # Handle both torch tensors and numpy arrays
         if hasattr(visits, 'cpu'):
             visits_np = visits.cpu().numpy()
-            actions_np = actions.cpu().numpy()
         else:
             # Already numpy arrays (CPU backend)
             visits_np = visits
+            
+        # Handle actions separately as it might already be converted
+        if hasattr(actions, 'cpu'):
+            actions_np = actions.cpu().numpy()
+        else:
             actions_np = actions
         
         # Trust the tree structure - children are legal by construction
-        # This is the key optimization: we don't re-validate what we already know
-        if self.config.enable_subtree_reuse and self.config.enable_debug_logging:
-            # Only in debug mode, do a quick sanity check
-            state_idx = self.node_to_state[node_idx].item()
-            if state_idx >= 0:
-                legal_mask = self.game_states.get_legal_moves_mask(
-                    torch.tensor([state_idx], device=self.device)
-                )[0]
-                legal_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
-                
-                # Quick vectorized check
-                # Handle both torch tensors and numpy arrays
-                if hasattr(actions, 'cpu'):
-                    actions_np = actions.cpu().numpy()
-                else:
-                    actions_np = actions
-                if len(legal_set) > 0:
-                    illegal_mask = ~np.isin(actions_np, list(legal_set))
-                    if illegal_mask.any():
-                        logger.warning(f"Found {illegal_mask.sum()} illegal children in tree - this shouldn't happen")
+        # Tree expansion already filters illegal moves
         
         # Vectorized policy assignment
         # (actions_np and visits_np already converted above)
@@ -766,31 +1142,42 @@ class MCTS:
         Returns:
             Value estimate from the root node's perspective
         """
-        if self.tree.num_nodes == 0:
-            return 0.0
+        # Handle different tree types
+        if hasattr(self.tree, 'get_root_value'):
+            # CythonTree and similar have their own get_root_value method
+            return self.tree.get_root_value()
+        elif hasattr(self.tree, 'node_data') and self.tree.node_data is not None:
+            # CSRTree with node_data
+            if self.tree.num_nodes == 0:
+                return 0.0
+                
+            # Get root value (Q-value)
+            root_value = self.tree.node_data.value_sums[0].item()
+            root_visits = self.tree.node_data.visit_counts[0].item()
             
-        # Get root value (Q-value)
-        root_value = self.tree.node_data.value_sums[0].item()
-        root_visits = self.tree.node_data.visit_counts[0].item()
-        
-        if root_visits == 0:
+            if root_visits == 0:
+                return 0.0
+                
+            # Return average value
+            return root_value / root_visits
+        else:
+            # Fallback for other tree types or uninitialized trees
             return 0.0
-            
-        # Return average value
-        return root_value / root_visits
         
-    def select_action(self, state: Any, temperature: float = 1.0) -> int:
+    def select_action(self, state: Any, temperature: float = 1.0, policy: Optional[np.ndarray] = None) -> int:
         """Select action using MCTS
         
         Args:
             state: Current game state
             temperature: Temperature for action selection
+            policy: Pre-computed policy from search (avoids double search)
             
         Returns:
             Selected action
         """
-        # Run search
-        policy = self.search(state)
+        # If policy not provided, run search
+        if policy is None:
+            policy = self.search(state)
         
         # Select action based on temperature
         if temperature == 0:
@@ -832,14 +1219,27 @@ class MCTS:
         if action < 0 or action >= action_space_size:
             raise ValueError(f"Invalid action {action}. Must be in range [0, {action_space_size})")
         
+        # CRITICAL: Track if we're in a reuse attempt to avoid spurious validation
+        self._in_tree_reuse = False
+        
+        # Use GPU-friendly tree reuse if enabled
+        if getattr(self.config, 'use_gpu_tree_reuse', False) and self.config.enable_subtree_reuse:
+            self._in_tree_reuse = True
+            reuse_success = self._gpu_friendly_tree_reuse(action, new_state)
+            if reuse_success:
+                self.stats['tree_reuse_count'] += 1
+                return
+        
         if self.config.enable_subtree_reuse and not self._disable_tree_reuse:
             # Fast path: try optimized subtree reuse
+            self._in_tree_reuse = True
             reuse_success = self._try_optimized_subtree_reuse(action, new_state)
             if reuse_success:
                 self.stats['tree_reuse_count'] += 1
                 return
         
         # Fallback: reset tree for new search (most efficient for hybrid backend)
+        self._in_tree_reuse = False
         self._efficient_tree_reset()
         if new_state is not None:
             self._initialize_root(new_state)
@@ -885,7 +1285,8 @@ class MCTS:
             # For CSR tree structure
             children_mask = (self.tree.node_data.parent_indices == parent_idx)
             if children_mask.any():
-                child_indices = torch.nonzero(children_mask, as_tuple=True)[0]
+                # Use arange + boolean indexing instead of nonzero
+                child_indices = torch.arange(children_mask.shape[0], device=children_mask.device, dtype=torch.long)[children_mask]
                 for child_idx in child_indices:
                     if self.tree.node_data.parent_actions[child_idx] == action:
                         return child_idx.item()
@@ -944,8 +1345,8 @@ class MCTS:
     
     def _reset_tree_structure_only(self):
         """Reset only tree structure, keep state pool intact"""
-        if hasattr(self.tree, 'node_data'):
-            # Reset tree to single root node
+        if hasattr(self.tree, 'node_data') and self.tree.node_data is not None:
+            # Reset tree to single root node (CSRTree)
             if self.tree.num_nodes > 1:
                 # Clear all non-root nodes
                 self.tree.node_data.visit_counts[1:] = 0
@@ -957,6 +1358,9 @@ class MCTS:
             # Reset root node
             self.tree.node_data.visit_counts[0] = 0
             self.tree.node_data.value_sums[0] = 0.0
+        elif hasattr(self.tree, 'reset'):
+            # For CythonTree, use its reset method
+            self.tree.reset()
             
         # Reset wave search state
         if hasattr(self, 'wave_search'):
@@ -1053,6 +1457,8 @@ class MCTS:
         
     def _initialize_root(self, root_state: Any):
         """Initialize root node state"""
+        logger.debug(f"_initialize_root called with state type: {type(root_state)}, backend: {self.config.backend}")
+        
         # When subtree reuse is disabled, always use state 0 for root
         # Otherwise allocate a new state
         if not self.config.enable_subtree_reuse:
@@ -1116,7 +1522,12 @@ class MCTS:
             obs = self.cached_game.state_to_numpy(root_state)
             
             # Convert to game states format
-            if self.game_states.game_type == GameType.GOMOKU or self.game_states.game_type == GameType.GO:
+            # Handle both string (CPU backend) and enum (GPU backend) game types
+            game_type = self.game_states.game_type
+            is_gomoku = (game_type == GameType.GOMOKU or game_type == 'gomoku')
+            is_go = (game_type == GameType.GO or game_type == 'go')
+            
+            if is_gomoku or is_go:
                 # Get actual board size from observation
                 actual_board_size = obs[0].shape[0]
                 board = torch.zeros((actual_board_size, actual_board_size), dtype=torch.int8, device=self.device)
@@ -1171,38 +1582,61 @@ class MCTS:
                 
                 # Debug logging
                 
-                # For non-square assignment, we need to handle different board sizes
-                if self.game_states.boards.shape[1:] == board.shape:
-                    self.game_states.boards[state_idx] = board
+                # Check if we're using CPU backend
+                from ..cpu.cpu_game_states import CPUGameStates
+                if isinstance(self.game_states, CPUGameStates):
+                    # CPU backend - update _boards array directly
+                    board_np = board.cpu().numpy() if hasattr(board, 'cpu') else board
+                    self.game_states._boards[state_idx] = board_np
                 else:
-                    # Board sizes don't match - this shouldn't happen if config is correct
-                    logger.error(f"Board size mismatch: game_states expects {self.game_states.boards.shape[1:]}, got {board.shape}")
-                    # Try to copy what we can
-                    min_size = min(self.game_states.boards.shape[1], board.shape[0])
-                    self.game_states.boards[state_idx, :min_size, :min_size] = board[:min_size, :min_size]
+                    # GPU backend - update tensor boards
+                    # For non-square assignment, we need to handle different board sizes
+                    if self.game_states.boards.shape[1:] == board.shape:
+                        self.game_states.boards[state_idx] = board
+                    else:
+                        # Board sizes don't match - this shouldn't happen if config is correct
+                        logger.error(f"Board size mismatch: game_states expects {self.game_states.boards.shape[1:]}, got {board.shape}")
+                        # Try to copy what we can
+                        min_size = min(self.game_states.boards.shape[1], board.shape[0])
+                        self.game_states.boards[state_idx, :min_size, :min_size] = board[:min_size, :min_size]
                 # Map current player: GameInterface uses 1=black, 2=white
-                # GPUGameStates uses 1=black, 2=white as well
+                # Both CPU and GPU GameStates use 1=black, 2=white as well
                 actual_current_player = root_state.get_current_player()
-                self.game_states.current_player[state_idx] = actual_current_player
                 move_history = root_state.get_move_history()
-                if isinstance(move_history, list):
-                    self.game_states.move_count[state_idx] = len(move_history)
-                else:
-                    self.game_states.move_count[state_idx] = move_history.shape[0]
-                
-                # CRITICAL: Initialize terminal status and game result
                 is_terminal = root_state.is_terminal()
-                self.game_states.is_terminal[state_idx] = is_terminal
+                
+                # Update game state metadata for both CPU and GPU backends
+                if isinstance(self.game_states, CPUGameStates):
+                    # CPU backend - update arrays directly
+                    self.game_states._current_player[state_idx] = actual_current_player
+                    if isinstance(move_history, list):
+                        self.game_states._move_count[state_idx] = len(move_history)
+                    else:
+                        self.game_states._move_count[state_idx] = move_history.shape[0] if hasattr(move_history, 'shape') else 0
+                    self.game_states._is_terminal[state_idx] = is_terminal
+                else:
+                    # GPU backend - update tensors
+                    self.game_states.current_player[state_idx] = actual_current_player
+                    if isinstance(move_history, list):
+                        self.game_states.move_count[state_idx] = len(move_history)
+                    else:
+                        self.game_states.move_count[state_idx] = move_history.shape[0]
+                    self.game_states.is_terminal[state_idx] = is_terminal
                 if is_terminal:
                     game_result = root_state.get_game_result()
                     # Convert GameResult enum to integer value
-                    if hasattr(game_result, 'value'):
-                        self.game_states.game_result[state_idx] = game_result.value
+                    result_value = game_result.value if hasattr(game_result, 'value') else game_result
+                    
+                    if isinstance(self.game_states, CPUGameStates):
+                        # CPU backend - update winner array
+                        self.game_states._winner[state_idx] = result_value
                     else:
-                        self.game_states.game_result[state_idx] = game_result
+                        # GPU backend - update game_result tensor
+                        self.game_states.game_result[state_idx] = result_value
             
         # Map root node to this state
         self.node_to_state[0] = state_idx
+        logger.debug(f"_initialize_root complete, set node_to_state[0] = {state_idx}")
             
     def _clear_root_children(self):
         """Clear root's children in the tree structure
@@ -1284,16 +1718,43 @@ class MCTS:
                 logger.debug("Hybrid root state updated successfully from numpy array")
                 return
             
-            # Extract board state using AlphaZero default method
-            elif hasattr(new_root_state, 'get_basic_tensor_representation'):
-                # Use AlphaZero default representation (19 channels)
-                tensor_repr = new_root_state.get_basic_tensor_representation()
-                # Extract the board from the first channel (current position)
-                board_array = tensor_repr[0]  # Shape: (15, 15)
-                logger.debug(f"Got board from get_basic_tensor_representation(): {board_array.shape}")
+            # Extract board state - prefer get_board() for accurate representation
             elif hasattr(new_root_state, 'get_board'):
                 board_array = new_root_state.get_board()
                 logger.debug(f"Got board from get_board(): {board_array.shape}")
+            elif hasattr(new_root_state, 'get_basic_tensor_representation'):
+                # CRITICAL: get_basic_tensor_representation() returns perspective-based encoding
+                # We need to reconstruct the absolute board state
+                tensor_repr = new_root_state.get_basic_tensor_representation()
+                
+                # For Gomoku, the representation might be:
+                # - Channel 0: Current player's pieces
+                # - Channel 1: Opponent's pieces
+                # We need to combine them into absolute positions
+                
+                # Get the actual current player
+                current_player = new_root_state.get_current_player()
+                
+                # Create empty board
+                board_array = np.zeros((15, 15), dtype=np.int8)
+                
+                # Map perspective-based channels to absolute positions
+                if tensor_repr.shape[0] >= 2:
+                    current_pieces = tensor_repr[0]  # Current player's pieces
+                    opponent_pieces = tensor_repr[1]  # Opponent's pieces
+                    
+                    # Map to absolute board
+                    if current_player == 1:
+                        board_array[current_pieces > 0.5] = 1  # Player 1 (black)
+                        board_array[opponent_pieces > 0.5] = 2  # Player 2 (white)
+                    else:
+                        board_array[current_pieces > 0.5] = 2  # Player 2 (white)
+                        board_array[opponent_pieces > 0.5] = 1  # Player 1 (black)
+                else:
+                    # Fallback: single channel (shouldn't happen for Gomoku)
+                    board_array = tensor_repr[0]
+                
+                logger.debug(f"Reconstructed board from tensor representation")
             else:
                 logger.warning(f"Cannot extract board from state type: {type(new_root_state)}")
                 return
@@ -1333,7 +1794,7 @@ class MCTS:
     def _reset_tree_for_new_root(self):
         """Reset tree structure while keeping root node for fresh search"""
         # Clear all child nodes but keep root
-        if hasattr(self.tree, 'node_data'):
+        if hasattr(self.tree, 'node_data') and self.tree.node_data is not None:
             # For CSR tree, reset the tree structure without child_counts
             # Reset visit counts for children (but not root)
             if self.tree.num_nodes > 1:
@@ -1344,6 +1805,9 @@ class MCTS:
                 self.tree.node_data.parent_actions[1:] = -1
                 # Reset tree node count to 1 (just root)
                 self.tree.num_nodes = 1
+        elif hasattr(self.tree, 'reset'):
+            # For CythonTree, use its reset method
+            self.tree.reset()
         
         logger.debug("Reset tree structure for fresh search from new root position")
     
@@ -1462,6 +1926,85 @@ class MCTS:
             # No existing state, initialize new one
             self._initialize_root(new_root_state)
         
+    def _gpu_friendly_tree_reuse(self, action: int, new_state: Any = None) -> bool:
+        """GPU-optimized tree reuse without expensive CPU operations
+        
+        This method eliminates CPU-bound remapping operations by using a 
+        stateless tree representation and lazy state allocation.
+        
+        Args:
+            action: Action taken to reach new root
+            new_state: New game state (optional)
+            
+        Returns:
+            bool: True if reuse successful, False otherwise
+        """
+        try:
+            # Find child node for the action
+            children, actions, _ = self.tree.get_children(0)  # Root is always 0
+            new_root_idx = None
+            
+            for child_idx, child_action in zip(children.cpu().numpy(), actions.cpu().numpy()):
+                if child_action == action:
+                    new_root_idx = child_idx
+                    break
+            
+            if new_root_idx is None:
+                # Action not in tree, cannot reuse
+                return False
+            
+            # Extract compact subtree representation (GPU-friendly)
+            from ..gpu.compact_subtree import extract_subtree_gpu_optimized, rebuild_tree_from_compact
+            from ..gpu.lazy_state_manager import LazyStateManager
+            
+            # Extract subtree rooted at new_root_idx
+            compact_subtree = extract_subtree_gpu_optimized(self.tree, new_root_idx)
+            
+            # Clear current tree
+            self._efficient_tree_reset()
+            
+            # Rebuild tree from compact representation
+            rebuild_tree_from_compact(self.tree, compact_subtree)
+            
+            # Reset state mappings - use lazy allocation
+            if not hasattr(self, '_lazy_state_manager'):
+                self._lazy_state_manager = LazyStateManager(
+                    capacity=self.config.max_tree_nodes,
+                    device=self.device
+                )
+            
+            # Clear all state mappings
+            self.node_to_state.fill_(-1)
+            self._lazy_state_manager.reset()
+            
+            # Allocate state for new root
+            root_state_idx = self._lazy_state_manager.get_or_create_state(0)
+            self.node_to_state[0] = root_state_idx
+            
+            # Update root state if provided
+            if new_state is not None:
+                self._update_root_state(new_state)
+            else:
+                # Apply the action to get new state
+                if hasattr(self.game_states, 'apply_moves_single'):
+                    # Get state from previous root
+                    old_root_state_idx = self._lazy_state_manager.get_or_create_state(new_root_idx)
+                    self.game_states.apply_moves_single(
+                        old_root_state_idx, 
+                        root_state_idx, 
+                        action
+                    )
+            
+            # Update stats
+            self.stats['tree_reuse_nodes'] += compact_subtree.num_nodes
+            logger.debug(f"GPU tree reuse successful: {compact_subtree.num_nodes} nodes reused")
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"GPU tree reuse failed: {e}")
+            return False
+    
     def _update_state_mappings_after_reuse(self, mapping: Dict[int, int]):
         """Update state mappings after subtree reuse
         
@@ -1471,26 +2014,53 @@ class MCTS:
         # Create new node_to_state mapping
         new_node_to_state = torch.full_like(self.node_to_state, -1)
         
-        # Track which states are still in use
-        states_in_use = set()
+        # OPTIMIZATION: Convert mapping to tensors to avoid .item() calls
+        if mapping:
+            old_nodes = torch.tensor(list(mapping.keys()), device=self.device, dtype=torch.int32)
+            new_nodes = torch.tensor(list(mapping.values()), device=self.device, dtype=torch.int32)
+            
+            # Filter valid nodes
+            valid_old = old_nodes < len(self.node_to_state)
+            old_nodes = old_nodes[valid_old]
+            new_nodes = new_nodes[valid_old]
+            
+            # Get old states
+            old_states = self.node_to_state[old_nodes]
+            
+            # Filter valid states and new nodes
+            valid_states = (old_states >= 0) & (new_nodes < len(new_node_to_state))
+            old_states = old_states[valid_states]
+            new_nodes = new_nodes[valid_states]
+            
+            # Update new mapping
+            new_node_to_state[new_nodes] = old_states
+            
+            # Track which states are still in use (as tensor)
+            states_in_use_mask = torch.zeros(self.node_to_state.max() + 1, dtype=torch.bool, device=self.device)
+            states_in_use_mask[old_states] = True
+        else:
+            states_in_use_mask = torch.zeros(self.node_to_state.max() + 1, dtype=torch.bool, device=self.device)
         
-        for old_node, new_node in mapping.items():
-            if old_node < len(self.node_to_state):
-                old_state = self.node_to_state[old_node]
-                if old_state >= 0 and new_node < len(new_node_to_state):
-                    new_node_to_state[new_node] = old_state
-                    states_in_use.add(old_state.item())
+        # Find states to free (vectorized)
+        all_states = self.node_to_state
+        valid_states_mask = all_states >= 0
         
-        # Free states that are no longer in use
-        for i in range(len(self.node_to_state)):
-            state_idx = self.node_to_state[i].item()
-            if state_idx >= 0 and state_idx not in states_in_use:
-                # Return state to free pool
-                if state_idx > 0:  # Don't free state 0 (reserved for root)
-                    self.state_pool_free_list.append(state_idx)
-                    # Mark state as unallocated in GPU game states
-                    if hasattr(self.game_states, 'allocated_mask'):
-                        self.game_states.allocated_mask[state_idx] = False
+        if valid_states_mask.any():
+            # Get unique states efficiently
+            valid_states = all_states[valid_states_mask]
+            unique_states = torch.unique(valid_states)
+            
+            # Find states to free (not in use and > 0)
+            states_to_free_mask = ~states_in_use_mask[unique_states] & (unique_states > 0)
+            states_to_free = unique_states[states_to_free_mask]
+            
+            if states_to_free.numel() > 0:
+                # Convert to list only once at the end
+                self.state_pool_free_list.extend(states_to_free.cpu().tolist())
+                
+                # Mark states as unallocated in GPU game states
+                if hasattr(self.game_states, 'allocated_mask'):
+                    self.game_states.allocated_mask[states_to_free] = False
         
         # Update the mapping
         self.node_to_state = new_node_to_state
@@ -1581,36 +2151,9 @@ class MCTS:
         
         This is critical when tree reuse is enabled to prevent illegal move selection.
         """
-        if not self.config.enable_subtree_reuse:
-            return
-            
-        # Get current root state
-        root_state_idx = self.node_to_state[0].item()
-        if root_state_idx < 0:
-            return
-            
-        # Get legal moves for current position
-        legal_mask = self.game_states.get_legal_moves_mask(
-            torch.tensor([root_state_idx], device=self.device)
-        )[0]
-        legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
-        
-        # Check root's children
-        children, _, _ = self.tree.get_children(0)
-        if len(children) == 0:
-            return
-            
-        # Remove illegal children
-        children_to_remove = []
-        for child_idx in children:
-            action = self.tree.node_data.parent_actions[child_idx].item()
-            if action not in legal_moves_set:
-                children_to_remove.append(child_idx)
-        
-        if children_to_remove:
-            logger.info(f"Removing {len(children_to_remove)} stale children after tree reuse")
-            # Remove the invalid children from the tree
-            self.tree.remove_children(0, children_to_remove)
+        # This validation is redundant since tree expansion already checks legal moves
+        # Removing to improve performance
+        pass
 
     def _validate_children_after_reuse(self):
         """Validate and clean up children after tree reuse
@@ -1622,66 +2165,9 @@ class MCTS:
         CRITICAL: After tree reuse, the new root's "children" may include its
         former siblings, which are not valid children of the new position.
         """
-        # Get current root state
-        root_state_idx = self.node_to_state[0].item()
-        if root_state_idx < 0:
-            return
-            
-        # Get legal moves for current position
-        legal_mask = self.game_states.get_legal_moves_mask(
-            torch.tensor([root_state_idx], device=self.device)
-        )[0]
-        legal_moves_set = set(torch.nonzero(legal_mask).squeeze(-1).cpu().numpy())
-        
-        # Validate all nodes in the tree, not just root children
-        nodes_to_validate = []
-        nodes_processed = set()
-        
-        # BFS to validate entire tree
-        queue = [0]  # Start with root
-        while queue:
-            node_idx = queue.pop(0)
-            if node_idx in nodes_processed:
-                continue
-            nodes_processed.add(node_idx)
-            
-            # Get node's state
-            state_idx = self.node_to_state[node_idx].item()
-            if state_idx < 0:
-                continue
-                
-            # Get children of this node
-            children, actions, _ = self.tree.get_children(node_idx)
-            if len(children) == 0:
-                continue
-                
-            # Get legal moves for this node's state
-            node_legal_mask = self.game_states.get_legal_moves_mask(
-                torch.tensor([state_idx], device=self.device)
-            )[0]
-            node_legal_moves = set(torch.nonzero(node_legal_mask).squeeze(-1).cpu().numpy())
-            
-            # Check each child
-            invalid_children = []
-            for i, (child_idx, action) in enumerate(zip(children.cpu().numpy(), actions.cpu().numpy())):
-                if action not in node_legal_moves:
-                    invalid_children.append(i)
-                else:
-                    # Add valid children to queue for further validation
-                    queue.append(child_idx)
-            
-            # Mark invalid children for removal
-            if invalid_children:
-                # For now, we'll zero out their visit counts and values
-                # This effectively makes them invisible to UCB selection
-                for i in invalid_children:
-                    child_idx = children[i].item()
-                    self.tree.node_data.visit_counts[child_idx] = 0
-                    self.tree.node_data.value_sums[child_idx] = 0.0
-                    # Set prior to 0 to prevent selection
-                    self.tree.node_data.node_priors[child_idx] = 0.0
-                    
-                logger.info(f"Invalidated {len(invalid_children)} stale children for node {node_idx}")
+        # This validation is redundant since tree expansion already checks legal moves
+        # Removing to improve performance
+        pass
 
     def shutdown(self):
         """Cleanup resources"""

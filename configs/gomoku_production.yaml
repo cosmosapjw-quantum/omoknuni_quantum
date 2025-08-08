@@ -1,0 +1,136 @@
+# Production Configuration for Gomoku Training
+# Optimized for stability and performance with fixed hybrid backends
+
+experiment_name: gomoku_production
+seed: 42
+log_level: INFO
+num_iterations: 200
+
+game:
+  game_type: gomoku
+  board_size: 15
+
+mcts:
+  # Use standard hybrid backend (genuine or cython can be enabled)
+  backend: hybrid
+  use_cython_hybrid: true  # Use Cython hybrid as it works well in example_self_play.py
+  use_genuine_hybrid: false  # Disable genuine hybrid
+  device: cuda
+  
+  # Simulation settings - increased for better quality
+  num_simulations: 1000
+  c_puct: 1.4
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30
+  
+  # Wave configuration - optimized for hybrid backend
+  wave_size: 256         # Optimal for hybrid CPU-GPU coordination
+  min_wave_size: 128     # Balanced for hybrid backend
+  max_wave_size: 512     # Prevent excessive memory usage
+  batch_size: 256        # Matches optimal neural network batch size
+  
+  # Progressive widening - reduced for lower CPU overhead
+  initial_children_per_expansion: 5   # Reduced to match example_self_play
+  progressive_widening_constant: 5.0   # Reduced to match example_self_play
+  progressive_widening_exponent: 0.5
+  
+  # Virtual loss for parallelization
+  virtual_loss: 3.0
+  enable_virtual_loss: true
+  
+  # Hybrid backend specific - better CPU/GPU coordination
+  hybrid_cpu_batch_size: 128   # CPU batch processing
+  hybrid_gpu_batch_size: 256   # Match main batch_size for consistency
+  num_threads: 16              # Use more CPU threads
+  
+  # Tree reuse
+  enable_subtree_reuse: true
+  subtree_reuse_min_visits: 1  # Reduced for maximum tree reuse
+  
+  # Memory configuration - optimized to prevent VRAM pressure
+  max_tree_nodes: 2000000     # Keep high for capacity
+  initial_tree_nodes: 500000   # Good for 1000 simulations
+  memory_pool_size_mb: 2048    # Reduced to prevent VRAM pressure
+  gpu_memory_fraction: 0.8     # Leave 20% free for stability
+  
+  # Dynamic allocation
+  enable_dynamic_allocation: true
+  tree_growth_factor: 2.0
+  gc_threshold: 0.8
+
+network:
+  # ResNet architecture - larger for better capacity
+  num_res_blocks: 10
+  num_filters: 128
+  fc_hidden_size: 256
+  input_representation: basic
+  input_channels: 19      # Basic AlphaZero representation
+
+training:
+  # Self-play settings - increased for more data
+  num_games_per_iteration: 100 # Increased from 50
+  batch_size: 256             # Optimized for stable training
+  buffer_size: 1000000        # Increased from 200k
+  epochs_per_iteration: 20    # Increased from 10 for better learning
+  
+  # Optimization
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  momentum: 0.9
+  
+  # Data augmentation
+  enable_augmentation: true
+  augmentation_types: [rotate, flip]
+  
+  # Loss weights
+  policy_loss_weight: 1.0
+  value_loss_weight: 1.0
+  
+  # Training stability
+  gradient_clip_norm: 1.0
+  use_mixed_precision: false
+  
+  # Resignation
+  enable_resign: true
+  resign_threshold: -0.99  # More conservative threshold (was -0.95)
+  resign_min_move: 30      # Don't resign before move 30
+  disable_resign_iterations: 20  # Disable resignation for first 20 iterations
+
+arena:
+  # Tournament settings
+  num_games: 100  # Increased for better evaluation
+  win_rate_threshold: 0.55
+  temperature: 0.1
+  arena_log_dir: arena_logs
+
+resources:
+  # Hardware optimization - balanced for stability
+  num_workers: 1  # Single worker to avoid CUDA multiprocessing issues
+  inference_batch_size: 256   # Match main batch_size
+  pin_memory: true
+  num_data_workers: 4  # Increased from 2
+  prefetch_factor: 4   # Increased from 2
+
+monitoring:
+  # Tracking and visualization
+  enable_tensorboard: true
+  tensorboard_dir: tensorboard_logs
+  checkpoint_interval: 10
+  save_examples: true
+  example_save_interval: 10
+  
+  # Performance tracking
+  log_game_metrics: true
+  log_mcts_metrics: true
+  log_training_metrics: true
+
+# Data cleanup for long runs
+data_cleanup:
+  enabled: true
+  cleanup_interval: 5
+  keep_replay_buffers: 10
+  keep_checkpoints: 5
+  keep_arena_logs: 20
+  keep_log_files: 10

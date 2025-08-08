@@ -14,6 +14,7 @@ game:
 mcts:
   # HYBRID MODE CONFIGURATION
   backend: hybrid  # Use hybrid CPU-GPU backend
+  use_cython_hybrid: true  # Enable Cython-optimized hybrid backend for maximum performance
   
   # Optimized for hybrid performance with 12 threads and improved batching
   num_simulations: 500

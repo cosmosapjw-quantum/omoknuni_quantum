@@ -22,16 +22,19 @@ class CPUGameStates:
     - Compatible with wave-based MCTS
     """
     
-    def __init__(self, capacity: int, game_type: str = 'gomoku', board_size: Optional[int] = None):
+    def __init__(self, capacity: int, game_type: str = 'gomoku', board_size: Optional[int] = None, 
+                 game_interface=None):
         """Initialize CPU game states
         
         Args:
             capacity: Maximum number of states (not pre-allocated)
             game_type: Type of game ('gomoku', 'go', 'chess')
             board_size: Board size (15 for gomoku, 19 for go, 8 for chess)
+            game_interface: Optional C++ game interface for terminal detection
         """
         self.capacity = capacity
         self.game_type = game_type.lower()
+        self.game_interface = game_interface
         
         # Set default board sizes based on game type
         if board_size is None:
@@ -231,7 +234,33 @@ class CPUGameStates:
                 self._current_player[state_idx] = 3 - player  # Switch player
                 self._move_count[state_idx] += 1
                 
-                # TODO: Check for terminal states (wins)
+                # Use fast terminal detection
+                from ..utils.fast_terminal_check import FastTerminalChecker
+                if not hasattr(self, '_fast_checker'):
+                    # Initialize fast checker with game type info
+                    variant_rules = {}
+                    if self.game_interface and hasattr(self.game_interface, 'use_renju'):
+                        variant_rules['use_renju'] = self.game_interface.use_renju
+                    if self.game_interface and hasattr(self.game_interface, 'use_omok'):
+                        variant_rules['use_omok'] = self.game_interface.use_omok
+                    self._fast_checker = FastTerminalChecker(
+                        self.game_type, 
+                        self.board_size,
+                        variant_rules,
+                        game_interface=self.game_interface
+                    )
+                
+                # Fast check using NumPy
+                # Don't pass last_move to ensure full board scan for consistency with GPU
+                is_term, winner = self._fast_checker.check_terminal_cpu(
+                    self._boards[state_idx], 
+                    last_move=None,  # Force full board scan
+                    state_idx=state_idx
+                )
+                
+                if is_term:
+                    self._is_terminal[state_idx] = True
+                    self._winner[state_idx] = winner
                 
     def get_legal_moves_mask(self, state_indices: Union[List[int], np.ndarray]) -> np.ndarray:
         """Get legal moves masks for states
@@ -354,9 +383,33 @@ class CPUGameStates:
                 self._current_player[state_idx] = 3 - current_player  # Switch player
                 self._move_count[state_idx] += 1
                 
-                # Check for terminal state (simplified - just check if board is full)
-                if self._move_count[state_idx] >= self.board_size * self.board_size:
+                # Use fast terminal detection
+                from ..utils.fast_terminal_check import FastTerminalChecker
+                if not hasattr(self, '_fast_checker'):
+                    # Initialize fast checker with game type info
+                    variant_rules = {}
+                    if self.game_interface and hasattr(self.game_interface, 'use_renju'):
+                        variant_rules['use_renju'] = self.game_interface.use_renju
+                    if self.game_interface and hasattr(self.game_interface, 'use_omok'):
+                        variant_rules['use_omok'] = self.game_interface.use_omok
+                    self._fast_checker = FastTerminalChecker(
+                        self.game_type, 
+                        self.board_size,
+                        variant_rules,
+                        game_interface=self.game_interface
+                    )
+                
+                # Fast check using NumPy
+                # Don't pass last_move to ensure full board scan for consistency with GPU
+                is_term, winner = self._fast_checker.check_terminal_cpu(
+                    self._boards[state_idx], 
+                    last_move=None,  # Force full board scan
+                    state_idx=state_idx
+                )
+                
+                if is_term:
                     self._is_terminal[state_idx] = True
+                    self._winner[state_idx] = winner
     
     def get_board(self, state_idx: int) -> np.ndarray:
         """Get board for a single state"""

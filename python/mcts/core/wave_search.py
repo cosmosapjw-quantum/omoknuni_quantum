@@ -8,6 +8,7 @@ import torch
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 import logging
+import contextlib
 
 from ..gpu.csr_tree import CSRTree
 from ..gpu.gpu_game_states import GPUGameStates, GameType
@@ -19,6 +20,21 @@ try:
     from ..gpu import torch_custom_ops
 except ImportError:
     pass  # Custom ops not available
+
+# PROFILING: Import comprehensive profiler
+try:
+    from ..profiling.gpu_profiler import get_profiler, profile, profile_gpu
+    PROFILING_AVAILABLE = True
+except ImportError:
+    PROFILING_AVAILABLE = False
+    def profile(name, sync=False):
+        def decorator(func):
+            return func
+        return decorator
+    def profile_gpu(name):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +72,13 @@ class WaveSearch:
         self.device = device
         self.gpu_ops = gpu_ops
         
+        # Initialize profiler if available
+        if PROFILING_AVAILABLE:
+            self.profiler = get_profiler()
+            logger.info("GPU profiler initialized for WaveSearch")
+        else:
+            self.profiler = None
+        
         # Try to get GPU accelerator for optimized kernels
         if gpu_ops is None:
             try:
@@ -73,6 +96,9 @@ class WaveSearch:
         # Buffers will be allocated on first use
         self._buffers_allocated = False
         self.paths_buffer = torch.empty(0, device=self.device)  # Initialize empty tensor
+        
+        # OPTIMIZATION: Initialize persistent memory pools
+        self._init_persistent_memory_pools()
         
         # State management - will be set during run_wave
         self.node_to_state = None
@@ -98,8 +124,101 @@ class WaveSearch:
                     from ..utils.gomoku_tactical_detector import GomokuTacticalMoveDetector
                     self._tactical_detector = GomokuTacticalMoveDetector(config.board_size, config)
             except ImportError as e:
-                logger.warning(f"Tactical move detector not available: {e}")
-                self._tactical_detector = None
+                pass
+    
+    def _init_persistent_memory_pools(self):
+        """Initialize persistent memory pools to avoid allocation overhead
+        
+        Pre-allocates memory for common operations to eliminate allocation/deallocation
+        overhead during MCTS search. This provides significant performance improvements
+        especially for high-frequency operations.
+        """
+        if self.device.type != 'cuda':
+            return  # Memory pools only benefit GPU operations
+            
+        logger.info("Initializing persistent memory pools for wave search...")
+        
+        # Determine sizes based on config
+        max_wave = getattr(self.config, 'max_wave_size', 512)
+        max_depth = getattr(self.config, 'max_depth', 100)
+        max_actions = getattr(self.config, 'csr_max_actions', 225)
+        
+        try:
+            # Pre-allocate wave operation buffers
+            self.persistent_pools = {
+                # Selection phase buffers
+                'paths': torch.zeros((max_wave, max_depth), dtype=torch.int32, device=self.device),
+                'path_lengths': torch.zeros(max_wave, dtype=torch.int32, device=self.device),
+                'active_nodes': torch.zeros(max_wave, dtype=torch.int32, device=self.device),
+                'active_mask': torch.zeros(max_wave, dtype=torch.bool, device=self.device),
+                
+                # UCB computation buffers
+                'ucb_scores': torch.zeros((max_wave, max_actions), dtype=torch.float32, device=self.device),
+                'q_values': torch.zeros((max_wave, max_actions), dtype=torch.float32, device=self.device),
+                'exploration_terms': torch.zeros((max_wave, max_actions), dtype=torch.float32, device=self.device),
+                
+                # Expansion buffers
+                'legal_actions': torch.zeros((max_wave, max_actions), dtype=torch.bool, device=self.device),
+                'expansion_mask': torch.zeros(max_wave, dtype=torch.bool, device=self.device),
+                'new_children': torch.zeros((max_wave, max_actions), dtype=torch.int32, device=self.device),
+                
+                # Backup buffers
+                'value_buffer': torch.zeros(max_wave, dtype=torch.float32, device=self.device),
+                'visit_increments': torch.zeros(max_wave * max_depth, dtype=torch.int32, device=self.device),
+                
+                # Temporary computation buffers
+                'temp_float': torch.zeros(max_wave * max_actions, dtype=torch.float32, device=self.device),
+                'temp_int': torch.zeros(max_wave * max_actions, dtype=torch.int32, device=self.device),
+                'temp_bool': torch.zeros(max_wave * max_actions, dtype=torch.bool, device=self.device),
+            }
+            
+            # Calculate memory usage
+            total_bytes = sum(t.element_size() * t.numel() for t in self.persistent_pools.values())
+            total_mb = total_bytes / (1024 * 1024)
+            logger.info(f"Allocated {total_mb:.1f} MB of persistent memory pools")
+            
+            # Set flag to use persistent pools
+            self._use_persistent_pools = True
+            
+        except Exception as e:
+            logger.warning(f"Failed to allocate persistent memory pools: {e}")
+            logger.info("Falling back to dynamic allocation")
+            self._use_persistent_pools = False
+            self.persistent_pools = {}
+    
+    def _get_buffer(self, name: str, size: Tuple[int, ...], dtype: torch.dtype) -> torch.Tensor:
+        """Get a buffer from persistent pool or allocate dynamically
+        
+        Args:
+            name: Buffer name (for pool lookup)
+            size: Required tensor size
+            dtype: Required data type
+            
+        Returns:
+            Tensor buffer (view of persistent pool or new allocation)
+        """
+        if self._use_persistent_pools and name in self.persistent_pools:
+            pool_tensor = self.persistent_pools[name]
+            
+            # Check if pool tensor is large enough
+            required_numel = torch.prod(torch.tensor(size)).item()
+            if pool_tensor.numel() >= required_numel and pool_tensor.dtype == dtype:
+                # Return a view of the pool tensor with correct shape
+                return pool_tensor.flatten()[:required_numel].view(*size)
+        
+        # Fallback to dynamic allocation
+        return torch.zeros(size, dtype=dtype, device=self.device)
+    
+    def reset_search_state(self):
+        """Reset search state for a new search"""
+        # Original reset logic
+        if hasattr(self, '_noise_cache'):
+            self._noise_cache = None
+        
+        # Clear persistent pool contents (but keep allocations)
+        if hasattr(self, '_use_persistent_pools') and self._use_persistent_pools:
+            for tensor in self.persistent_pools.values():
+                tensor.zero_()  # Fast GPU memset
         
         # CRITICAL OPTIMIZATION: Apply torch.compile for 3000+ sims/sec performance
         self._jit_compiled = False
@@ -269,8 +388,28 @@ class WaveSearch:
         Returns:
             Maximum number of children to expand
         """
-        # Always expand all legal moves (no progressive widening)
-        return num_legal_moves
+        # Use progressive widening to match CPU backend behavior
+        if hasattr(self.config, 'progressive_widening_constant'):
+            # Progressive widening: expand k * n^alpha children
+            pw_constant = getattr(self.config, 'progressive_widening_constant', 10.0)
+            pw_exponent = getattr(self.config, 'progressive_widening_exponent', 0.5)
+            max_children = min(num_legal_moves, int(pw_constant * (parent_visits ** pw_exponent)) + 1)
+            
+            # Apply limits based on whether this is root node
+            # Note: We don't have direct access to node index here, so we use visit count as proxy
+            # Root typically has the most visits
+            if parent_visits > 100:  # Likely root node with many simulations
+                max_children = max(5, min(max_children, 15))  # Between 5 and 15 for root
+            else:
+                max_children = max(3, min(max_children, 3))  # Max 3 for non-root nodes
+            
+            return max_children
+        else:
+            # Fallback: limit expansion to be consistent with CPU
+            if parent_visits > 100:  # Likely root
+                return min(num_legal_moves, 15)
+            else:
+                return min(num_legal_moves, 3)
         
     def allocate_buffers(self, wave_size: int, max_depth: int = 100):
         """Allocate work buffers for wave operations with device compatibility
@@ -429,8 +568,12 @@ class WaveSearch:
         self.state_pool_free_list = state_pool_free_list
         
         # Ensure buffers are allocated
-        if not self._buffers_allocated or self.paths_buffer.shape[0] < wave_size:
-            self.allocate_buffers(wave_size)
+        if self.profiler:
+            self.profiler.profile_memory("wave_start")
+            
+        with self.profiler.profile("buffer_allocation") if self.profiler else contextlib.nullcontext():
+            if not self._buffers_allocated or self.paths_buffer.shape[0] < wave_size:
+                self.allocate_buffers(wave_size)
             
         # Try fused select+expand if available
         # Only use fused operation if tree has sufficient nodes to avoid indexing issues
@@ -735,13 +878,18 @@ class WaveSearch:
             # OPTIMIZATION: Prepare all expansion data before any tree operations
             expansion_data = []
             
+            # Pre-allocate action indices to avoid torch.nonzero
+            action_space_size = legal_masks.shape[-1]
+            action_indices = torch.arange(action_space_size, device=legal_masks.device, dtype=torch.long)
+            
             # Process each node's expansion data preparation
             for i, (node_idx, state_idx, legal_mask, policy) in enumerate(
                 zip(nodes_to_expand, states_to_expand, legal_masks, policies)
             ):
-                legal_actions = torch.nonzero(legal_mask).squeeze(-1)
+                # Use boolean indexing instead of torch.nonzero
+                legal_actions = action_indices[legal_mask]
                 
-                if len(legal_actions) > 0:
+                if legal_actions.numel() > 0:
                     # Extract and normalize priors
                     priors = policy[legal_actions]
                     priors = priors / (priors.sum() + 1e-8)
@@ -1236,7 +1384,10 @@ class WaveSearch:
                                 policies.append(p)
                                 value_preds.append(v)
                             policies = np.array(policies)
-                            value_preds = torch.from_numpy(np.array(value_preds)).to(self.device).float()
+                            if not isinstance(value_preds, torch.Tensor):
+                                value_preds = torch.from_numpy(np.array(value_preds)).to(self.device).float()
+                            elif value_preds.device != self.device:
+                                value_preds = value_preds.to(self.device).float()
                     else:
                         # Legacy path: Convert to numpy for evaluator
                         features_np = features.cpu().numpy()
@@ -1254,8 +1405,11 @@ class WaveSearch:
                             policies = np.array(policies)
                             value_preds = np.array(value_preds)
                         
-                        # Convert back to tensor
-                        value_preds = torch.from_numpy(value_preds).to(self.device).float()
+                        # Convert back to tensor if needed
+                        if not isinstance(value_preds, torch.Tensor):
+                            value_preds = torch.from_numpy(value_preds).to(self.device).float()
+                        elif value_preds.device != self.device:
+                            value_preds = value_preds.to(self.device).float()
                     
                 # Ensure tensor format
                 if isinstance(value_preds, torch.Tensor):
@@ -1418,14 +1572,15 @@ class WaveSearch:
         # Create position indices
         positions = torch.arange(max_length, device=self.device).unsqueeze(0).expand(batch_size, -1)
         
-        # Calculate distance from leaf for each position
-        # distance_from_leaf = path_length - 1 - position
-        distance_from_leaf = lengths.unsqueeze(1) - 1 - positions
+        # Calculate depth for each position (0 at root, increases going down)
+        # This matches the convention used in async_wave_search.py and CPU backend
+        depth_indices = positions
         
-        # Signs are -1 when distance from leaf is odd, 1 when even
-        signs = torch.where(distance_from_leaf % 2 == 1, 
-                          torch.tensor(-1.0, device=self.device),
-                          torch.tensor(1.0, device=self.device))
+        # Signs are +1 when depth is even (root, etc.), -1 when odd
+        # This ensures consistent value perspective across all backends
+        signs = torch.where(depth_indices % 2 == 0, 
+                          torch.tensor(1.0, device=self.device),
+                          torch.tensor(-1.0, device=self.device))
         
         # Mask out invalid positions
         signs = torch.where(valid_mask, signs, torch.ones_like(signs))

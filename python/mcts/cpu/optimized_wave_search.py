@@ -18,7 +18,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing as mp
 
-from ..core.wave_search import WaveSearch
 from .vectorized_operations import batch_ucb_scores
 
 
@@ -45,14 +44,17 @@ class OptimizedCPUWaveSearch:
         self.config = config
         self.device = device
         
-        # Thread configuration
+        # Thread configuration - optimized for Cython tree performance
         cpu_threads = getattr(config, 'cpu_threads_per_worker', None)
         if cpu_threads is None:
-            # Default to number of CPU cores minus 1
-            self.num_threads = max(1, mp.cpu_count() - 1)
-            logger.info(f"Using {self.num_threads} threads for CPU wave search")
+            # OPTIMIZATION: Single-threaded is faster due to optimized Cython tree
+            # Multi-threading creates GIL contention and context switching overhead
+            # that outweighs benefits when tree operations are already very fast
+            self.num_threads = 1
+            logger.info(f"Using optimized single-threaded CPU wave search (eliminates GIL contention)")
         else:
             self.num_threads = cpu_threads
+            logger.info(f"Using {self.num_threads} threads for CPU wave search (user override)")
             
         # Batch configuration for reduced task switching
         self.waves_per_batch = 32  # Process many waves per thread task for efficiency
@@ -252,6 +254,13 @@ class OptimizedCPUWaveSearch:
         for _ in range(max_depth):
             path.append(current_node)
             
+            # CRITICAL FIX: Check if current node is terminal
+            if hasattr(self, 'node_to_state') and self.node_to_state is not None:
+                state_idx = self.node_to_state[current_node]
+                if self.game_states.is_terminal[state_idx]:
+                    # Found terminal node - stop here
+                    return path, current_node
+            
             # Get children efficiently
             children, actions, priors = self.tree.get_children(current_node)
             
@@ -328,6 +337,10 @@ class OptimizedCPUWaveSearch:
                 features = self.game_states.get_nn_features(uncached_indices, representation_type='basic')
                 if isinstance(features, tuple):
                     features = features[0]  # Take first element if tuple
+                
+                # Convert numpy to torch tensor if needed
+                if isinstance(features, np.ndarray):
+                    features = torch.from_numpy(features).float()
                     
                 # Batch evaluation
                 new_policies, new_values = self.evaluator.evaluate_batch(features)
@@ -357,6 +370,10 @@ class OptimizedCPUWaveSearch:
             try:
                 # Get legal actions efficiently
                 state_idx = state_indices[i]
+                
+                # CRITICAL FIX: Don't expand terminal nodes
+                if self.game_states.is_terminal[state_idx]:
+                    continue
                 legal_mask = self.game_states.get_legal_moves_mask([state_idx])[0]
                 legal_actions = np.where(legal_mask)[0]
                 
@@ -378,11 +395,12 @@ class OptimizedCPUWaveSearch:
                 # Keep expansions minimal for throughput
                 if leaf_node == 0:  # Root node
                     # For root, use progressive widening if enabled
-                    if hasattr(self.config, 'progressive_widening') and self.config.progressive_widening:
-                        # Progressive widening: expand sqrt(n) children
+                    if hasattr(self.config, 'progressive_widening_constant'):
+                        # Progressive widening: expand k * n^alpha children
                         visits = self.tree.get_visit_count(leaf_node)
-                        pw_alpha = getattr(self.config, 'pw_alpha', 0.3)
-                        max_children = min(len(legal_actions), int(pw_alpha * (visits ** 0.5)) + 1)
+                        pw_constant = getattr(self.config, 'progressive_widening_constant', 10.0)
+                        pw_exponent = getattr(self.config, 'progressive_widening_exponent', 0.5)
+                        max_children = min(len(legal_actions), int(pw_constant * (visits ** pw_exponent)) + 1)
                         max_children = max(5, min(max_children, 15))  # Between 5 and 15
                     else:
                         max_children = min(len(legal_actions), 15)

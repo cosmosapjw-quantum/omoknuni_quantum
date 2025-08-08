@@ -145,7 +145,8 @@ def _csr_ucb_selection_impl(
             q_values = torch.where(child_visits > 0, child_values / child_visits, torch.zeros_like(child_values))
             
             # Compute UCB scores
-            parent_sqrt = torch.sqrt(parent_visits + 1e-8)
+            # FIXED: Remove epsilon to match CPU implementation exactly
+            parent_sqrt = torch.sqrt(parent_visits)
             exploration = c_puct * priors * parent_sqrt / (1.0 + child_visits)
             ucb_scores = q_values + exploration
             

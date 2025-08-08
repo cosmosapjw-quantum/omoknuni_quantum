@@ -76,36 +76,3 @@ def create_hybrid_mcts(config: MCTSConfig, evaluator, game_interface=None) -> MC
     )
 
 
-def create_fast_hybrid_mcts(config: MCTSConfig, evaluator, game=None) -> 'FastHybridMCTS':
-    """
-    Create FastHybridMCTS instance directly with all optimizations.
-    
-    This bypasses the standard MCTS class and uses the optimized
-    implementation directly.
-    
-    Args:
-        config: MCTS configuration
-        evaluator: Neural network evaluator
-        game: Game instance
-        
-    Returns:
-        FastHybridMCTS instance
-    """
-    from .fast_hybrid_mcts import FastHybridMCTS
-    
-    # Determine device
-    if hasattr(evaluator, 'device'):
-        device = str(evaluator.device)
-    else:
-        import torch
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    # Create fast hybrid instance
-    return FastHybridMCTS(
-        game=game,
-        config=config,
-        evaluator=evaluator,
-        device=device,
-        num_selection_threads=getattr(config, 'num_threads', 4),
-        use_optimizations=True
-    )

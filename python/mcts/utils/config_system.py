@@ -122,6 +122,12 @@ class MCTSFullConfig:
     memory_pool_size_mb: int = 2048
     max_tree_nodes: int = 500000
     tree_reuse: bool = True
+    enable_subtree_reuse: bool = True
+    subtree_reuse_min_visits: int = 1
+    initial_tree_nodes: int = 500000
+    max_children_per_node: int = 225  # For 15x15 gomoku
+    tree_growth_factor: float = 2.0
+    gc_threshold: float = 0.8
     
     # GPU optimization
     use_cuda_graphs: bool = True
@@ -142,6 +148,14 @@ class MCTSFullConfig:
     
     # Wave MCTS specific
     wave_min_size: int = 256
+    
+    # Hybrid backend selection
+    use_cython_hybrid: bool = False
+    use_genuine_hybrid: bool = False
+    use_fixed_hybrid: bool = False  # Must be False by default!
+    use_simple_hybrid: bool = False
+    use_optimized_hybrid: bool = False
+    enable_dynamic_allocation: bool = True  # Add missing field
     wave_max_size: int = 2048
     wave_adaptive_sizing: bool = True
     wave_target_sims_per_second: int = 100000
@@ -159,6 +173,12 @@ class MCTSFullConfig:
     interference_threshold: float = 0.1
     constructive_interference_factor: float = 0.1
     destructive_interference_factor: float = 0.05
+    
+    # Progressive widening
+    progressive_widening_constant: float = 5.0
+    progressive_widening_exponent: float = 0.5
+    initial_children_per_expansion: int = 5
+    initial_expansion_children: int = 5  # Alias
     
     # Device configuration
     device: str = "cuda"

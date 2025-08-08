@@ -29,6 +29,12 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm, trange
 import time
 
+# Apply PyTorch optimizations for ~30% speedup (from example_self_play.py)
+torch.set_float32_matmul_precision('high')
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
+
 # Import only essential components at module level
 from mcts.utils.config_system import (
     AlphaZeroConfig, create_default_config,
@@ -95,6 +101,10 @@ class UnifiedTrainingPipeline:
         
         # Arena for evaluation with ELO tracking
         self.arena = self._create_arena()
+        
+        # Create reusable evaluator and self-play manager for efficiency
+        self._self_play_evaluator = None
+        self._self_play_manager = None
         
         # Initialize metrics recorder
         from mcts.utils.training_metrics import TrainingMetricsRecorder
@@ -560,17 +570,37 @@ class UnifiedTrainingPipeline:
     
     def generate_self_play_data(self) -> List[GameExample]:
         """Generate self-play training data using SelfPlayManager"""
-        from mcts.core.evaluator import AlphaZeroEvaluator
+        from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
         from mcts.neural_networks.self_play_manager import SelfPlayManager
         
-        # Create evaluator for self-play
-        evaluator = AlphaZeroEvaluator(
-            model=self.model,
-            device=self.config.mcts.device
-        )
-        
-        # Configure evaluator to return torch tensors
-        evaluator._return_torch_tensors = True
+        # Create evaluator only once (reuse for efficiency)
+        if self._self_play_evaluator is None:
+            self._self_play_evaluator = ResNetEvaluator(
+                model=self.model,
+                game_type=self.config.game.game_type,
+                device=self.config.mcts.device
+            )
+            
+            # Configure evaluator to return torch tensors
+            self._self_play_evaluator._return_torch_tensors = True
+            
+            # Override batch size to match optimized config
+            # Try to get inference_batch_size from multiple possible locations
+            inference_batch_size = getattr(self.config.mcts, 'inference_batch_size', 
+                                          getattr(self.config.resources, 'inference_batch_size',
+                                                getattr(self.config.mcts, 'batch_size', 256)))
+            self._self_play_evaluator.batch_size = inference_batch_size
+            
+            # Re-initialize pinned memory buffers with new batch size (only allocates on GPU)
+            self._self_play_evaluator._init_pinned_memory_buffers()
+            
+            # Enable persistent batching context if available
+            if hasattr(self._self_play_evaluator, 'enable_persistent_batching'):
+                self._self_play_evaluator.enable_persistent_batching(True)
+                self._self_play_evaluator.allocate_game_length_buffers(max_moves=100)
+        else:
+            # Update model if it changed (after training)
+            self._self_play_evaluator.model = self.model
         
         # Create game configuration
         game_config = {
@@ -579,20 +609,35 @@ class UnifiedTrainingPipeline:
             'input_representation': getattr(self.config.network, 'input_representation', 'enhanced')
         }
         
-        # Use SelfPlayManager with game configuration
-        self_play_manager = SelfPlayManager(
-            config=self.config,
-            game_class=None,  # We'll use game_config instead
-            evaluator=evaluator,
-            game_config=game_config,
-            opponent_buffer=self.opponent_buffer
-        )
+        # Check if we should disable resignation for early iterations
+        disable_resign_iterations = getattr(self.config.training, 'disable_resign_iterations', 0)
+        if self.iteration <= disable_resign_iterations:
+            # Temporarily disable resignation for early iterations
+            original_enable_resign = self.config.training.enable_resign
+            self.config.training.enable_resign = False
+        
+        # Create SelfPlayManager only once (reuse for efficiency)
+        if self._self_play_manager is None:
+            self._self_play_manager = SelfPlayManager(
+                config=self.config,
+                game_class=None,  # We'll use game_config instead
+                evaluator=self._self_play_evaluator,
+                game_config=game_config,
+                opponent_buffer=self.opponent_buffer
+            )
+        else:
+            # Update evaluator if model changed
+            self._self_play_manager.gpu_evaluator = self._self_play_evaluator
         
         # Generate self-play data (will use GPU service for multi-worker)
-        examples = self_play_manager.generate_self_play_data()
+        examples = self._self_play_manager.generate_self_play_data()
+        
+        # Restore original resignation setting if we disabled it
+        if self.iteration <= disable_resign_iterations:
+            self.config.training.enable_resign = original_enable_resign
         
         # Collect metrics
-        self.game_metrics = self_play_manager.collect_game_metrics(examples)
+        self.game_metrics = self._self_play_manager.collect_game_metrics(examples)
         
         # Check training health
         should_continue, warnings = self.training_monitor.check_training_health(self.game_metrics)

@@ -317,12 +317,10 @@ class ArenaMatch:
             start_time = time.time()
         
         while not self.game_interface.is_terminal(state):
-            # Get canonical form for current player
-            canonical_state = self.game_interface.get_canonical_form(state, current_player)
-            
             # Get action from appropriate MCTS
+            # Note: MCTS expects the state object, not the canonical numpy array
             mcts = player_mcts[current_player]
-            action_probs = mcts.search(canonical_state)
+            action_probs = mcts.search(state)
             
             # Select best action (temperature=0 for arena)
             # CRITICAL FIX: Ensure selected action is legal
@@ -529,23 +527,23 @@ class ArenaManager:
         """
         logger.info(f"Arena: {model1_name} vs {model2_name} - {self.arena_config.num_games} games (Single GPU)")
         
-        # Convert evaluators to SingleGPUEvaluator if needed
+        # Convert evaluators to ResNetEvaluator if needed for memory optimizations
         if hasattr(evaluator1, 'model'):
-            gpu_eval1 = SingleGPUEvaluator(
+            from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
+            gpu_eval1 = ResNetEvaluator(
                 model=evaluator1.model,
-                device=self.arena_config.device,
-                action_size=self.config.game.board_size ** 2,
-                use_mixed_precision=getattr(self.config.mcts, 'use_mixed_precision', True)
+                game_type=self.config.game.game_type,
+                device=self.arena_config.device
             )
         else:
             gpu_eval1 = evaluator1
             
         if hasattr(evaluator2, 'model'):
-            gpu_eval2 = SingleGPUEvaluator(
+            from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
+            gpu_eval2 = ResNetEvaluator(
                 model=evaluator2.model,
-                device=self.arena_config.device,
-                action_size=self.config.game.board_size ** 2,
-                use_mixed_precision=getattr(self.config.mcts, 'use_mixed_precision', True)
+                game_type=self.config.game.game_type,
+                device=self.arena_config.device
             )
         else:
             gpu_eval2 = evaluator2
@@ -817,10 +815,11 @@ class ArenaManager:
         previous_model.eval()
         previous_model = previous_model.to(self.arena_config.device)
         
-        # Create evaluator for previous model
-        from mcts.core.evaluator import AlphaZeroEvaluator
-        previous_evaluator = AlphaZeroEvaluator(
+        # Create evaluator for previous model with memory optimizations
+        from mcts.neural_networks.resnet_evaluator import ResNetEvaluator
+        previous_evaluator = ResNetEvaluator(
             model=previous_model,
+            game_type=self.config.game.game_type,
             device=self.arena_config.device
         )
         
